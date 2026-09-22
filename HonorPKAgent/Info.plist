@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleDisplayName</key><string>Honor PK Агент</string>
+<key>CFBundleName</key><string>HonorPKAgent</string>
+<key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+<key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+<key>CFBundleDevelopmentRegion</key><string>ru</string>
+<key>CFBundleLocalizations</key><array><string>ru</string><string>en</string></array>
+<key>LSRequiresIPhoneOS</key><true/>
+<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
+<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
+<key>UILaunchScreen</key><dict><key>UIColorName</key><string>LaunchBackground</string></dict>
+<key>NSCameraUsageDescription</key><string>Камера нужна, чтобы прикрепить фотографию к сообщению Honor.</string>
+<key>NSMicrophoneUsageDescription</key><string>Микрофон нужен для голосового ввода сообщений.</string>
+<key>NSSpeechRecognitionUsageDescription</key><string>Распознавание речи переводит ваш голос в текст сообщения.</string>
+<key>UIApplicationSupportsIndirectInputEvents</key><true/>
+<key>ITSAppUsesNonExemptEncryption</key><false/>
+</dict></plist>

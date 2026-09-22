@@ -1,0 +1,56 @@
+name: Build Honor iOS
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up project
+        run: |
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          python3 - <<'PY'
+          import os, plistlib
+          config = {'APIKey': os.environ.get('DEEPSEEK_API_KEY', ''), 'BaseURL': 'https://api.deepseek.com', 'Model': 'deepseek-flash'}
+          with open('HonorPKAgent/DeepSeekConfig.plist', 'wb') as f:
+              plistlib.dump(config, f)
+          PY
+          xcodegen generate
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      - name: Build unsigned iPhone app
+        run: bash scripts/build-unsigned.sh > build-device.log 2>&1
+      - name: Upload unsigned IPA and Xcode project
+        uses: actions/upload-artifact@v4
+        with:
+          name: Honor-PK-Agent-unsigned
+          path: |
+            build/Honor-PK-Agent-unsigned.ipa
+            HonorPKAgent.xcodeproj
+      - name: Run simulator tests and capture native screens
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for devices in d["devices"].values() for x in devices if x["name"].startswith("iPhone 16")))')
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl status_bar "$DEVICE" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+          xcodebuild -project HonorPKAgent.xcodeproj -scheme HonorPKAgent -configuration Debug \
+            -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath build/simulator \
+            -resultBundlePath build/TestResults.xcresult CODE_SIGNING_ALLOWED=NO test > build-tests.log 2>&1
+      - name: Export screenshots
+        if: always()
+        run: |
+          if [ -d build/TestResults.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/screenshots || true
+          fi
+      - name: Upload validation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation
+          path: |
+            build-*.log
+            build/screenshots
+            build/TestResults.xcresult

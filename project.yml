@@ -1,0 +1,59 @@
+name: HonorPKAgent
+options:
+  bundleIdPrefix: com.honorpk
+  deploymentTarget:
+    iOS: '16.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.9'
+    TARGETED_DEVICE_FAMILY: '1'
+    IPHONEOS_DEPLOYMENT_TARGET: '16.0'
+    ENABLE_BITCODE: NO
+    MARKETING_VERSION: '1.0.0'
+    CURRENT_PROJECT_VERSION: '1'
+    CODE_SIGNING_ALLOWED: NO
+targets:
+  HonorPKAgent:
+    type: application
+    platform: iOS
+    sources:
+      - path: HonorPKAgent
+        excludes:
+          - DeepSeekConfig.example.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.honorpk.agent.ios
+        PRODUCT_NAME: HonorPKAgent
+        INFOPLIST_FILE: HonorPKAgent/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+  HonorPKAgentTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: HonorPKAgent
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+  HonorPKAgentUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: HonorPKAgent
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  HonorPKAgent:
+    build:
+      targets:
+        HonorPKAgent: all
+    test:
+      gatherCoverageData: false
+      targets:
+        - HonorPKAgentTests
+        - HonorPKAgentUITests
