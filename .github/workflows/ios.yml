@@ -54,6 +54,7 @@ jobs:
               -parallel-testing-enabled NO -resultBundlePath "build/$MODEL.xcresult" CODE_SIGNING_ALLOWED=NO \
               -only-testing:HonorPKAgentUITests/InterfaceTests/testWelcomeComposerAndAttachments \
               -only-testing:HonorPKAgentUITests/InterfaceTests/testConversationHistoryAndSettings \
+              -only-testing:HonorPKAgentUITests/FeatureAuditTests/testLargeFontMessageMenuStillReachesNewActions \
               test-without-building > "build-$MODEL.log" 2>&1
             xcrun simctl shutdown "$DEVICE"
           done
@@ -68,6 +69,12 @@ jobs:
               xcrun xcresulttool export attachments --path "build/$MODEL.xcresult" --output-path "build/screenshots-$MODEL" || true
             fi
           done
+      - name: Upload compact test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: build-*.log
       - name: Upload validation
         if: always()
         uses: actions/upload-artifact@v4

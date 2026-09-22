@@ -99,6 +99,27 @@ class HonorAuditCase: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: timeout), .completed)
     }
 
+    func assertDisplayedValue(_ value: String, id: String, app: XCUIApplication) {
+        let item = element(app, id)
+        let predicate = NSPredicate { object, _ in
+            guard let item = object as? XCUIElement, item.exists else { return false }
+            return item.label.contains(value) || (item.value as? String ?? "").contains(value)
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: item)], timeout: 5), .completed,
+                       "Expected \(id) to expose \(value); label=\(item.label), value=\(String(describing: item.value))")
+    }
+
+    func setSwitch(_ item: XCUIElement, to enabled: Bool) {
+        let value = enabled ? "1" : "0"
+        XCTAssertTrue(item.exists)
+        if item.value as? String != value {
+            // SwiftUI exposes the entire Form row as a switch; hit its actual trailing control.
+            item.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.5)).tap()
+        }
+        let predicate = NSPredicate(format: "value == %@", value)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: item)], timeout: 5), .completed)
+    }
+
     func relaunch(_ app: XCUIApplication, live: Bool = false) {
         XCUIDevice.shared.press(.home)
         app.terminate()

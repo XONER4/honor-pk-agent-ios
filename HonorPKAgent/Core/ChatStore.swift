@@ -413,6 +413,7 @@ final class ChatStore: ObservableObject {
     }
 
     private func removeUnreferencedAttachments(_ candidates: [MessageAttachment]) {
+        guard !candidates.isEmpty else { return }
         let retained = conversations.flatMap(\.messages).flatMap(\.attachments) + attachments
         let retainedPaths = Set(retained.compactMap { $0.resolvedURL?.standardizedFileURL.path })
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -635,6 +636,10 @@ private enum HistoryArchiveIO {
         do {
             for chatIndex in incoming.conversations.indices {
                 for messageIndex in incoming.conversations[chatIndex].messages.indices {
+                    if incoming.conversations[chatIndex].messages[messageIndex].id == incoming.inFlightMessageID,
+                       incoming.conversations[chatIndex].messages[messageIndex].role == .assistant {
+                        incoming.conversations[chatIndex].messages[messageIndex].isInterrupted = true
+                    }
                     for attachmentIndex in incoming.conversations[chatIndex].messages[messageIndex].attachments.indices {
                         var attachment = incoming.conversations[chatIndex].messages[messageIndex].attachments[attachmentIndex]
                         let suffix = attachment.localPath.map { URL(fileURLWithPath: $0).pathExtension.lowercased() } ?? ""

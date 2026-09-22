@@ -62,9 +62,11 @@ final class InterfaceTests: XCTestCase {
         let field = app.textViews["chat.composer"].exists ? app.textViews["chat.composer"] : app.textFields["chat.composer"]
         field.tap()
         field.typeText("Return exactly the concatenation of HONOR, underscore, TEST, underscore, OK. Nothing else.")
+        let started = Date()
         app.buttons["chat.send"].tap()
         let reply = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "HONOR_TEST_OK")).firstMatch
         XCTAssertTrue(reply.waitForExistence(timeout: 60), "Native DeepSeek request should return expected text")
+        print("HONOR_LIVE_VISIBLE_REPLY_SECONDS=\(Date().timeIntervalSince(started))")
         capture("10-live-reply")
     }
 }

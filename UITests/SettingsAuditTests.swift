@@ -38,16 +38,16 @@ final class SettingsAuditTests: HonorAuditCase {
         choose("appearance.dark", fallback: "Тёмный", app: app)
         openSettingsRow("settings.font", app: app)
         app.sliders["font.slider"].adjust(toNormalizedSliderPosition: 1)
-        XCTAssertTrue(app.staticTexts["140%"].exists)
+        assertDisplayedValue("140%", id: "font.value", app: app)
         capture("12-font-preview")
         app.buttons["font.reset"].tap()
-        XCTAssertTrue(app.staticTexts["100%"].exists)
+        assertDisplayedValue("100%", id: "font.value", app: app)
         back(app)
         openSettingsRow("settings.voice", app: app)
         let toggle = app.switches["voice.autoRead"]
         XCTAssertTrue(toggle.exists)
         let oldValue = toggle.value as? String
-        toggle.tap()
+        setSwitch(toggle, to: oldValue != "1")
         XCTAssertNotEqual(toggle.value as? String, oldValue)
         app.buttons["voice.option.system"].tap()
         app.buttons["voice.preview"].tap()
@@ -82,20 +82,22 @@ final class SettingsAuditTests: HonorAuditCase {
         let shareCopy = app.buttons["Copy"]
         XCTAssertTrue(activity.waitForExistence(timeout: 10) || shareCopy.waitForExistence(timeout: 5), "Export must open the native share sheet")
         capture("13-backup-export")
-        if app.buttons["Close"].exists { app.buttons["Close"].tap() }
-        else { app.swipeDown() }
+        let shareClose = app.buttons["header.closeButton"].firstMatch
+        XCTAssertTrue(shareClose.waitForExistence(timeout: 8))
+        shareClose.tap()
+        waitAbsent(activity)
         XCTAssertTrue(app.buttons["data.import"].waitForExistence(timeout: 5))
         app.buttons["data.import"].tap()
-        let cancel = app.buttons["Cancel"].exists ? app.buttons["Cancel"] : app.buttons["Отмена"]
+        let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "Отмена"])).firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 8))
         cancel.tap()
         app.buttons["data.delete"].tap()
-        app.buttons["data.delete.cancel"].tap()
-        XCTAssertTrue(app.staticTexts["4"].exists)
+        app.buttons["data.delete.cancel"].firstMatch.tap()
+        assertDisplayedValue("4", id: "data.count", app: app)
         app.buttons["data.delete"].tap()
-        app.buttons["data.delete.confirm"].tap()
+        app.buttons["data.delete.confirm"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["История удалена."].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["0"].exists)
+        assertDisplayedValue("0", id: "data.count", app: app)
     }
 
     private func choose(_ id: String, fallback: String, app: XCUIApplication) {

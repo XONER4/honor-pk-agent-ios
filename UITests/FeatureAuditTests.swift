@@ -25,11 +25,12 @@ final class FeatureAuditTests: HonorAuditCase {
 
         app.buttons["chat.sidebar"].tap()
         XCTAssertTrue(app.buttons["history.row." + chatID].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Ветка · Приветствие"].exists)
+        let branchRow = historyRow(titled: "Ветка · Приветствие", app: app)
+        XCTAssertTrue(branchRow.waitForExistence(timeout: 5))
         capture("audit-branch-history")
         relaunch(app)
         app.buttons["chat.sidebar"].tap()
-        XCTAssertTrue(app.staticTexts["Ветка · Приветствие"].waitForExistence(timeout: 5))
+        XCTAssertTrue(branchRow.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["history.row." + chatID].exists)
     }
 
@@ -66,7 +67,7 @@ final class FeatureAuditTests: HonorAuditCase {
         let enabled = app.switches["memory.enabled"]
         XCTAssertTrue(enabled.exists)
         XCTAssertEqual(enabled.value as? String, "1")
-        enabled.tap()
+        setSwitch(enabled, to: false)
         XCTAssertEqual(enabled.value as? String, "0")
         capture("audit-memory-disabled")
 
@@ -103,7 +104,7 @@ final class FeatureAuditTests: HonorAuditCase {
         XCTAssertTrue(renameField.waitForExistence(timeout: 5))
         replaceText("Audit renamed chat", in: renameField)
         tapSystemAction("history.rename.save", title: "Сохранить", app: app)
-        XCTAssertTrue(app.staticTexts["Audit renamed chat"].waitForExistence(timeout: 5))
+        XCTAssertTrue(historyRow(titled: "Audit renamed chat", app: app).waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["sidebar.settings"].exists, "Using the ellipsis must keep the drawer open")
 
         actions.tap()
@@ -131,8 +132,8 @@ final class FeatureAuditTests: HonorAuditCase {
         tapSystemAction("history.delete.confirm", title: "Удалить", app: app)
         waitAbsent(app.buttons["history.row." + chatID])
         XCTAssertFalse(app.buttons["history.row." + pinnedID].exists)
-        XCTAssertTrue(app.staticTexts["Выбор смартфона"].exists)
-        XCTAssertTrue(app.staticTexts["Дизайн приложения"].exists)
+        XCTAssertTrue(historyRow(titled: "Выбор смартфона", app: app).exists)
+        XCTAssertTrue(historyRow(titled: "Дизайн приложения", app: app).exists)
         capture("audit-history-after-bulk-delete")
     }
 
@@ -196,9 +197,45 @@ final class FeatureAuditTests: HonorAuditCase {
         XCTAssertTrue(app.staticTexts["Скопировано"].waitForExistence(timeout: 3))
     }
 
+    func testLargeFontMessageMenuStillReachesNewActions() {
+        let app = launch(["-UITestDemo"])
+        settings(app)
+        openSettingsRow("settings.font", app: app)
+        let slider = app.sliders["font.slider"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5))
+        slider.adjust(toNormalizedSliderPosition: 1)
+        assertDisplayedValue("140%", id: "font.value", app: app)
+        back(app)
+        app.buttons["settings.close"].tap()
+
+        openMessageMenu("message.assistant." + assistantID, app: app)
+        let popup = element(app, "message.menu.scroll")
+        XCTAssertTrue(popup.waitForExistence(timeout: 5))
+        let lastAction = app.buttons["message.menu.share"]
+        for _ in 0..<4 {
+            if lastAction.isHittable { break }
+            popup.swipeUp()
+        }
+        XCTAssertTrue(lastAction.isHittable, "The last menu action must remain reachable at 140% text size")
+        popup.swipeUp()
+        capture("audit-maximum-font-message-menu")
+
+        let remember = app.buttons["message.menu.remember"]
+        for _ in 0..<4 {
+            if remember.isHittable { break }
+            popup.swipeDown()
+        }
+        XCTAssertTrue(remember.isHittable)
+        remember.tap()
+        let editor = app.textViews["memory.editor.text"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.value as? String, originalAnswer)
+        app.buttons["memory.editor.cancel"].tap()
+    }
+
     /// UIKit-backed menus/alerts may expose their title instead of SwiftUI's identifier.
     private func tapSystemAction(_ identifier: String, title: String, app: XCUIApplication) {
-        let identified = app.buttons[identifier]
+        let identified = app.buttons.matching(identifier: identifier).firstMatch
         if identified.waitForExistence(timeout: 1) {
             identified.tap()
         } else {
@@ -206,5 +243,9 @@ final class FeatureAuditTests: HonorAuditCase {
             XCTAssertTrue(titled.waitForExistence(timeout: 5), "Missing action: \(identifier)")
             titled.tap()
         }
+    }
+
+    private func historyRow(titled title: String, app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "history.row.", title)).firstMatch
     }
 }

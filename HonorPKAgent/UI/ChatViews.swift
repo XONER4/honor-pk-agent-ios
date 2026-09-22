@@ -843,6 +843,7 @@ private struct MessageActionPopup: View {
           .padding(.vertical, 12)
         }
         .frame(height: menuHeight)
+        .accessibilityIdentifier("message.menu.scroll")
         .background(HonorTheme.sidebar, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(HonorTheme.divider, lineWidth: 0.8))
         .shadow(color: .black.opacity(0.28), radius: 18, x: 0, y: 10)

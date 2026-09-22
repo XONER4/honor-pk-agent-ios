@@ -27,6 +27,34 @@ final class HonorPKAgentTests: XCTestCase {
         XCTAssertEqual(decoder.finish(), "[DONE]")
     }
 
+    func testStreamCompletesAtFinishReasonBeforeLaterTransportFailure() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [TerminatingStreamURLProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        let client = DeepSeekClient(configuration: DeepSeekConfiguration(apiKey: "test", baseURL: URL(string: "https://honor-stream.test/complete")!), session: session)
+        var content = ""
+        var finished = false
+        for try await event in client.stream(messages: [ChatMessage(role: .user, content: "Hello")], thinking: false, systemInstruction: "", searchContext: "") {
+            content += event.content
+            finished = finished || event.finishReason == "stop"
+        }
+        XCTAssertEqual(content, "Complete answer")
+        XCTAssertTrue(finished)
+    }
+
+    func testStreamRejectsTransportFailureBeforeFinishReason() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [TerminatingStreamURLProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        let client = DeepSeekClient(configuration: DeepSeekConfiguration(apiKey: "test", baseURL: URL(string: "https://honor-stream.test/incomplete")!), session: session)
+        do {
+            for try await _ in client.stream(messages: [ChatMessage(role: .user, content: "Hello")], thinking: false, systemInstruction: "", searchContext: "") { }
+            XCTFail("Premature transport failure must remain an error")
+        } catch { /* Expected: incomplete responses must not silently look finished. */ }
+    }
+
     func testRequestUsesCurrentModelThinkingAndDoesNotReplayReasoning() throws {
         let configuration = DeepSeekConfiguration(apiKey: "test-key")
         let client = DeepSeekClient(configuration: configuration)
@@ -193,6 +221,22 @@ final class HonorPKAgentTests: XCTestCase {
         let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"), storageURL: url)
         XCTAssertEqual(store.messages.last?.content, "Частичный ответ")
         XCTAssertEqual(store.messages.last?.isInterrupted, true)
+        XCTAssertFalse(store.isGenerating)
+    }
+
+    @MainActor
+    func testImportMarksExportedInFlightAnswerInterrupted() throws {
+        let answer = ChatMessage(role: .assistant, content: "Partial imported answer")
+        let source = Conversation(messages: [ChatMessage(role: .user, content: "Question"), answer])
+        let archive = HistoryArchive(conversations: [source], selectedConversationID: source.id, inFlightMessageID: answer.id)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let url = temporaryHistory()
+        try encoder.encode(archive).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = ChatStore(configuration: .init(apiKey: "test"), storageURL: temporaryHistory())
+        try store.importData(from: url)
+        XCTAssertEqual(store.conversations.first?.messages.last?.content, "Partial imported answer")
+        XCTAssertEqual(store.conversations.first?.messages.last?.isInterrupted, true)
         XCTAssertFalse(store.isGenerating)
     }
 
@@ -398,5 +442,33 @@ private final class CapturingClient: DeepSeekStreaming {
             continuation.yield(.init(finishReason: "stop"))
             continuation.finish()
         }
+    }
+}
+
+private final class TerminatingStreamURLProtocol: URLProtocol {
+    private let stateLock = NSLock()
+    private var cancelled = false
+
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "honor-stream.test" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url else { return }
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "text/event-stream"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        let terminal = url.path.hasPrefix("/complete/") ? "\"stop\"" : "null"
+        let event = "data: {\"choices\":[{\"delta\":{\"content\":\"Complete answer\"},\"finish_reason\":\(terminal)}]}\n\n"
+        client?.urlProtocol(self, didLoad: Data(event.utf8))
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self else { return }
+            self.stateLock.lock()
+            let cancelled = self.cancelled
+            self.stateLock.unlock()
+            if !cancelled { self.client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost)) }
+        }
+    }
+
+    override func stopLoading() {
+        stateLock.lock(); cancelled = true; stateLock.unlock()
     }
 }

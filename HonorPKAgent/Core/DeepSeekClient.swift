@@ -154,7 +154,9 @@ struct DeepSeekClient: DeepSeekStreaming {
                         if event == "[DONE]" { completed = true; break }
                         if let delta = try decodeEvent(event) {
                             continuation.yield(delta)
-                            if delta.finishReason != nil { completed = true }
+                            // The terminal choice completes the response; a later transport failure
+                            // must not turn a complete answer into an error while waiting for [DONE].
+                            if delta.finishReason != nil { completed = true; break }
                         }
                     }
                     if let event = decoder.finish() {
