@@ -13,7 +13,12 @@ final class ChatStore: ObservableObject {
     @Published var errorMessage: String?
     @Published private(set) var generationStatus: String?
     @Published private(set) var editingMessageID: UUID?
+    @Published private(set) var memories: [HonorMemory] = []
+    @Published var memoryEnabled = true { didSet { scheduleSave() } }
     @Published private var configuration: DeepSeekConfiguration
+
+    static let maximumMemoryCount = 50
+    static let maximumMemoryLength = 1000
 
     var systemInstruction = ""
     var selectedConversation: Conversation? { conversations.first { $0.id == selectedConversationID } }
@@ -24,11 +29,13 @@ final class ChatStore: ObservableObject {
     private let injectedClient: DeepSeekStreaming?
     private let searchClient: WebSearching
     private let storageURL: URL
+    private let persistence: HistoryPersistence
     private var generationTask: Task<Void, Never>?
     private var persistenceTask: Task<Void, Never>?
     private var activeRunID: UUID?
     private var activeConversationID: UUID?
     private var activeMessageID: UUID?
+    private var flushStreamingBuffer: (@MainActor () -> Void)?
     private var isLoading = true
 
     init(configuration: DeepSeekConfiguration = .bundled,
@@ -38,7 +45,9 @@ final class ChatStore: ObservableObject {
         self.configuration = configuration
         self.injectedClient = client
         self.searchClient = searchClient
-        self.storageURL = storageURL ?? Self.defaultStorageURL
+        let resolvedStorageURL = storageURL ?? Self.defaultStorageURL
+        self.storageURL = resolvedStorageURL
+        self.persistence = HistoryPersistence(url: resolvedStorageURL)
         loadHistory()
         isLoading = false
     }
@@ -53,6 +62,88 @@ final class ChatStore: ObservableObject {
         errorMessage = nil
     }
 
+    @discardableResult
+    func addMemory(_ text: String) -> Bool {
+        guard let text = validatedMemory(text, excluding: nil) else { return false }
+        guard memories.count < Self.maximumMemoryCount else {
+            errorMessage = "В памяти уже \(Self.maximumMemoryCount) записей. Удалите ненужную запись, чтобы добавить новую."
+            return false
+        }
+        memories.append(HonorMemory(text: text))
+        errorMessage = nil
+        saveSnapshot()
+        return true
+    }
+
+    @discardableResult
+    func updateMemory(id: UUID, text: String) -> Bool {
+        guard let index = memories.firstIndex(where: { $0.id == id }),
+              let text = validatedMemory(text, excluding: id) else { return false }
+        memories[index].text = text
+        errorMessage = nil
+        saveSnapshot()
+        return true
+    }
+
+    func deleteMemory(id: UUID) {
+        memories.removeAll { $0.id == id }
+        saveSnapshot()
+    }
+
+    func clearMemories() {
+        memories = []
+        saveSnapshot()
+    }
+
+    private func validatedMemory(_ value: String, excluding id: UUID?) -> String? {
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= Self.maximumMemoryLength else {
+            errorMessage = "Запись памяти должна содержать от 1 до \(Self.maximumMemoryLength) символов."
+            return nil
+        }
+        guard !memories.contains(where: { $0.id != id && $0.text.caseInsensitiveCompare(text) == .orderedSame }) else {
+            errorMessage = "Такая запись уже есть в памяти Honor."
+            return nil
+        }
+        return text
+    }
+
+    var effectiveSystemInstruction: String {
+        guard memoryEnabled, !memories.isEmpty else { return systemInstruction }
+        let entries = memories.map { "• \($0.text)" }.joined(separator: "\n")
+        return systemInstruction + "\n\nПамять Honor — факты и предпочтения, которые пользователь явно сохранил и может редактировать. Учитывай их, когда они относятся к запросу; последнее сообщение пользователя важнее сохранённых предпочтений.\n\(entries)"
+    }
+
+    @discardableResult
+    func forkConversation(at messageID: UUID) -> UUID? {
+        guard let source = selectedConversation,
+              let messageIndex = source.messages.firstIndex(where: { $0.id == messageID }) else { return nil }
+        stop()
+        // Re-read after stop() so a copied live response is correctly marked interrupted.
+        guard let currentSource = conversations.first(where: { $0.id == source.id }) else { return nil }
+        let copies = currentSource.messages.prefix(messageIndex + 1).map { original -> ChatMessage in
+            var copy = original
+            copy.id = UUID()
+            copy.attachments = original.attachments.map { attachment in
+                var copy = attachment; copy.id = UUID(); return copy
+            }
+            copy.sources = original.sources.map { source in
+                var copy = source; copy.id = UUID(); return copy
+            }
+            return copy
+        }
+        let title = String(("Ветка · " + source.title).prefix(100))
+        let branch = Conversation(title: title, messages: copies, parentConversationID: source.id, forkedAtMessageID: messageID)
+        conversations.insert(branch, at: 0)
+        selectedConversationID = branch.id
+        editingMessageID = nil
+        draft = ""
+        attachments = []
+        errorMessage = nil
+        saveSnapshot()
+        return branch.id
+    }
+
     func send() {
         guard canSend else { return }
         guard hasAPIKey else { errorMessage = HonorError.missingAPIKey.localizedDescription; return }
@@ -65,8 +156,10 @@ final class ChatStore: ObservableObject {
         }
         guard let chatID = selectedConversationID,
               let index = conversations.firstIndex(where: { $0.id == chatID }) else { return }
+        var discardedAttachments: [MessageAttachment] = []
         if let editingID = editingMessageID,
            let messageIndex = conversations[index].messages.firstIndex(where: { $0.id == editingID && $0.role == .user }) {
+            discardedAttachments = conversations[index].messages[messageIndex...].flatMap(\.attachments)
             conversations[index].messages = Array(conversations[index].messages.prefix(messageIndex))
         }
         let user = ChatMessage(role: .user, content: text, attachments: outgoingAttachments)
@@ -79,11 +172,14 @@ final class ChatStore: ObservableObject {
         draft = ""
         attachments = []
         editingMessageID = nil
+        removeUnreferencedAttachments(discardedAttachments)
         beginGeneration(in: chatID)
     }
 
     func stop() {
         guard isGenerating else { return }
+        flushStreamingBuffer?()
+        flushStreamingBuffer = nil
         generationTask?.cancel()
         generationTask = nil
         if let chatID = activeConversationID, let messageID = activeMessageID {
@@ -94,7 +190,7 @@ final class ChatStore: ObservableObject {
         activeMessageID = nil
         isGenerating = false
         generationStatus = nil
-        persistNow()
+        saveSnapshot()
     }
 
     func regenerate(messageID: UUID) {
@@ -104,8 +200,10 @@ final class ChatStore: ObservableObject {
               let chatIndex = conversations.firstIndex(where: { $0.id == chatID }),
               let messageIndex = conversations[chatIndex].messages.firstIndex(where: { $0.id == messageID && $0.role == .assistant }),
               conversations[chatIndex].messages[..<messageIndex].contains(where: { $0.role == .user }) else { return }
+        let discardedAttachments = conversations[chatIndex].messages[messageIndex...].flatMap(\.attachments)
         conversations[chatIndex].messages = Array(conversations[chatIndex].messages.prefix(messageIndex))
         editingMessageID = nil
+        removeUnreferencedAttachments(discardedAttachments)
         beginGeneration(in: chatID)
     }
 
@@ -131,7 +229,7 @@ final class ChatStore: ObservableObject {
         draft = ""
         attachments = []
         errorMessage = nil
-        persistNow()
+        saveSnapshot()
     }
 
     func selectChat(id: UUID) {
@@ -143,7 +241,7 @@ final class ChatStore: ObservableObject {
         draft = ""
         attachments = []
         errorMessage = nil
-        persistNow()
+        saveSnapshot()
     }
 
     func deleteChats(ids: Set<UUID>) {
@@ -157,7 +255,7 @@ final class ChatStore: ObservableObject {
             attachments = []
         }
         removeUnreferencedAttachments(removedAttachments)
-        persistNow()
+        saveSnapshot()
     }
 
     func togglePin(ids: Set<UUID>) {
@@ -165,20 +263,20 @@ final class ChatStore: ObservableObject {
         guard !matching.isEmpty else { return }
         let pin = !matching.allSatisfy(\.pinned)
         for index in conversations.indices where ids.contains(conversations[index].id) { conversations[index].pinned = pin }
-        persistNow()
+        saveSnapshot()
     }
 
     func renameChat(id: UUID, title: String) {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         conversations[index].title = String(title.prefix(100))
-        persistNow()
+        saveSnapshot()
     }
 
     func setFeedback(messageID: UUID, feedback: MessageFeedback?) {
         guard let chatID = selectedConversationID else { return }
         mutateMessage(chatID: chatID, messageID: messageID) { $0.feedback = feedback }
-        persistNow()
+        saveSnapshot()
     }
 
     func clearAllChats() {
@@ -195,7 +293,7 @@ final class ChatStore: ObservableObject {
             do { try FileManager.default.removeItem(at: attachmentDirectory) }
             catch { errorMessage = "Не удалось удалить вложения: \(error.localizedDescription)" }
         }
-        persistNow()
+        saveSnapshot()
     }
 
     private func beginGeneration(in chatID: UUID) {
@@ -212,10 +310,10 @@ final class ChatStore: ObservableObject {
         isGenerating = true
         let thinking = reasoningEnabled
         let searching = searchEnabled
-        let instruction = systemInstruction
+        let instruction = effectiveSystemInstruction
         let client = injectedClient ?? DeepSeekClient(configuration: configuration)
         generationStatus = searching ? "Ищу в интернете…" : (thinking ? "Размышляю…" : "Отвечаю…")
-        persistNow()
+        saveSnapshot()
 
         generationTask = Task { [weak self] in
             guard let self else { return }
@@ -251,6 +349,10 @@ final class ChatStore: ObservableObject {
                     }
                     pendingContent = ""; pendingReasoning = ""; lastPublished = Date()
                 }
+                self.flushStreamingBuffer = { [weak self] in
+                    guard self?.activeRunID == runID else { return }
+                    flush()
+                }
 
                 do {
                     for try await delta in client.stream(messages: input, thinking: thinking, systemInstruction: instruction, searchContext: context) {
@@ -265,7 +367,7 @@ final class ChatStore: ObservableObject {
                         pendingReasoning += delta.reasoning
                         finishReason = delta.finishReason ?? finishReason
                         if Date().timeIntervalSince(lastPublished) >= 0.045 { flush() }
-                        if Date().timeIntervalSince(lastSaved) >= 1.5 { self.persistNow(); lastSaved = Date() }
+                        if Date().timeIntervalSince(lastSaved) >= 1.5 { self.saveSnapshot(); lastSaved = Date() }
                     }
                     flush()
                 } catch {
@@ -296,10 +398,11 @@ final class ChatStore: ObservableObject {
             self.activeRunID = nil
             self.activeConversationID = nil
             self.activeMessageID = nil
+            self.flushStreamingBuffer = nil
             self.isGenerating = false
             self.generationStatus = nil
             self.generationTask = nil
-            self.persistNow()
+            self.saveSnapshot()
         }
     }
 
@@ -327,94 +430,90 @@ final class ChatStore: ObservableObject {
             try? await Task.sleep(nanoseconds: 700_000_000)
             guard !Task.isCancelled, let self else { return }
             self.persistenceTask = nil
-            self.persistNow()
+            self.saveSnapshot()
         }
     }
 
+    private func saveSnapshot() {
+        guard !isLoading else { return }
+        persistenceTask?.cancel()
+        persistenceTask = nil
+        persistence.enqueue(archive) { [weak self] error in
+            Task { @MainActor in self?.errorMessage = "Не удалось сохранить историю: \(error.localizedDescription)" }
+        }
+    }
+
+    /// Explicit durability boundary for scene backgrounding and callers that must immediately read disk.
     func persistNow() {
         guard !isLoading else { return }
         persistenceTask?.cancel()
         persistenceTask = nil
         do {
-            try FileManager.default.createDirectory(at: storageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let data = try Self.encoder.encode(archive)
-            try data.write(to: storageURL, options: .atomic)
+            try persistence.saveSynchronously(archive)
         } catch {
             errorMessage = "Не удалось сохранить историю: \(error.localizedDescription)"
         }
     }
 
     func exportData() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Honor-История-\(Int(Date().timeIntervalSince1970)).json")
-        var exported = archive
-        var files: [String: Data] = [:]
-        var totalBytes = 0
-        let allAttachments = conversations.flatMap(\.messages).flatMap(\.attachments) + attachments
-        for attachment in allAttachments where files[attachment.id.uuidString] == nil {
-            guard let fileURL = attachment.resolvedURL else { continue }
-            let data = try Data(contentsOf: fileURL)
-            totalBytes += data.count
-            guard totalBytes <= 64 * 1024 * 1024 else { throw HonorError.requestTooLarge }
-            files[attachment.id.uuidString] = data
-        }
-        exported.attachmentFiles = files
-        try Self.encoder.encode(exported).write(to: url, options: .atomic)
-        return url
+        try HistoryArchiveIO.export(archive)
+    }
+
+    func exportDataAsync() async throws -> URL {
+        let snapshot = archive
+        return try await Task.detached(priority: .userInitiated) {
+            try HistoryArchiveIO.export(snapshot)
+        }.value
     }
 
     func importData(from url: URL) throws {
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-        let resource = try url.resourceValues(forKeys: [.fileSizeKey])
-        guard (resource.fileSize ?? 0) <= 100 * 1024 * 1024 else { throw HonorError.invalidArchive }
-        var incoming = try Self.decoder.decode(HistoryArchive.self, from: Data(contentsOf: url))
-        guard incoming.version == 1, Set(incoming.conversations.map(\.id)).count == incoming.conversations.count,
-              incoming.conversations.allSatisfy({ Set($0.messages.map(\.id)).count == $0.messages.count }) else { throw HonorError.invalidArchive }
-        stop()
-        let existing = Set(conversations.map(\.id))
-        incoming.conversations.removeAll { existing.contains($0.id) }
-        let attachmentDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("HonorPKAgent/Attachments", isDirectory: true)
-        try FileManager.default.createDirectory(at: attachmentDirectory, withIntermediateDirectories: true)
-        var restored: [UUID: String] = [:]
-        for chatIndex in incoming.conversations.indices {
-            for messageIndex in incoming.conversations[chatIndex].messages.indices {
-                for attachmentIndex in incoming.conversations[chatIndex].messages[messageIndex].attachments.indices {
-                    var attachment = incoming.conversations[chatIndex].messages[messageIndex].attachments[attachmentIndex]
-                    let originalExtension = attachment.localPath.map { URL(fileURLWithPath: $0).pathExtension.lowercased() } ?? ""
-                    // Never follow file paths supplied by an imported JSON archive.
-                    attachment.localPath = nil
-                    if let restoredPath = restored[attachment.id] { attachment.localPath = restoredPath }
-                    else if let data = incoming.attachmentFiles?[attachment.id.uuidString], data.count <= 32 * 1024 * 1024 {
-                        let allowedExtensions = ["jpg", "jpeg", "png", "gif", "webp", "pdf", "txt", "md", "csv", "json"]
-                        let suffix = allowedExtensions.contains(originalExtension) ? originalExtension : (attachment.kind == .image ? "jpg" : "txt")
-                        let target = attachmentDirectory.appendingPathComponent("\(UUID().uuidString).\(suffix)")
-                        try data.write(to: target, options: .atomic)
-                        attachment.localPath = target.path
-                        restored[attachment.id] = target.path
-                    }
-                    incoming.conversations[chatIndex].messages[messageIndex].attachments[attachmentIndex] = attachment
-                }
-            }
+        let incoming = try HistoryArchiveIO.prepareImport(from: url, excluding: Set(conversations.map(\.id)))
+        try applyImport(incoming)
+    }
+
+    func importDataAsync(from url: URL) async throws {
+        let existingIDs = Set(conversations.map(\.id))
+        let incoming = try await Task.detached(priority: .userInitiated) {
+            try HistoryArchiveIO.prepareImport(from: url, excluding: existingIDs)
+        }.value
+        try applyImport(incoming)
+    }
+
+    private func applyImport(_ incoming: HistoryArchive) throws {
+        var mergedMemories = memories
+        for memory in incoming.memories ?? [] {
+            guard !mergedMemories.contains(where: { $0.id == memory.id || $0.text.caseInsensitiveCompare(memory.text) == .orderedSame }) else { continue }
+            mergedMemories.append(memory)
         }
-        conversations += incoming.conversations
+        guard mergedMemories.count <= Self.maximumMemoryCount else {
+            removeUnreferencedAttachments(incoming.conversations.flatMap(\.messages).flatMap(\.attachments))
+            throw HonorError.memoryLimit
+        }
+        stop()
+        let wasEmpty = conversations.isEmpty && memories.isEmpty
+        let existing = Set(conversations.map(\.id))
+        conversations += incoming.conversations.filter { !existing.contains($0.id) }
         conversations.sort { $0.updatedAt > $1.updatedAt }
-        persistNow()
+        memories = mergedMemories
+        if wasEmpty { memoryEnabled = incoming.memoryEnabled ?? true }
+        saveSnapshot()
     }
 
     private var archive: HistoryArchive {
-        HistoryArchive(conversations: conversations, selectedConversationID: selectedConversationID, draft: draft, attachments: attachments, inFlightMessageID: activeMessageID)
+        HistoryArchive(conversations: conversations, selectedConversationID: selectedConversationID, draft: draft, attachments: attachments, inFlightMessageID: activeMessageID, memories: memories, memoryEnabled: memoryEnabled)
     }
 
     private func loadHistory() {
         guard FileManager.default.fileExists(atPath: storageURL.path) else { return }
         do {
-            let loaded = try Self.decoder.decode(HistoryArchive.self, from: Data(contentsOf: storageURL))
+            let loaded = try HistoryArchiveIO.decoder.decode(HistoryArchive.self, from: Data(contentsOf: storageURL))
             guard loaded.version == 1 else { throw HonorError.invalidArchive }
             conversations = loaded.conversations
             selectedConversationID = conversations.contains(where: { $0.id == loaded.selectedConversationID }) ? loaded.selectedConversationID : nil
             draft = loaded.draft
             attachments = loaded.attachments
+            memories = Array((loaded.memories ?? []).filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.text.count <= Self.maximumMemoryLength }.prefix(Self.maximumMemoryCount))
+            memoryEnabled = loaded.memoryEnabled ?? true
             // A process termination can leave an incomplete placeholder; make the interrupted state visible.
             for chatIndex in conversations.indices {
                 guard let last = conversations[chatIndex].messages.indices.last else { continue }
@@ -431,16 +530,138 @@ final class ChatStore: ObservableObject {
         }
     }
 
-    private static var encoder: JSONEncoder {
+}
+
+/// A single serial writer coalesces pending snapshots and performs JSON encoding away from the UI.
+private final class HistoryPersistence: @unchecked Sendable {
+    private struct Pending { let archive: HistoryArchive; let onError: (Error) -> Void }
+    private let url: URL
+    private let queue = DispatchQueue(label: "com.honorpk.history", qos: .utility)
+    private let lock = NSLock()
+    private var pending: Pending?
+    private var draining = false
+
+    init(url: URL) { self.url = url }
+
+    func enqueue(_ archive: HistoryArchive, onError: @escaping (Error) -> Void) {
+        lock.lock()
+        pending = Pending(archive: archive, onError: onError)
+        let shouldStart = !draining
+        draining = true
+        lock.unlock()
+        if shouldStart { queue.async { self.drain() } }
+    }
+
+    private func drain() {
+        while true {
+            lock.lock()
+            guard let next = pending else { draining = false; lock.unlock(); return }
+            pending = nil
+            lock.unlock()
+            do { try write(next.archive) } catch { next.onError(error) }
+        }
+    }
+
+    func saveSynchronously(_ archive: HistoryArchive) throws {
+        lock.lock(); pending = nil; lock.unlock()
+        try queue.sync { try self.write(archive) }
+    }
+
+    private func write(_ archive: HistoryArchive) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try HistoryArchiveIO.encoder.encode(archive).write(to: url, options: .atomic)
+    }
+}
+
+private enum HistoryArchiveIO {
+    static var encoder: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return encoder
     }
 
-    private static var decoder: JSONDecoder {
+    static var decoder: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }
+
+    static func export(_ snapshot: HistoryArchive) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Honor-История-\(UUID().uuidString.prefix(8)).json")
+        var exported = snapshot
+        var files: [String: Data] = [:]
+        var references: [String: String] = [:]
+        var canonicalFiles: [String: String] = [:]
+        var totalBytes = 0
+        for attachment in snapshot.conversations.flatMap(\.messages).flatMap(\.attachments) + snapshot.attachments {
+            let id = attachment.id.uuidString
+            guard files[id] == nil, references[id] == nil, let fileURL = attachment.resolvedURL else { continue }
+            if let canonicalID = canonicalFiles[fileURL.standardizedFileURL.path] { references[id] = canonicalID; continue }
+            let data = try Data(contentsOf: fileURL)
+            totalBytes += data.count
+            guard totalBytes <= 64 * 1024 * 1024 else { throw HonorError.archiveTooLarge }
+            files[id] = data
+            canonicalFiles[fileURL.standardizedFileURL.path] = id
+        }
+        exported.attachmentFiles = files
+        exported.attachmentFileReferences = references
+        let data = try encoder.encode(exported)
+        guard data.count <= 100 * 1024 * 1024 else { throw HonorError.archiveTooLarge }
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+
+    static func prepareImport(from url: URL, excluding existingIDs: Set<UUID>) throws -> HistoryArchive {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        let resource = try url.resourceValues(forKeys: [.fileSizeKey])
+        guard (resource.fileSize ?? 0) <= 100 * 1024 * 1024 else { throw HonorError.archiveTooLarge }
+        let bytes = try Data(contentsOf: url)
+        guard bytes.count <= 100 * 1024 * 1024 else { throw HonorError.archiveTooLarge }
+        var incoming = try decoder.decode(HistoryArchive.self, from: bytes)
+        guard incoming.version == 1, Set(incoming.conversations.map(\.id)).count == incoming.conversations.count,
+              incoming.conversations.allSatisfy({ Set($0.messages.map(\.id)).count == $0.messages.count }),
+              (incoming.memories?.count ?? 0) <= 50,
+              (incoming.memories ?? []).allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.text.count <= 1000 }),
+              (incoming.attachmentFiles ?? [:]).values.allSatisfy({ $0.count <= 32 * 1024 * 1024 }),
+              (incoming.attachmentFiles ?? [:]).values.reduce(0, { $0 + $1.count }) <= 64 * 1024 * 1024 else { throw HonorError.invalidArchive }
+        incoming.conversations.removeAll { existingIDs.contains($0.id) }
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("HonorPKAgent/Attachments", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var restored: [String: String] = [:]
+        var createdURLs: [URL] = []
+        do {
+            for chatIndex in incoming.conversations.indices {
+                for messageIndex in incoming.conversations[chatIndex].messages.indices {
+                    for attachmentIndex in incoming.conversations[chatIndex].messages[messageIndex].attachments.indices {
+                        var attachment = incoming.conversations[chatIndex].messages[messageIndex].attachments[attachmentIndex]
+                        let suffix = attachment.localPath.map { URL(fileURLWithPath: $0).pathExtension.lowercased() } ?? ""
+                        attachment.localPath = nil // Imported paths can never authorize local file reads.
+                        let id = attachment.id.uuidString
+                        let canonicalID = incoming.attachmentFileReferences?[id] ?? id
+                        if let path = restored[canonicalID] { attachment.localPath = path }
+                        else if let data = incoming.attachmentFiles?[canonicalID] {
+                            let allowed = ["jpg", "jpeg", "png", "gif", "webp", "pdf", "txt", "md", "csv", "json"]
+                            let ext = allowed.contains(suffix) ? suffix : (attachment.kind == .image ? "jpg" : "txt")
+                            let target = directory.appendingPathComponent("\(UUID().uuidString).\(ext)")
+                            try data.write(to: target, options: .atomic)
+                            createdURLs.append(target)
+                            restored[canonicalID] = target.path
+                            attachment.localPath = target.path
+                        }
+                        incoming.conversations[chatIndex].messages[messageIndex].attachments[attachmentIndex] = attachment
+                    }
+                }
+            }
+        } catch {
+            for createdURL in createdURLs { try? FileManager.default.removeItem(at: createdURL) }
+            throw error
+        }
+        incoming.attachmentFiles = nil
+        incoming.attachmentFileReferences = nil
+        return incoming
+    }
 }
+

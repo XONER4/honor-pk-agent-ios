@@ -11,7 +11,8 @@ enum AttachmentService {
     private static let maximumTextLength = 160_000
 
     static func importImage(data: Data, name: String = "Фото.jpg") async throws -> MessageAttachment {
-        try await Task.detached(priority: .userInitiated) {
+        let worker = Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
             guard data.count <= maximumFileBytes else { throw AttachmentError.tooLarge }
             guard let source = CGImageSourceCreateWithData(data as CFData, nil),
                   let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, [
@@ -29,12 +30,18 @@ enum AttachmentService {
             }
             let id = UUID()
             let savedURL = try destination(id: id, extension: "jpg")
-            try jpeg.write(to: savedURL, options: .atomic)
             let extracted = (try? recognizedText(cgImage: cgImage)) ?? ""
+            try Task.checkCancellation()
+            try jpeg.write(to: savedURL, options: .atomic)
             let displayName = (name as NSString).deletingPathExtension + ".jpg"
             return MessageAttachment(id: id, name: displayName, kind: .image,
                                      extractedText: extracted, localPath: savedURL.path)
-        }.value
+        }
+        return try await withTaskCancellationHandler {
+            try await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
     }
 
     static func importFile(url: URL) async throws -> MessageAttachment {
@@ -44,11 +51,13 @@ enum AttachmentService {
         guard values.isRegularFile != false else { throw AttachmentError.unsupported }
         guard (values.fileSize ?? 0) <= maximumFileBytes else { throw AttachmentError.tooLarge }
         let data = try await Task.detached(priority: .userInitiated) { try Data(contentsOf: url) }.value
+        try Task.checkCancellation()
         guard data.count <= maximumFileBytes else { throw AttachmentError.tooLarge }
         if UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true {
             return try await importImage(data: data, name: url.lastPathComponent)
         }
-        return try await Task.detached(priority: .userInitiated) {
+        let worker = Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
             let fileExtension = url.pathExtension.lowercased()
             let text: String
             let kind: AttachmentKind
@@ -69,10 +78,16 @@ enum AttachmentService {
             guard text.count <= maximumTextLength else { throw AttachmentError.tooMuchText }
             let id = UUID()
             let savedURL = try destination(id: id, extension: fileExtension)
+            try Task.checkCancellation()
             try data.write(to: savedURL, options: .atomic)
             return MessageAttachment(id: id, name: url.lastPathComponent, kind: kind,
                                      extractedText: text, localPath: savedURL.path)
-        }.value
+        }
+        return try await withTaskCancellationHandler {
+            try await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
     }
 
     private static func destination(id: UUID, extension fileExtension: String) throws -> URL {
@@ -101,6 +116,7 @@ enum AttachmentService {
         var pages: [String] = []
         var totalLength = 0
         for index in 0..<document.pageCount {
+            try Task.checkCancellation()
             guard let page = document.page(at: index) else { continue }
             var text = page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if text.isEmpty {
@@ -145,6 +161,7 @@ struct AttachmentTray: View {
     @State private var showsFiles = false
     @State private var isLoading = false
     @State private var processingTask: Task<Void, Never>?
+    @State private var showsCameraPermissionAlert = false
 
     var body: some View {
         let photoLabel = tile("photo", settings.text("Альбом", "Photos"))
@@ -160,10 +177,13 @@ struct AttachmentTray: View {
             }
             HStack(spacing: 9) {
                 Button { openCamera() } label: { tile("camera", settings.text("Камера", "Camera")) }
+                    .accessibilityIdentifier("attachment.camera")
                 PhotosPicker(selection: $selectedPhoto, matching: .images, photoLibrary: .shared()) {
                     photoLabel
                 }
+                .accessibilityIdentifier("attachment.album")
                 Button { showsFiles = true } label: { tile("paperclip", settings.text("Файл", "File")) }
+                    .accessibilityIdentifier("attachment.file")
             }
             .buttonStyle(.plain)
             .disabled(isLoading)
@@ -232,8 +252,20 @@ struct AttachmentTray: View {
                         if !(error is CancellationError) { onError(error.localizedDescription) }
                     }
                 }
-            case .failure(let error): onError(error.localizedDescription)
+            case .failure(let error):
+                if (error as NSError).code != NSUserCancelledError { onError(error.localizedDescription) }
             }
+        }
+        .alert(settings.text("Доступ к камере", "Camera access"), isPresented: $showsCameraPermissionAlert) {
+            Button(settings.text("Отмена", "Cancel"), role: .cancel) {}
+                .accessibilityIdentifier("attachment.permission.cancel")
+            Button(settings.text("Настройки iPhone", "iPhone Settings")) {
+                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+            }
+            .accessibilityIdentifier("attachment.permission.settings")
+        } message: {
+            Text(settings.text("Разрешите доступ к камере для Honor PK Agent в настройках iPhone.",
+                               "Allow camera access for Honor PK Agent in iPhone Settings."))
         }
         .onDisappear { processingTask?.cancel() }
     }
@@ -259,8 +291,7 @@ struct AttachmentTray: View {
             let allowed = await AVCaptureDevice.requestAccess(for: .video)
             guard !Task.isCancelled else { return }
             if allowed { showsCamera = true }
-            else { onError(settings.text("Разрешите доступ к камере в настройках iPhone → Honor PK Agent.",
-                                          "Allow camera access in iPhone Settings → Honor PK Agent.")) }
+            else { showsCameraPermissionAlert = true }
         }
     }
 }

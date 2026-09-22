@@ -3,9 +3,23 @@ import Darwin
 
 @main
 struct HonorPKAgentApp: App {
-    @StateObject private var settings = AppSettings()
-    @StateObject private var store = ChatStore()
+    @StateObject private var settings: AppSettings
+    @StateObject private var store: ChatStore
+    @State private var didConfigure = false
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        #if DEBUG
+        if UITestSupport.isEnabled {
+            let test = UITestSupport.makeEnvironment()
+            _settings = StateObject(wrappedValue: test.settings)
+            _store = StateObject(wrappedValue: test.store)
+            return
+        }
+        #endif
+        _settings = StateObject(wrappedValue: AppSettings())
+        _store = StateObject(wrappedValue: ChatStore())
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -26,27 +40,13 @@ struct HonorPKAgentApp: App {
             .preferredColorScheme(settings.preferredColorScheme)
             .tint(Color(red: 0.40, green: 0.60, blue: 0.98))
             .onAppear {
+                guard !didConfigure else { return }
+                didConfigure = true
                 store.systemInstruction = settings.customInstructions
                 if !settings.apiKeyOverride.isEmpty { store.updateAPIKey(settings.apiKeyOverride) }
-                if ProcessInfo.processInfo.arguments.contains("-UITestWelcome") {
-                    store.clearAllChats()
-                    settings.appearance = .dark
-                } else if ProcessInfo.processInfo.arguments.contains("-UITestDemo") {
-                    store.clearAllChats()
-                    settings.appearance = .dark
-                    var answer = ChatMessage(role: .assistant, content: "Привет! У меня всё отлично, спасибо, что спросил. А как твои дела?")
-                    answer.reasoning = "Это демонстрационный текст для проверки раскрывающейся панели интерфейса."
-                    answer.reasoningSeconds = 1
-                    let chat = Conversation(title: "Приветствие", messages: [ChatMessage(role: .user, content: "Привет, как твои дела?"), answer])
-                    var pinned = Conversation(title: "Идеи для проекта")
-                    pinned.pinned = true
-                    var yesterday = Conversation(title: "Выбор смартфона")
-                    yesterday.updatedAt = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
-                    var earlier = Conversation(title: "Дизайн приложения")
-                    earlier.updatedAt = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
-                    store.conversations = [chat, pinned, yesterday, earlier]
-                    store.selectedConversationID = chat.id
-                }
+                #if DEBUG
+                UITestSupport.seedIfNeeded(store: store)
+                #endif
             }
             .onChange(of: settings.customInstructions) { store.systemInstruction = $0 }
             .onChange(of: settings.apiKeyOverride) { store.updateAPIKey($0.isEmpty ? DeepSeekConfiguration.bundled.apiKey : $0) }
@@ -67,9 +67,13 @@ enum DeviceCompatibility {
         let identifier = withUnsafePointer(to: &info.machine) {
             $0.withMemoryRebound(to: CChar.self, capacity: 256) { String(cString: $0) }
         }
+        return supports(identifier: identifier)
+        #endif
+    }
+
+    static func supports(identifier: String) -> Bool {
         guard identifier.hasPrefix("iPhone"), identifier != "iPhone14,6",
               let generation = Int(identifier.dropFirst(6).split(separator: ",").first ?? "") else { return false }
         return generation >= 14
-        #endif
     }
 }

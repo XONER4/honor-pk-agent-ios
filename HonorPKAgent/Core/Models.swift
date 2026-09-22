@@ -1,10 +1,10 @@
 import Foundation
 
-enum MessageRole: String, Codable { case user, assistant }
-enum MessageFeedback: String, Codable { case like, dislike }
-enum AttachmentKind: String, Codable { case image, document, text }
+enum MessageRole: String, Codable, Sendable { case user, assistant }
+enum MessageFeedback: String, Codable, Sendable { case like, dislike }
+enum AttachmentKind: String, Codable, Sendable { case image, document, text }
 
-struct MessageAttachment: Identifiable, Codable, Equatable {
+struct MessageAttachment: Identifiable, Codable, Equatable, Sendable {
     var id: UUID = UUID()
     var name: String
     var kind: AttachmentKind
@@ -27,14 +27,14 @@ struct MessageAttachment: Identifiable, Codable, Equatable {
     }
 }
 
-struct WebSource: Identifiable, Codable, Equatable {
+struct WebSource: Identifiable, Codable, Equatable, Sendable {
     var id: UUID = UUID()
     var title: String
     var url: URL
     var snippet: String
 }
 
-struct ChatMessage: Identifiable, Codable, Equatable {
+struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     var id: UUID = UUID()
     var role: MessageRole
     var content: String = ""
@@ -48,26 +48,37 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     var isInterrupted: Bool = false
 }
 
-struct Conversation: Identifiable, Codable, Equatable {
+struct Conversation: Identifiable, Codable, Equatable, Sendable {
     var id: UUID = UUID()
     var title: String = "Новый чат"
     var messages: [ChatMessage] = []
     var pinned: Bool = false
     var updatedAt: Date = Date()
     var createdAt: Date = Date()
+    var parentConversationID: UUID? = nil
+    var forkedAtMessageID: UUID? = nil
 }
 
-struct HistoryArchive: Codable {
+struct HonorMemory: Identifiable, Codable, Equatable, Sendable {
+    var id: UUID = UUID()
+    var text: String
+    var createdAt: Date = Date()
+}
+
+struct HistoryArchive: Codable, Sendable {
     var version: Int = 1
     var conversations: [Conversation]
     var selectedConversationID: UUID?
     var draft: String = ""
     var attachments: [MessageAttachment] = []
     var attachmentFiles: [String: Data]? = nil
+    var attachmentFileReferences: [String: String]? = nil
     var inFlightMessageID: UUID? = nil
+    var memories: [HonorMemory]? = nil
+    var memoryEnabled: Bool? = nil
 }
 
-struct DeepSeekConfiguration {
+struct DeepSeekConfiguration: Sendable {
     var apiKey: String
     var baseURL: URL = URL(string: "https://api.deepseek.com")!
     var model: String = "deepseek-flash"
@@ -90,7 +101,7 @@ struct DeepSeekConfiguration {
 
 enum HonorError: LocalizedError {
     case missingAPIKey, invalidResponse, unfinishedResponse, emptyResponse
-    case http(Int, String), searchUnavailable, attachmentUnavailable(String), requestTooLarge, invalidArchive
+    case http(Int, String), searchUnavailable, attachmentUnavailable(String), requestTooLarge, invalidArchive, archiveTooLarge, memoryLimit
 
     var errorDescription: String? {
         switch self {
@@ -102,6 +113,8 @@ enum HonorError: LocalizedError {
         case .attachmentUnavailable(let name): return "Не удалось прочитать вложение «\(name)». Прикрепите файл ещё раз."
         case .requestTooLarge: return "Слишком много вложений в этом разговоре. Начните новый чат или отправьте меньше изображений."
         case .invalidArchive: return "Этот файл не является поддерживаемым архивом Honor."
+        case .archiveTooLarge: return "Архив слишком большой: поддерживается до 100 МБ, включая до 64 МБ файлов."
+        case .memoryLimit: return "После импорта в памяти будет больше 50 записей. Удалите ненужные записи перед импортом."
         case .http(let status, let message):
             switch status {
             case 401, 403: return "DeepSeek не принял API-ключ. Проверьте его в настройках аккаунта."

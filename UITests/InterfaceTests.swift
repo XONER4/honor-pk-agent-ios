@@ -10,7 +10,7 @@ final class InterfaceTests: XCTestCase {
 
     func testWelcomeComposerAndAttachments() {
         let app = XCUIApplication()
-        app.launchArguments = ["-UITestWelcome"]
+        app.launchArguments = ["-UITestWelcome", "-UITestReset", "-UITestFixture"]
         app.launch()
         XCTAssertTrue(app.buttons["chat.sidebar"].waitForExistence(timeout: 10))
         capture("01-welcome")
@@ -28,7 +28,7 @@ final class InterfaceTests: XCTestCase {
 
     func testConversationHistoryAndSettings() {
         let app = XCUIApplication()
-        app.launchArguments = ["-UITestDemo"]
+        app.launchArguments = ["-UITestDemo", "-UITestReset", "-UITestFixture"]
         app.launch()
         XCTAssertTrue(app.buttons["chat.sidebar"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Привет, как твои дела?"].exists)
@@ -55,7 +55,7 @@ final class InterfaceTests: XCTestCase {
 
     func testLiveDeepSeekRoundTrip() {
         let app = XCUIApplication()
-        app.launchArguments = ["-UITestWelcome"]
+        app.launchArguments = ["-UITestWelcome", "-UITestReset"]
         app.launch()
         XCTAssertTrue(app.buttons["composer.reasoning"].waitForExistence(timeout: 10))
         app.buttons["composer.reasoning"].tap()

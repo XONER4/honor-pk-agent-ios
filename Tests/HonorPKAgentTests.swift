@@ -19,6 +19,14 @@ final class HonorPKAgentTests: XCTestCase {
         XCTAssertEqual(decoder.finish(), "{\"choices\":[]}")
     }
 
+    func testSSEDecoderAcceptsBOMAndCarriageReturnOnlyFrames() {
+        var decoder = SSEDecoder()
+        let input = "\u{FEFF}data: first\r\rdata: second\r\rdata: [DONE]"
+        let events = input.utf8.compactMap { decoder.append($0) }
+        XCTAssertEqual(events, ["first", "second"])
+        XCTAssertEqual(decoder.finish(), "[DONE]")
+    }
+
     func testRequestUsesCurrentModelThinkingAndDoesNotReplayReasoning() throws {
         let configuration = DeepSeekConfiguration(apiKey: "test-key")
         let client = DeepSeekClient(configuration: configuration)
@@ -93,6 +101,7 @@ final class HonorPKAgentTests: XCTestCase {
         XCTAssertEqual(answer.reasoning, "Анализ")
         XCTAssertGreaterThanOrEqual(answer.reasoningSeconds, 1)
         store.setFeedback(messageID: answer.id, feedback: .like)
+        store.persistNow()
         let restored = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"), storageURL: url)
         XCTAssertEqual(restored.messages.last?.feedback, .like)
         XCTAssertEqual(restored.messages.last?.content, "Ответ")
@@ -188,6 +197,164 @@ final class HonorPKAgentTests: XCTestCase {
     }
 
     @MainActor
+    func testForkPreservesSourceAndCopiesOnlyThroughSelectedMessageWithFreshIDs() throws {
+        let attachment = MessageAttachment(name: "note.txt", kind: .text, extractedText: "Source")
+        let source = Conversation(title: "Original", messages: [
+            ChatMessage(role: .user, content: "Question", attachments: [attachment]),
+            ChatMessage(role: .assistant, content: "Answer", sources: [WebSource(title: "Source", url: URL(string: "https://example.com")!, snippet: "Text")]),
+            ChatMessage(role: .user, content: "Later")
+        ], pinned: true)
+        let store = ChatStore(configuration: .init(apiKey: "test"), storageURL: temporaryHistory())
+        store.conversations = [source]
+        store.selectedConversationID = source.id
+        let branchID = try XCTUnwrap(store.forkConversation(at: source.messages[1].id))
+        XCTAssertEqual(store.conversations.first(where: { $0.id == source.id }), source)
+        let branch = try XCTUnwrap(store.selectedConversation)
+        XCTAssertEqual(branch.id, branchID)
+        XCTAssertEqual(branch.messages.map(\.content), ["Question", "Answer"])
+        XCTAssertTrue(Set(branch.messages.map(\.id)).isDisjoint(with: Set(source.messages.map(\.id))))
+        XCTAssertNotEqual(branch.messages[0].attachments[0].id, attachment.id)
+        XCTAssertNotEqual(branch.messages[1].sources[0].id, source.messages[1].sources[0].id)
+        XCTAssertEqual(branch.parentConversationID, source.id)
+        XCTAssertEqual(branch.forkedAtMessageID, source.messages[1].id)
+        XCTAssertFalse(branch.pinned)
+        XCTAssertFalse(store.isGenerating)
+    }
+
+    @MainActor
+    func testDeletingSourceKeepsSharedBranchPhotoUntilLastReferenceDeleted() throws {
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("HonorPKAgent/Attachments")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let imageURL = directory.appendingPathComponent("test-\(UUID()).jpg")
+        try Data([0xff, 0xd8, 0xff, 0xd9]).write(to: imageURL)
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+        let message = ChatMessage(role: .user, content: "Image", attachments: [MessageAttachment(name: "photo.jpg", kind: .image, localPath: imageURL.path)])
+        let source = Conversation(messages: [message])
+        let store = ChatStore(configuration: .init(apiKey: "test"), storageURL: temporaryHistory())
+        store.conversations = [source]; store.selectedConversationID = source.id
+        let branchID = try XCTUnwrap(store.forkConversation(at: message.id))
+        store.deleteChats(ids: [source.id])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: imageURL.path))
+        store.deleteChats(ids: [branchID])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: imageURL.path))
+    }
+
+    @MainActor
+    func testExplicitMemoryIsValidatedEditablePersistentAndPreservedWhenChatsCleared() throws {
+        let url = temporaryHistory()
+        let store = ChatStore(configuration: .init(apiKey: "test"), storageURL: url)
+        XCTAssertFalse(store.addMemory(" \n"))
+        XCTAssertFalse(store.addMemory(String(repeating: "x", count: 1001)))
+        XCTAssertTrue(store.addMemory("  Обращайся ко мне на ты  "))
+        XCTAssertFalse(store.addMemory("обращайся ко мне на ты"))
+        let id = try XCTUnwrap(store.memories.first?.id)
+        XCTAssertTrue(store.updateMemory(id: id, text: "Отвечай кратко"))
+        store.memoryEnabled = false
+        store.clearAllChats()
+        store.persistNow()
+        let restored = ChatStore(configuration: .init(apiKey: "test"), storageURL: url)
+        XCTAssertEqual(restored.memories.map(\.text), ["Отвечай кратко"])
+        XCTAssertFalse(restored.memoryEnabled)
+        restored.deleteMemory(id: id)
+        XCTAssertTrue(restored.memories.isEmpty)
+    }
+
+    @MainActor
+    func testMemoryToggleControlsRealRequestInstructionsAndDoesNotExtractReplies() async throws {
+        let client = CapturingClient()
+        let store = ChatStore(configuration: .init(apiKey: "test"), client: client, storageURL: temporaryHistory())
+        store.systemInstruction = "Будь вежлив"
+        store.addMemory("Мой любимый цвет — синий")
+        store.draft = "Первый вопрос"; store.send()
+        try await waitUntilIdle(store)
+        XCTAssertTrue(client.instructions[0].contains("Мой любимый цвет — синий"))
+        XCTAssertTrue(client.instructions[0].contains("Будь вежлив"))
+        XCTAssertEqual(store.memories.count, 1)
+        store.memoryEnabled = false
+        store.draft = "Второй вопрос"; store.send()
+        try await waitUntilIdle(store)
+        XCTAssertEqual(client.instructions[1], "Будь вежлив")
+        XCTAssertEqual(store.memories.count, 1)
+    }
+
+    @MainActor
+    func testLegacyArchiveLoadsWithoutMemoryOrBranchMetadata() throws {
+        let url = temporaryHistory()
+        let old = HistoryArchive(conversations: [Conversation(title: "Old")], selectedConversationID: nil)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(old)
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("memories"))
+        try data.write(to: url)
+        let store = ChatStore(configuration: .init(apiKey: "test"), storageURL: url)
+        XCTAssertEqual(store.conversations.first?.title, "Old")
+        XCTAssertTrue(store.memories.isEmpty)
+        XCTAssertTrue(store.memoryEnabled)
+        XCTAssertNil(store.conversations.first?.parentConversationID)
+    }
+
+    @MainActor
+    func testAsyncArchiveRoundTripRestoresMemoryWithoutDuplicates() async throws {
+        let store = ChatStore(configuration: .init(apiKey: "test"), storageURL: temporaryHistory())
+        store.addMemory("Люблю подробные примеры")
+        store.memoryEnabled = false
+        store.conversations = [Conversation(title: "Exported", messages: [ChatMessage(role: .user, content: "Hello")])]
+        let url = try await store.exportDataAsync()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let restored = ChatStore(configuration: .init(apiKey: "test"), storageURL: temporaryHistory())
+        try await restored.importDataAsync(from: url)
+        try await restored.importDataAsync(from: url)
+        XCTAssertEqual(restored.conversations.count, 1)
+        XCTAssertEqual(restored.memories.map(\.text), ["Люблю подробные примеры"])
+        XCTAssertFalse(restored.memoryEnabled)
+    }
+
+    @MainActor
+    func testOverCapacityMemoryImportLeavesExistingChatsAndMemoriesUntouched() throws {
+        let store = ChatStore(configuration: .init(apiKey: "test"), storageURL: temporaryHistory())
+        for index in 0..<50 { XCTAssertTrue(store.addMemory("Memory \(index)")) }
+        let old = Conversation(title: "Keep me")
+        store.conversations = [old]
+        let incoming = HistoryArchive(conversations: [Conversation(title: "Do not partially import")], selectedConversationID: nil,
+                                      memories: [HonorMemory(text: "Memory 51")])
+        let url = temporaryHistory()
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(incoming).write(to: url)
+        XCTAssertThrowsError(try store.importData(from: url))
+        XCTAssertEqual(store.conversations, [old])
+        XCTAssertEqual(store.memories.count, 50)
+    }
+
+    @MainActor
+    func testStopFlushesBufferedTokensAndDeletedConversationCannotReturnFromPendingWrites() async throws {
+        let url = temporaryHistory()
+        let client = ControlledClient()
+        let store = ChatStore(configuration: .init(apiKey: "test"), client: client, storageURL: url)
+        store.draft = "Delete this conversation"; store.send()
+        for _ in 0..<50 where client.continuations.isEmpty { try await Task.sleep(nanoseconds: 5_000_000) }
+        let firstID = try XCTUnwrap(store.selectedConversationID)
+        let firstStream = try XCTUnwrap(client.continuations.first)
+        firstStream.yield(.init(content: "First "))
+        firstStream.yield(.init(content: "buffered"))
+        try await Task.sleep(nanoseconds: 10_000_000)
+        store.stop()
+        XCTAssertEqual(store.messages.last?.content, "First buffered")
+        store.deleteChats(ids: [firstID])
+        firstStream.yield(.init(content: "STALE")); firstStream.finish()
+        store.draft = "Keep this conversation"; store.send()
+        for _ in 0..<50 where client.continuations.count < 2 { try await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertEqual(client.continuations.count, 2)
+        client.continuations.last?.yield(.init(content: "Fresh"))
+        client.continuations.last?.finish()
+        try await waitUntilIdle(store)
+        store.persistNow()
+        let restored = ChatStore(configuration: .init(apiKey: "test"), storageURL: url)
+        XCTAssertEqual(restored.conversations.count, 1)
+        XCTAssertFalse(restored.conversations.contains(where: { $0.id == firstID }))
+        XCTAssertEqual(restored.messages.last?.content, "Fresh")
+    }
+
+    @MainActor
     private func waitUntilIdle(_ store: ChatStore) async throws {
         for _ in 0..<200 {
             if !store.isGenerating { return }
@@ -220,4 +387,16 @@ private final class ControlledClient: DeepSeekStreaming {
 
 private struct FailingSearch: WebSearching {
     func search(_ query: String) async throws -> [WebSource] { throw HonorError.searchUnavailable }
+}
+
+private final class CapturingClient: DeepSeekStreaming {
+    var instructions: [String] = []
+    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String, searchContext: String) -> AsyncThrowingStream<DeepSeekDelta, Error> {
+        instructions.append(systemInstruction)
+        return AsyncThrowingStream { continuation in
+            continuation.yield(.init(content: "Мне нравится зелёный"))
+            continuation.yield(.init(finishReason: "stop"))
+            continuation.finish()
+        }
+    }
 }

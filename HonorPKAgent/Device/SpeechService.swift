@@ -9,6 +9,7 @@ final class SpeechService: NSObject, ObservableObject {
     @Published private(set) var isSpeaking = false
     @Published private(set) var transcript = ""
     @Published var errorMessage: String?
+    @Published private(set) var needsPermissionSettings = false
 
     private let engine = AVAudioEngine()
     private let synthesizer = AVSpeechSynthesizer()
@@ -18,6 +19,7 @@ final class SpeechService: NSObject, ObservableObject {
     private var tapInstalled = false
     private var recordingID = UUID()
     private var preparingRecording = false
+    private var activeUtterance: AVSpeechUtterance?
     private var interruptionObserver: NSObjectProtocol?
     private var backgroundObserver: NSObjectProtocol?
 
@@ -26,7 +28,9 @@ final class SpeechService: NSObject, ObservableObject {
         synthesizer.delegate = self
         interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] notification in
+            guard let rawValue = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  AVAudioSession.InterruptionType(rawValue: rawValue) == .began else { return }
             Task { @MainActor in
                 self?.stopRecording()
                 self?.stopSpeaking()
@@ -52,6 +56,7 @@ final class SpeechService: NSObject, ObservableObject {
         preparingRecording = true
         defer { preparingRecording = false }
         errorMessage = nil
+        needsPermissionSettings = false
         stopSpeaking()
         let token = UUID()
         recordingID = token
@@ -62,6 +67,7 @@ final class SpeechService: NSObject, ObservableObject {
         }
         guard recordingID == token else { return }
         guard authorized else {
+            needsPermissionSettings = true
             errorMessage = language.hasPrefix("ru")
                 ? "Разрешите распознавание речи в настройках iPhone → Honor PK Agent."
                 : "Allow speech recognition in iPhone Settings → Honor PK Agent."
@@ -74,6 +80,7 @@ final class SpeechService: NSObject, ObservableObject {
         }
         guard recordingID == token else { return }
         guard microphoneAllowed else {
+            needsPermissionSettings = true
             errorMessage = language.hasPrefix("ru")
                 ? "Разрешите доступ к микрофону в настройках iPhone → Honor PK Agent."
                 : "Allow microphone access in iPhone Settings → Honor PK Agent."
@@ -138,14 +145,17 @@ final class SpeechService: NSObject, ObservableObject {
         recognitionRequest = nil
         recognizer = nil
         isRecording = false
-        if !synthesizer.isSpeaking {
+        if activeUtterance == nil {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
 
     func speak(_ text: String, voiceIdentifier: String = "", language: String = "ru-RU") {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        errorMessage = nil
+        needsPermissionSettings = false
         stopRecording()
+        activeUtterance = nil
         synthesizer.stopSpeaking(at: .immediate)
         do {
             let session = AVAudioSession.sharedInstance()
@@ -155,19 +165,29 @@ final class SpeechService: NSObject, ObservableObject {
             utterance.voice = voiceIdentifier.isEmpty ? AVSpeechSynthesisVoice(language: language) : AVSpeechSynthesisVoice(identifier: voiceIdentifier)
             if utterance.voice == nil { utterance.voice = AVSpeechSynthesisVoice(language: language) }
             utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+            activeUtterance = utterance
             isSpeaking = true
             synthesizer.speak(utterance)
         } catch {
+            activeUtterance = nil
+            isSpeaking = false
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             errorMessage = error.localizedDescription
         }
     }
 
     func stopSpeaking() {
+        activeUtterance = nil
         synthesizer.stopSpeaking(at: .immediate)
         isSpeaking = false
         if !isRecording {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
+    }
+
+    func clearError() {
+        errorMessage = nil
+        needsPermissionSettings = false
     }
 
     private enum SpeechFailure: LocalizedError {
@@ -179,7 +199,8 @@ final class SpeechService: NSObject, ObservableObject {
 extension SpeechService: AVSpeechSynthesizerDelegate {
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor [weak self] in
-            guard let self, !self.synthesizer.isSpeaking else { return }
+            guard let self, self.activeUtterance === utterance else { return }
+            self.activeUtterance = nil
             self.isSpeaking = false
             if !self.isRecording {
                 try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -188,8 +209,12 @@ extension SpeechService: AVSpeechSynthesizerDelegate {
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         Task { @MainActor [weak self] in
-            guard let self, !self.synthesizer.isSpeaking else { return }
+            guard let self, self.activeUtterance === utterance else { return }
+            self.activeUtterance = nil
             self.isSpeaking = false
+            if !self.isRecording {
+                try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            }
         }
     }
 }

@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Set up project
@@ -39,13 +39,35 @@ jobs:
           xcrun simctl status_bar "$DEVICE" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
           xcodebuild -project HonorPKAgent.xcodeproj -scheme HonorPKAgent -configuration Debug \
             -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath build/simulator \
-            -resultBundlePath build/TestResults.xcresult CODE_SIGNING_ALLOWED=NO test > build-tests.log 2>&1
+            -parallel-testing-enabled NO -resultBundlePath build/TestResults.xcresult CODE_SIGNING_ALLOWED=NO test > build-tests.log 2>&1
+      - name: Check compact and large iPhone layouts
+        run: |
+          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["identifier"] for x in reversed(d["runtimes"]) if "iOS" in x["name"] and x["isAvailable"]))')
+          xcrun simctl shutdown all
+          for MODEL in iPhone-13-mini iPhone-16-Pro; do
+            DEVICE=$(xcrun simctl create "Honor $MODEL" "com.apple.CoreSimulator.SimDeviceType.$MODEL" "$RUNTIME")
+            xcrun simctl boot "$DEVICE"
+            xcrun simctl bootstatus "$DEVICE" -b
+            xcrun simctl status_bar "$DEVICE" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+            xcodebuild -project HonorPKAgent.xcodeproj -scheme HonorPKAgent -configuration Debug \
+              -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath build/simulator \
+              -parallel-testing-enabled NO -resultBundlePath "build/$MODEL.xcresult" CODE_SIGNING_ALLOWED=NO \
+              -only-testing:HonorPKAgentUITests/InterfaceTests/testWelcomeComposerAndAttachments \
+              -only-testing:HonorPKAgentUITests/InterfaceTests/testConversationHistoryAndSettings \
+              test-without-building > "build-$MODEL.log" 2>&1
+            xcrun simctl shutdown "$DEVICE"
+          done
       - name: Export screenshots
         if: always()
         run: |
           if [ -d build/TestResults.xcresult ]; then
             xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/screenshots || true
           fi
+          for MODEL in iPhone-13-mini iPhone-16-Pro; do
+            if [ -d "build/$MODEL.xcresult" ]; then
+              xcrun xcresulttool export attachments --path "build/$MODEL.xcresult" --output-path "build/screenshots-$MODEL" || true
+            fi
+          done
       - name: Upload validation
         if: always()
         uses: actions/upload-artifact@v4
@@ -54,4 +76,8 @@ jobs:
           path: |
             build-*.log
             build/screenshots
+            build/screenshots-iPhone-13-mini
+            build/screenshots-iPhone-16-Pro
             build/TestResults.xcresult
+            build/iPhone-13-mini.xcresult
+            build/iPhone-16-Pro.xcresult

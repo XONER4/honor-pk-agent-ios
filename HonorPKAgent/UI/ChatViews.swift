@@ -11,12 +11,14 @@ struct ChatRootView: View {
     @State private var attachmentsOpen = false
     @State private var settingsOpen = false
     @State private var selectedText: SelectedText?
+    @State private var memoryDraft: SelectedText?
     @State private var menuMessage: ChatMessage?
     @State private var shareItem: SharedText?
     @State private var deviceError: String?
     @State private var toast: String?
     @State private var toastTask: Task<Void, Never>?
     @State private var speechDraftPrefix = ""
+    @State private var speakingContent: String?
     @FocusState private var composerFocused: Bool
 
     private func text(_ ru: String, _ en: String) -> String { settings.text(ru, en) }
@@ -26,7 +28,8 @@ struct ChatRootView: View {
             let drawerWidth = min(geometry.size.width * 0.79, 360)
             ZStack(alignment: .leading) {
                 HonorTheme.sidebar.ignoresSafeArea()
-                HistoryDrawer(onClose: closeDrawer, onSettings: {
+                HistoryDrawer(isOpen: drawerOpen, onClose: closeDrawer, onSettings: {
+                    speech.stopRecording(); speech.stopSpeaking()
                     closeDrawer()
                     settingsOpen = true
                 })
@@ -53,8 +56,9 @@ struct ChatRootView: View {
             .overlayPreferenceValue(MessageBoundsKey.self) { anchors in
                 if let message = menuMessage, let anchor = anchors[message.id] {
                     let frame = geometry[anchor]
-                    let rowHeight = max(CGFloat(45), CGFloat(26 * settings.fontScale * dynamicScale))
-                    let menuHeight: CGFloat = CGFloat(message.role == .user ? 4 : 7) * rowHeight + 24
+                    let rowHeight = max(CGFloat(45), CGFloat(36 * settings.fontScale * dynamicScale + 8))
+                    let contentHeight = CGFloat(MessageMenuAction.available(for: message).count) * rowHeight + 24
+                    let menuHeight = min(contentHeight, max(44, geometry.size.height - 24))
                     let menuWidth: CGFloat = min(244, geometry.size.width - 28)
                     let top = min(max(12, message.role == .user ? frame.maxY + 16 : frame.minY + 72),
                                   max(12, geometry.size.height - menuHeight - 12))
@@ -65,7 +69,8 @@ struct ChatRootView: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel(text("Закрыть меню", "Dismiss menu"))
                         .accessibilityIdentifier("message.menu.dismiss")
-                        MessageActionPopup(message: message, settings: settings, rowHeight: rowHeight) { action in
+                        MessageActionPopup(message: message, settings: settings, rowHeight: rowHeight,
+                                           menuHeight: menuHeight, scrolls: contentHeight > menuHeight) { action in
                             performMenuAction(action, message: message)
                         }
                         .frame(width: menuWidth)
@@ -94,16 +99,38 @@ struct ChatRootView: View {
             SelectableTextSheet(content: item.content)
                 .environmentObject(settings)
         }
+        .sheet(item: $memoryDraft) { item in
+            MemoryEditorSheet(initialText: item.content, onSaved: {
+                showToast(text("Сохранено в память Honor", "Saved to Honor memory"))
+            })
+            .environmentObject(store).environmentObject(settings)
+        }
         .sheet(item: $shareItem) { item in ActivitySheet(items: [item.content]) }
         .alert(text("Не удалось выполнить действие", "Unable to complete action"),
-               isPresented: Binding(get: { deviceError != nil }, set: { if !$0 { deviceError = nil } })) {
-            Button("OK", role: .cancel) { deviceError = nil }
+               isPresented: Binding(get: { deviceError != nil }, set: {
+                   if !$0 { deviceError = nil; speech.clearError() }
+               })) {
+            if speech.needsPermissionSettings {
+                Button(text("Настройки iPhone", "iPhone Settings")) {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    deviceError = nil; speech.clearError()
+                }.accessibilityIdentifier("device.openSettings")
+            }
+            Button("OK", role: .cancel) { deviceError = nil; speech.clearError() }
+                .accessibilityIdentifier("device.error.dismiss")
         } message: { Text(deviceError ?? "") }
         .onChange(of: speech.transcript) { transcript in
             store.draft = speechDraftPrefix + transcript
         }
         .onChange(of: speech.errorMessage) { error in
             if let error { deviceError = error }
+        }
+        .onChange(of: speech.isSpeaking) { speaking in
+            if !speaking { speakingContent = nil }
+        }
+        .onChange(of: store.selectedConversationID) { _ in
+            speech.stopRecording(); speech.stopSpeaking()
+            menuMessage = nil
         }
         .onChange(of: store.isGenerating) { generating in
             if !generating, settings.autoRead,
@@ -118,6 +145,7 @@ struct ChatRootView: View {
     private var mainScreen: some View {
         VStack(spacing: 0) {
             header
+            branchLineage
             if store.messages.isEmpty {
                 welcome
             } else {
@@ -177,6 +205,8 @@ struct ChatRootView: View {
                 }
                 .accessibilityLabel(text(settings.autoRead ? "Выключить озвучивание" : "Включить озвучивание",
                                          settings.autoRead ? "Disable read aloud" : "Enable read aloud"))
+                .accessibilityIdentifier("chat.autoread")
+                .accessibilityValue(text(settings.autoRead ? "Включено" : "Выключено", settings.autoRead ? "On" : "Off"))
                 Button {
                     speech.stopRecording(); speech.stopSpeaking()
                     store.newChat(); attachmentsOpen = false
@@ -200,6 +230,33 @@ struct ChatRootView: View {
         .padding(.horizontal, 14)
         .padding(.top, 6)
         .padding(.bottom, 12)
+    }
+
+    @ViewBuilder private var branchLineage: some View {
+        if let parentID = store.selectedConversation?.parentConversationID {
+            HStack(spacing: 7) {
+                Image(systemName: "arrow.triangle.branch")
+                if let parent = store.conversations.first(where: { $0.id == parentID }) {
+                    Button { store.selectChat(id: parentID) } label: {
+                        HStack(spacing: 4) {
+                            Text(text("Ветка: ", "Branch: ") + parent.title).lineLimit(1)
+                            Image(systemName: "arrow.up.left").font(.system(size: 10))
+                        }.frame(minHeight: 32)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(text("Вернуться к исходному чату: ", "Return to original conversation: ") + parent.title)
+                    .accessibilityIdentifier("branch.back")
+                } else {
+                    Text(text("Ветка разговора", "Conversation branch"))
+                }
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 12 * settings.fontScale))
+            .foregroundStyle(HonorTheme.secondary)
+            .padding(.horizontal, 22).padding(.bottom, 3)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("branch.banner")
+        }
     }
 
     private var welcome: some View {
@@ -230,6 +287,7 @@ struct ChatRootView: View {
                     Spacer(minLength: 0)
                     Button { store.errorMessage = nil } label: { Image(systemName: "xmark") }
                         .accessibilityLabel(text("Закрыть ошибку", "Dismiss error"))
+                        .accessibilityIdentifier("chat.error.dismiss")
                 }
                 .foregroundStyle(HonorTheme.secondary)
                 .padding(.horizontal, 4).padding(.top, 4)
@@ -242,6 +300,7 @@ struct ChatRootView: View {
                     Button { store.cancelEditing() } label: {
                         Image(systemName: "xmark.circle.fill").frame(width: 32, height: 32)
                     }.accessibilityLabel(text("Отменить редактирование", "Cancel editing"))
+                        .accessibilityIdentifier("composer.edit.cancel")
                 }.foregroundStyle(HonorTheme.accent)
             }
             if !store.attachments.isEmpty {
@@ -254,6 +313,7 @@ struct ChatRootView: View {
                                 Button { store.attachments.removeAll { $0.id == attachment.id } } label: {
                                     Image(systemName: "xmark.circle.fill").frame(width: 30, height: 32)
                                 }.accessibilityLabel(text("Удалить вложение ", "Remove attachment ") + attachment.name)
+                                    .accessibilityIdentifier("attachment.remove." + attachment.id.uuidString)
                             }
                             .font(.system(size: 12))
                             .padding(.leading, 10).padding(.trailing, 2)
@@ -262,7 +322,8 @@ struct ChatRootView: View {
                     }
                 }
             }
-            TextField(text("Напишите сообщение…", "Message Honor…"), text: $store.draft, axis: .vertical)
+            HStack(alignment: .top, spacing: 2) {
+                TextField(text("Напишите сообщение…", "Message Honor…"), text: $store.draft, axis: .vertical)
                 .font(.system(size: 17 * settings.fontScale * dynamicScale))
                 .lineLimit(1...6)
                 .focused($composerFocused)
@@ -275,6 +336,8 @@ struct ChatRootView: View {
                 .onChange(of: composerFocused) { focused in
                     if focused && attachmentsOpen { animate { attachmentsOpen = false } }
                 }
+                if store.canSend { voiceButton }
+            }
             HStack(spacing: 5) {
                 modePill(symbol: "atom", label: text("Рассуждение", "Reason"), selected: store.reasoningEnabled) {
                     store.reasoningEnabled.toggle()
@@ -285,6 +348,7 @@ struct ChatRootView: View {
                 Spacer(minLength: 0)
                 Button {
                     composerFocused = false
+                    speech.stopRecording()
                     animate { attachmentsOpen.toggle() }
                 } label: {
                     Image(systemName: attachmentsOpen ? "xmark.circle" : "plus.circle")
@@ -301,6 +365,7 @@ struct ChatRootView: View {
                             .foregroundStyle(HonorTheme.background)
                             .frame(width: 40, height: 44)
                     }.accessibilityLabel(text("Остановить ответ", "Stop response"))
+                        .accessibilityIdentifier("chat.stop")
                 } else if store.canSend {
                     Button(action: send) {
                         Image(systemName: "arrow.up").font(.system(size: 18, weight: .semibold))
@@ -312,14 +377,7 @@ struct ChatRootView: View {
                     .accessibilityLabel(text("Отправить", "Send"))
                     .accessibilityIdentifier("chat.send")
                 } else {
-                    Button(action: toggleRecording) {
-                        Image(systemName: speech.isRecording ? "stop.circle.fill" : "waveform.circle")
-                            .font(.system(size: 26))
-                            .foregroundStyle(speech.isRecording ? HonorTheme.accent : HonorTheme.foreground)
-                            .frame(width: 40, height: 44)
-                    }
-                    .accessibilityLabel(text(speech.isRecording ? "Остановить запись" : "Голосовой ввод",
-                                             speech.isRecording ? "Stop recording" : "Voice input"))
+                    voiceButton
                 }
             }
             .buttonStyle(.plain)
@@ -329,6 +387,7 @@ struct ChatRootView: View {
                     Text(text("Слушаю… Нажмите, чтобы завершить", "Listening… Tap to finish"))
                     Spacer()
                     Button(text("Готово", "Done")) { speech.stopRecording() }
+                        .accessibilityIdentifier("chat.voice.stop")
                 }
                 .font(.system(size: 12))
                 .foregroundStyle(HonorTheme.secondary)
@@ -338,6 +397,19 @@ struct ChatRootView: View {
         .padding(.horizontal, 10).padding(.top, 10).padding(.bottom, 5)
         .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 27, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 27, style: .continuous).stroke(HonorTheme.divider, lineWidth: 0.7))
+    }
+
+    private var voiceButton: some View {
+        Button(action: toggleRecording) {
+            Image(systemName: speech.isRecording ? "stop.circle.fill" : "waveform.circle")
+                .font(.system(size: 26))
+                .foregroundStyle(speech.isRecording ? HonorTheme.accent : HonorTheme.foreground)
+                .frame(width: 40, height: 44)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(text(speech.isRecording ? "Остановить запись" : "Голосовой ввод",
+                                 speech.isRecording ? "Stop recording" : "Voice input"))
+        .accessibilityIdentifier("chat.voice")
     }
 
     private func modePill(symbol: String, label: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -378,6 +450,13 @@ struct ChatRootView: View {
         case .like: store.setFeedback(messageID: message.id, feedback: message.feedback == .like ? nil : .like)
         case .dislike: store.setFeedback(messageID: message.id, feedback: message.feedback == .dislike ? nil : .dislike)
         case .speak: speak(message.content)
+        case .fork:
+            speech.stopRecording(); speech.stopSpeaking()
+            if store.forkConversation(at: message.id) != nil {
+                showToast(text("Новая ветка создана", "New branch created"))
+                composerFocused = true
+            }
+        case .remember: memoryDraft = SelectedText(content: message.content)
         }
     }
 
@@ -389,15 +468,24 @@ struct ChatRootView: View {
     }
 
     private func speak(_ content: String) {
-        if speech.isSpeaking { speech.stopSpeaking() }
-        else { speech.speak(content, voiceIdentifier: settings.voiceIdentifier, language: settings.speechLanguage) }
+        if speech.isSpeaking && speakingContent == content {
+            speech.stopSpeaking()
+            speakingContent = nil
+        } else {
+            speech.speak(content, voiceIdentifier: settings.voiceIdentifier, language: settings.speechLanguage)
+            speakingContent = content
+        }
     }
 
     private func copy(_ content: String) {
         UIPasteboard.general.string = content
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        showToast(text("Скопировано", "Copied"))
+    }
+
+    private func showToast(_ content: String) {
         toastTask?.cancel()
-        animate { toast = text("Скопировано", "Copied") }
+        animate { toast = content }
         toastTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_800_000_000)
             guard !Task.isCancelled else { return }
@@ -407,6 +495,7 @@ struct ChatRootView: View {
 
     private func openDrawer() {
         composerFocused = false
+        speech.stopRecording()
         menuMessage = nil
         animate { drawerOpen = true; attachmentsOpen = false }
     }
@@ -469,6 +558,7 @@ private struct MessageTimeline: View {
                             .frame(width: 44, height: 44)
                     }
                     .accessibilityLabel(settings.text("К последнему сообщению", "Jump to latest message"))
+                    .accessibilityIdentifier("chat.scroll.latest")
                     .padding(.trailing, 14).padding(.bottom, 6)
                 }
             }
@@ -515,6 +605,8 @@ private struct MessageRow: View {
             else { assistantMessage }
         }
         .anchorPreference(key: MessageBoundsKey.self, value: .bounds) { [message.id: $0] }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("message." + message.role.rawValue + "." + message.id.uuidString)
         .onLongPressGesture(minimumDuration: 0.45) { onMenu(message) }
         .accessibilityAction(named: Text(text("Действия с сообщением", "Message actions"))) { onMenu(message) }
     }
@@ -557,6 +649,8 @@ private struct MessageRow: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(reasoningTitle)
                 .accessibilityHint(text("Открыть или свернуть рассуждение", "Expand or collapse reasoning"))
+                .accessibilityIdentifier("message.reasoning." + message.id.uuidString)
+                .accessibilityValue(text(reasoningOpen ? "Развёрнуто" : "Свёрнуто", reasoningOpen ? "Expanded" : "Collapsed"))
                 if reasoningOpen && !message.reasoning.isEmpty {
                     Text(message.reasoning)
                         .font(.system(size: 14 * settings.fontScale * dynamicScale))
@@ -565,6 +659,7 @@ private struct MessageRow: View {
                         .textSelection(.enabled)
                         .padding(.leading, 13)
                         .overlay(alignment: .leading) { Rectangle().fill(HonorTheme.divider).frame(width: 2) }
+                        .accessibilityIdentifier("message.reasoning.text." + message.id.uuidString)
                 }
             }
             if !message.content.isEmpty {
@@ -575,13 +670,16 @@ private struct MessageRow: View {
                     .font(.system(size: 14 * settings.fontScale * dynamicScale))
                     .foregroundStyle(Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("message.error." + message.id.uuidString)
                 Button(action: onRetry) { Label(text("Повторить запрос", "Try again"), systemImage: "arrow.clockwise") }
                     .font(.system(size: 14, weight: .medium)).tint(HonorTheme.accent)
                     .padding(.vertical, 4)
+                    .accessibilityIdentifier("message.action.retry." + message.id.uuidString)
             }
             if message.isInterrupted {
                 Text(text("Ответ остановлен", "Response stopped"))
                     .font(.system(size: 12)).foregroundStyle(HonorTheme.secondary)
+                    .accessibilityIdentifier("message.stopped." + message.id.uuidString)
             }
             if !message.sources.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -595,24 +693,33 @@ private struct MessageRow: View {
                                 Text(source.title).font(.system(size: 13)).lineLimit(2)
                             }
                         }.tint(HonorTheme.accent)
+                            .accessibilityIdentifier("message.source." + source.id.uuidString)
                     }
                 }.padding(.vertical, 3)
             }
             if !streaming && !message.content.isEmpty {
                 HStack(spacing: 0) {
                     HonorActionButton(symbol: "square.on.square", label: text("Копировать", "Copy")) { onCopy(message.content) }
+                        .accessibilityIdentifier("message.action.copy." + message.id.uuidString)
                     HonorActionButton(symbol: message.feedback == .like ? "hand.thumbsup.fill" : "hand.thumbsup",
                                       label: text("Нравится", "Like"), selected: message.feedback == .like) {
                         onFeedback(message.feedback == .like ? nil : .like)
                     }
+                    .accessibilityIdentifier("message.action.like." + message.id.uuidString)
                     HonorActionButton(symbol: message.feedback == .dislike ? "hand.thumbsdown.fill" : "hand.thumbsdown",
                                       label: text("Не нравится", "Dislike"), selected: message.feedback == .dislike) {
                         onFeedback(message.feedback == .dislike ? nil : .dislike)
                     }
+                    .accessibilityIdentifier("message.action.dislike." + message.id.uuidString)
                     HonorActionButton(symbol: "speaker.wave.2", label: text("Читать вслух", "Read aloud")) { onSpeak(message.content) }
+                        .accessibilityIdentifier("message.action.speak." + message.id.uuidString)
                     HonorActionButton(symbol: "square.and.arrow.up", label: text("Поделиться", "Share")) { onShare(message.content) }
+                        .accessibilityIdentifier("message.action.share." + message.id.uuidString)
                     Spacer(minLength: 0)
-                    HonorActionButton(symbol: "arrow.clockwise", label: text("Повторить", "Retry"), action: onRetry)
+                    if message.error == nil {
+                        HonorActionButton(symbol: "arrow.clockwise", label: text("Повторить", "Retry"), action: onRetry)
+                            .accessibilityIdentifier("message.action.retry." + message.id.uuidString)
+                    }
                 }
                 .padding(.leading, -8)
                 .padding(.trailing, -7)
@@ -657,7 +764,13 @@ private struct MessageBoundsKey: PreferenceKey {
 }
 
 private enum MessageMenuAction: String {
-    case copy, select, edit, share, retry, like, dislike, speak
+    case copy, select, edit, share, retry, like, dislike, speak, fork, remember
+
+    static func available(for message: ChatMessage) -> [MessageMenuAction] {
+        message.role == .user
+            ? [.copy, .select, .edit, .fork, .remember, .share]
+            : [.copy, .select, .retry, .fork, .remember, .like, .dislike, .speak, .share]
+    }
 
     var symbol: String {
         switch self {
@@ -669,6 +782,8 @@ private enum MessageMenuAction: String {
         case .like: return "hand.thumbsup"
         case .dislike: return "hand.thumbsdown"
         case .speak: return "speaker.wave.2"
+        case .fork: return "arrow.triangle.branch"
+        case .remember: return "bookmark"
         }
     }
 
@@ -682,6 +797,8 @@ private enum MessageMenuAction: String {
         case .like: return settings.text("Нравится", "Like")
         case .dislike: return settings.text("Не нравится", "Dislike")
         case .speak: return settings.text("Читать вслух", "Read aloud")
+        case .fork: return settings.text("Продолжить в ветке", "Continue in a branch")
+        case .remember: return settings.text("Запомнить", "Remember")
         }
     }
 }
@@ -690,17 +807,18 @@ private struct MessageActionPopup: View {
     let message: ChatMessage
     @ObservedObject var settings: AppSettings
     let rowHeight: CGFloat
+    let menuHeight: CGFloat
+    let scrolls: Bool
     let onAction: (MessageMenuAction) -> Void
     @ScaledMetric(relativeTo: .body) private var textSize = 17.0
 
     private var actions: [MessageMenuAction] {
-        message.role == .user
-            ? [.copy, .select, .edit, .share]
-            : [.copy, .select, .retry, .like, .dislike, .speak, .share]
+        MessageMenuAction.available(for: message)
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        ScrollView(.vertical, showsIndicators: scrolls) {
+          VStack(spacing: 0) {
             ForEach(actions, id: \.rawValue) { action in
                 Button { onAction(action) } label: {
                     HStack(spacing: 15) {
@@ -709,7 +827,7 @@ private struct MessageActionPopup: View {
                             .frame(width: 23)
                         Text(action.title(settings))
                             .font(.system(size: textSize * settings.fontScale, weight: .medium))
-                            .lineLimit(1).minimumScaleFactor(0.72)
+                            .lineLimit(2).minimumScaleFactor(0.8)
                         Spacer(minLength: 0)
                     }
                     .foregroundStyle(isSelected(action) ? HonorTheme.accent : HonorTheme.foreground)
@@ -718,14 +836,21 @@ private struct MessageActionPopup: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("message.menu." + action.rawValue)
+                .disabled(requiresContent(action) && message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
+          }
+          .padding(.horizontal, 21)
+          .padding(.vertical, 12)
         }
-        .padding(.horizontal, 21)
-        .padding(.vertical, 12)
+        .frame(height: menuHeight)
         .background(HonorTheme.sidebar, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(HonorTheme.divider, lineWidth: 0.8))
         .shadow(color: .black.opacity(0.28), radius: 18, x: 0, y: 10)
         .accessibilityElement(children: .contain)
+    }
+
+    private func requiresContent(_ action: MessageMenuAction) -> Bool {
+        [.copy, .select, .remember, .speak, .share].contains(action)
     }
 
     private func isSelected(_ action: MessageMenuAction) -> Bool {
@@ -736,14 +861,17 @@ private struct MessageActionPopup: View {
 private struct HistoryDrawer: View {
     @EnvironmentObject private var store: ChatStore
     @EnvironmentObject private var settings: AppSettings
+    let isOpen: Bool
     let onClose: () -> Void
     let onSettings: () -> Void
     @State private var search = ""
     @State private var selecting = false
     @State private var selectedIDs: Set<UUID> = []
     @State private var renameTarget: UUID?
+    @State private var renamePresented = false
     @State private var renameTitle = ""
     @State private var deleteTargets: Set<UUID> = []
+    @State private var deleteConfirmation = false
     @FocusState private var searchFocused: Bool
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
 
@@ -758,16 +886,18 @@ private struct HistoryDrawer: View {
                     HonorCircleButton(symbol: "xmark", label: text("Отмена", "Cancel"), diameter: 36) {
                         selecting = false; selectedIDs.removeAll()
                     }
+                    .accessibilityIdentifier("history.selection.cancel")
                 }.padding(.horizontal, 14).padding(.top, 7).padding(.bottom, 12)
             } else {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").font(.system(size: 17))
                     TextField(text("Поиск в содержимом…", "Search conversations…"), text: $search)
                         .font(.system(size: 16)).focused($searchFocused).submitLabel(.search)
-                        .accessibilityIdentifier("historySearch")
+                        .accessibilityIdentifier("history.search")
                     if !search.isEmpty {
                         Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
                             .accessibilityLabel(text("Очистить поиск", "Clear search"))
+                            .accessibilityIdentifier("history.clear")
                     }
                 }
                 .foregroundStyle(HonorTheme.secondary)
@@ -794,9 +924,10 @@ private struct HistoryDrawer: View {
                                 Text(group.title).font(.system(size: 14, weight: .semibold))
                                 Spacer()
                                 if group.id == groups.first?.id && !selecting {
-                                    Button { selecting = true } label: {
+                                    Button { searchFocused = false; selecting = true } label: {
                                         Image(systemName: "checklist").frame(width: 40, height: 32)
                                     }.accessibilityLabel(text("Выбрать чаты", "Select chats"))
+                                        .accessibilityIdentifier("history.select")
                                 }
                             }
                             .foregroundStyle(HonorTheme.secondary)
@@ -818,11 +949,16 @@ private struct HistoryDrawer: View {
                     Button {
                         store.togglePin(ids: selectedIDs)
                         selectedIDs.removeAll(); selecting = false
-                    } label: { Label(text("Закрепить", "Pin"), systemImage: "pin") }
+                    } label: {
+                        Label(allSelectedPinned ? text("Открепить", "Unpin") : text("Закрепить", "Pin"),
+                              systemImage: allSelectedPinned ? "pin.slash" : "pin")
+                    }
+                    .accessibilityIdentifier("history.bulk.pin")
                     Spacer(minLength: 5)
-                    Button(role: .destructive) { deleteTargets = selectedIDs } label: {
+                    Button(role: .destructive) { requestDeletion(selectedIDs) } label: {
                         Label(text("Удалить", "Delete"), systemImage: "trash")
                     }
+                    .accessibilityIdentifier("history.bulk.delete")
                 }
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(selectedIDs.isEmpty ? HonorTheme.secondary : HonorTheme.foreground)
@@ -847,17 +983,24 @@ private struct HistoryDrawer: View {
         }
         .foregroundStyle(HonorTheme.foreground)
         .accessibilityAction(.escape, onClose)
+        .onChange(of: isOpen) { open in
+            if !open { searchFocused = false }
+        }
         .alert(text("Переименовать чат", "Rename chat"),
-               isPresented: Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })) {
+               isPresented: $renamePresented) {
             TextField(text("Название", "Title"), text: $renameTitle)
+                .accessibilityIdentifier("history.rename.field")
             Button(text("Сохранить", "Save")) {
                 if let id = renameTarget { store.renameChat(id: id, title: renameTitle) }
                 renameTarget = nil
             }
+            .disabled(renameTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .accessibilityIdentifier("history.rename.save")
             Button(text("Отмена", "Cancel"), role: .cancel) { renameTarget = nil }
+                .accessibilityIdentifier("history.rename.cancel")
         }
         .confirmationDialog(text("Удалить выбранные чаты?", "Delete selected chats?"),
-                            isPresented: Binding(get: { !deleteTargets.isEmpty }, set: { if !$0 { deleteTargets.removeAll() } }),
+                            isPresented: $deleteConfirmation,
                             titleVisibility: .visible) {
             Button(text("Удалить", "Delete"), role: .destructive) {
                 store.deleteChats(ids: deleteTargets)
@@ -865,63 +1008,93 @@ private struct HistoryDrawer: View {
                 deleteTargets.removeAll()
                 if selectedIDs.isEmpty { selecting = false }
             }
+            .accessibilityIdentifier("history.delete.confirm")
             Button(text("Отмена", "Cancel"), role: .cancel) { deleteTargets.removeAll() }
+                .accessibilityIdentifier("history.delete.cancel")
         }
     }
 
     private func historyRow(_ chat: Conversation) -> some View {
-        Button {
-            if selecting {
-                if selectedIDs.contains(chat.id) { selectedIDs.remove(chat.id) }
-                else { selectedIDs.insert(chat.id) }
-            } else {
-                searchFocused = false
-                store.selectChat(id: chat.id)
-                onClose()
-            }
-        } label: {
-            HStack(spacing: 10) {
+        HStack(spacing: 0) {
+            Button {
                 if selecting {
-                    Image(systemName: selectedIDs.contains(chat.id) ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 20))
-                        .foregroundStyle(selectedIDs.contains(chat.id) ? HonorTheme.accent : HonorTheme.secondary.opacity(0.5))
+                    if selectedIDs.contains(chat.id) { selectedIDs.remove(chat.id) }
+                    else { selectedIDs.insert(chat.id) }
+                } else {
+                    searchFocused = false
+                    store.selectChat(id: chat.id)
+                    onClose()
                 }
-                Text(chat.title).font(.system(size: 16 * settings.fontScale * dynamicScale, weight: .medium))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if store.selectedConversationID == chat.id && !selecting {
-                    Image(systemName: "ellipsis").font(.system(size: 16)).foregroundStyle(HonorTheme.secondary)
+            } label: {
+                HStack(spacing: 10) {
+                    if selecting {
+                        Image(systemName: selectedIDs.contains(chat.id) ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 20))
+                            .foregroundStyle(selectedIDs.contains(chat.id) ? HonorTheme.accent : HonorTheme.secondary.opacity(0.5))
+                    }
+                    Text(chat.title).font(.system(size: 16 * settings.fontScale * dynamicScale, weight: .medium))
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
                 }
+                .foregroundStyle(store.selectedConversationID == chat.id && !selecting ? HonorTheme.accent : HonorTheme.foreground)
+                .padding(.leading, 13).frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
-            .foregroundStyle(store.selectedConversationID == chat.id && !selecting ? HonorTheme.accent : HonorTheme.foreground)
-            .padding(.horizontal, 13).frame(minHeight: 44)
-            .background(store.selectedConversationID == chat.id && !selecting ? HonorTheme.accent.opacity(0.21) : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("history.row." + chat.id.uuidString)
+            .accessibilityAddTraits((selecting ? selectedIDs.contains(chat.id) : store.selectedConversationID == chat.id) ? .isSelected : [])
+            if !selecting {
+                Menu { historyActions(chat) } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 16))
+                        .foregroundStyle(HonorTheme.secondary)
+                        .frame(width: 40, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel(text("Действия с чатом ", "Actions for ") + chat.title)
+                .accessibilityIdentifier("history.actions." + chat.id.uuidString)
+            }
         }
-        .buttonStyle(.plain)
-        .contextMenu {
+        .background(store.selectedConversationID == chat.id && !selecting ? HonorTheme.accent.opacity(0.21) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .contextMenu { historyActions(chat) }
+    }
+
+    @ViewBuilder private func historyActions(_ chat: Conversation) -> some View {
             Button { store.togglePin(ids: [chat.id]) } label: {
                 Label(chat.pinned ? text("Открепить", "Unpin") : text("Закрепить", "Pin"), systemImage: chat.pinned ? "pin.slash" : "pin")
             }
-            Button { renameTitle = chat.title; renameTarget = chat.id } label: {
+            .accessibilityIdentifier("history.menu.pin")
+            Button { renameTitle = chat.title; renameTarget = chat.id; renamePresented = true } label: {
                 Label(text("Переименовать", "Rename"), systemImage: "pencil")
             }
-            Button { selectedIDs = [chat.id]; selecting = true } label: {
+            .accessibilityIdentifier("history.menu.rename")
+            Button { searchFocused = false; selectedIDs = [chat.id]; selecting = true } label: {
                 Label(text("Выбрать", "Select"), systemImage: "checkmark.circle")
             }
-            Button(role: .destructive) { deleteTargets = [chat.id] } label: {
+            .accessibilityIdentifier("history.menu.select")
+            Button(role: .destructive) { requestDeletion([chat.id]) } label: {
                 Label(text("Удалить", "Delete"), systemImage: "trash")
             }
-        }
-        .accessibilityAddTraits(store.selectedConversationID == chat.id ? .isSelected : [])
+            .accessibilityIdentifier("history.menu.delete")
+    }
+
+    private func requestDeletion(_ ids: Set<UUID>) {
+        deleteTargets = ids
+        deleteConfirmation = true
+    }
+
+    private var allSelectedPinned: Bool {
+        !selectedIDs.isEmpty && store.conversations.filter { selectedIDs.contains($0.id) }.allSatisfy(\.pinned)
     }
 
     private var groups: [HistoryGroup] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         let chats = store.conversations.filter { chat in
             query.isEmpty || chat.title.localizedCaseInsensitiveContains(query) || chat.messages.contains {
-                $0.content.localizedCaseInsensitiveContains(query) || $0.reasoning.localizedCaseInsensitiveContains(query)
+                $0.content.localizedCaseInsensitiveContains(query) || $0.reasoning.localizedCaseInsensitiveContains(query) ||
+                $0.attachments.contains {
+                    $0.name.localizedCaseInsensitiveContains(query) || $0.extractedText.localizedCaseInsensitiveContains(query)
+                }
             }
         }.sorted { $0.updatedAt > $1.updatedAt }
         let calendar = Calendar.current
@@ -969,6 +1142,7 @@ private struct SelectableTextSheet: View {
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
                         Button(settings.text("Готово", "Done")) { dismiss() }
+                            .accessibilityIdentifier("message.selection.done")
                     }
                 }
         }
@@ -983,6 +1157,7 @@ private struct SelectableTextView: UIViewRepresentable {
         let view = UITextView()
         view.isEditable = false
         view.isSelectable = true
+        view.accessibilityIdentifier = "message.selection.text"
         view.backgroundColor = .clear
         view.textContainerInset = UIEdgeInsets(top: 20, left: 17, bottom: 25, right: 17)
         return view
@@ -1012,6 +1187,7 @@ private struct MarkdownMessage: View {
                             Button { onCopy(block.text) } label: {
                                 Image(systemName: "square.on.square").frame(width: 44, height: 32)
                             }.accessibilityLabel("Copy code")
+                                .accessibilityIdentifier("message.code.copy")
                         }
                         .foregroundStyle(HonorTheme.secondary)
                         .padding(.leading, 12).padding(.trailing, 2)
