@@ -12,15 +12,23 @@
 		11FB5B391E5A8EB0D5CB6911 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AF08F8D898565FDE5253A56D /* Assets.xcassets */; };
 		17F9D7A11FCC8CB6C061FB8C /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8834BF84FD6351B39C700A7 /* Models.swift */; };
 		45F2AE7687C032E364F17BA9 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C909CADD3DC77093308195 /* AppSettings.swift */; };
+		4A55068EEF5DD454A7FC828B /* CompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 149C636460D25E95B3D3BEC5 /* CompatibilityTests.swift */; };
 		4CEB238EC253E68F92E3E988 /* SpeechService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9916BA35D85893448557A671 /* SpeechService.swift */; };
 		582929E046CDEFEBE2D4DACF /* ChatViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = EECE21C8D204B42ECB719172 /* ChatViews.swift */; };
+		5AEE1C59EA03D32C70E722F6 /* AttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056C49F54C5B1A6B18E38FA9 /* AttachmentTests.swift */; };
+		6A10CC76881D250F526A8342 /* StabilityAuditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0BBC5019019BDE8492C505 /* StabilityAuditTests.swift */; };
 		72F4B23F4B83653DFCD2FD82 /* WebSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A98ACA04B8CB6DCC9C5D35 /* WebSearch.swift */; };
 		73425851042BD1B4EA1BA99C /* HonorPKAgentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1558D271B1CA8FA7F19D947 /* HonorPKAgentTests.swift */; };
+		ABFBC7B54D83AAD4D513882C /* AuditSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7DDC12FF25C417585DE524 /* AuditSupport.swift */; };
 		B404B6862092ED221F501B40 /* DeepSeekConfig.plist in Resources */ = {isa = PBXBuildFile; fileRef = A7757CAA116B4C837518C15A /* DeepSeekConfig.plist */; };
 		B7841392BDCF9E59A9AB7634 /* DeepSeekClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AB9CDF8C405264A4F080F42 /* DeepSeekClient.swift */; };
 		BE0B2BC63F7B3B3DE2978B4F /* InterfaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8419D997A59850EC450D904B /* InterfaceTests.swift */; };
+		CF34839D2168E276FF1F600C /* FeatureAuditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84E827A8955D28950059368E /* FeatureAuditTests.swift */; };
+		D7834940C2BB25D7FB039B30 /* UITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B89C0CD8A87C37B8636A7AC /* UITestSupport.swift */; };
+		E00D720DF7B5B32A871D30C3 /* SettingsAuditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23633E0CBFF47E66B12D7E03 /* SettingsAuditTests.swift */; };
 		E8172ADF6D6754C8924950B3 /* HonorPKAgentApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 089701D56C64865D2D94652A /* HonorPKAgentApp.swift */; };
 		F44086FF4DFB79569F88D2EF /* AttachmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0E939E77AF8604648A6D53 /* AttachmentService.swift */; };
+		F7B00B1A4912352C9491A3DC /* LiveFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C442F5CFBCADA6872C813208 /* LiveFeatureTests.swift */; };
 		FF31DAD3393DFA18E57E5040 /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA76998D7B6CF326FEC9C740 /* ChatStore.swift */; };
 /* End PBXBuildFile section */
 
@@ -42,20 +50,28 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		056C49F54C5B1A6B18E38FA9 /* AttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentTests.swift; sourceTree = "<group>"; };
 		089701D56C64865D2D94652A /* HonorPKAgentApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HonorPKAgentApp.swift; sourceTree = "<group>"; };
 		08B865DFFC9DE858D67BCF2F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		149C636460D25E95B3D3BEC5 /* CompatibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompatibilityTests.swift; sourceTree = "<group>"; };
 		1A0E939E77AF8604648A6D53 /* AttachmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentService.swift; sourceTree = "<group>"; };
+		23633E0CBFF47E66B12D7E03 /* SettingsAuditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsAuditTests.swift; sourceTree = "<group>"; };
 		4AB9CDF8C405264A4F080F42 /* DeepSeekClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekClient.swift; sourceTree = "<group>"; };
 		53A98ACA04B8CB6DCC9C5D35 /* WebSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSearch.swift; sourceTree = "<group>"; };
+		5B89C0CD8A87C37B8636A7AC /* UITestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestSupport.swift; sourceTree = "<group>"; };
+		6B7DDC12FF25C417585DE524 /* AuditSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuditSupport.swift; sourceTree = "<group>"; };
 		7E128276920D5183BD37E486 /* HonorPKAgentUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HonorPKAgentUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8419D997A59850EC450D904B /* InterfaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterfaceTests.swift; sourceTree = "<group>"; };
+		84E827A8955D28950059368E /* FeatureAuditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureAuditTests.swift; sourceTree = "<group>"; };
 		930EC460A3038C790224FE03 /* HonorPKAgentTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HonorPKAgentTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9916BA35D85893448557A671 /* SpeechService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechService.swift; sourceTree = "<group>"; };
 		A1558D271B1CA8FA7F19D947 /* HonorPKAgentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HonorPKAgentTests.swift; sourceTree = "<group>"; };
 		A7757CAA116B4C837518C15A /* DeepSeekConfig.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = DeepSeekConfig.plist; sourceTree = "<group>"; };
+		AE0BBC5019019BDE8492C505 /* StabilityAuditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StabilityAuditTests.swift; sourceTree = "<group>"; };
 		AF08F8D898565FDE5253A56D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B848B33AFA313D8A6DE031AC /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		C0C909CADD3DC77093308195 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		C442F5CFBCADA6872C813208 /* LiveFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveFeatureTests.swift; sourceTree = "<group>"; };
 		C8834BF84FD6351B39C700A7 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		CAE80DD9618AFADC09F7B7A9 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		DA76998D7B6CF326FEC9C740 /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
@@ -94,6 +110,14 @@
 			);
 			sourceTree = "<group>";
 		};
+		5A3E69BE96AC00E4F60BDDD8 /* Debug */ = {
+			isa = PBXGroup;
+			children = (
+				5B89C0CD8A87C37B8636A7AC /* UITestSupport.swift */,
+			);
+			path = Debug;
+			sourceTree = "<group>";
+		};
 		B8F1407DFA24FCA51092292B /* Device */ = {
 			isa = PBXGroup;
 			children = (
@@ -107,6 +131,8 @@
 		BE9FD0E1B26E91CBD833AB82 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				056C49F54C5B1A6B18E38FA9 /* AttachmentTests.swift */,
+				149C636460D25E95B3D3BEC5 /* CompatibilityTests.swift */,
 				A1558D271B1CA8FA7F19D947 /* HonorPKAgentTests.swift */,
 			);
 			path = Tests;
@@ -115,7 +141,12 @@
 		E1D5012840545ABDEC28F88B /* UITests */ = {
 			isa = PBXGroup;
 			children = (
+				6B7DDC12FF25C417585DE524 /* AuditSupport.swift */,
+				84E827A8955D28950059368E /* FeatureAuditTests.swift */,
 				8419D997A59850EC450D904B /* InterfaceTests.swift */,
+				C442F5CFBCADA6872C813208 /* LiveFeatureTests.swift */,
+				23633E0CBFF47E66B12D7E03 /* SettingsAuditTests.swift */,
+				AE0BBC5019019BDE8492C505 /* StabilityAuditTests.swift */,
 			);
 			path = UITests;
 			sourceTree = "<group>";
@@ -139,6 +170,7 @@
 				089701D56C64865D2D94652A /* HonorPKAgentApp.swift */,
 				08B865DFFC9DE858D67BCF2F /* Info.plist */,
 				F9316C448127FC6EA53075E8 /* Core */,
+				5A3E69BE96AC00E4F60BDDD8 /* Debug */,
 				B8F1407DFA24FCA51092292B /* Device */,
 				56DD04D3641794633F30971F /* UI */,
 			);
@@ -264,6 +296,7 @@
 				0B81C254267261CDDE2D8294 /* SettingsView.swift in Sources */,
 				4CEB238EC253E68F92E3E988 /* SpeechService.swift in Sources */,
 				112DD7A17AA1DF4B3B2E0AEF /* Theme.swift in Sources */,
+				D7834940C2BB25D7FB039B30 /* UITestSupport.swift in Sources */,
 				72F4B23F4B83653DFCD2FD82 /* WebSearch.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -272,6 +305,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5AEE1C59EA03D32C70E722F6 /* AttachmentTests.swift in Sources */,
+				4A55068EEF5DD454A7FC828B /* CompatibilityTests.swift in Sources */,
 				73425851042BD1B4EA1BA99C /* HonorPKAgentTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -280,7 +315,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ABFBC7B54D83AAD4D513882C /* AuditSupport.swift in Sources */,
+				CF34839D2168E276FF1F600C /* FeatureAuditTests.swift in Sources */,
 				BE0B2BC63F7B3B3DE2978B4F /* InterfaceTests.swift in Sources */,
+				F7B00B1A4912352C9491A3DC /* LiveFeatureTests.swift in Sources */,
+				E00D720DF7B5B32A871D30C3 /* SettingsAuditTests.swift in Sources */,
+				6A10CC76881D250F526A8342 /* StabilityAuditTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -370,7 +410,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGNING_ALLOWED = NO;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_BITCODE = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -390,7 +430,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -507,7 +547,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGNING_ALLOWED = NO;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_BITCODE = NO;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -521,7 +561,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
