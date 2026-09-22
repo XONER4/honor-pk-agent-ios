@@ -32,7 +32,8 @@ jobs:
             HonorPKAgent.xcodeproj
       - name: Run simulator tests and capture native screens
         run: |
-          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for devices in d["devices"].values() for x in devices if x["name"].startswith("iPhone 16")))')
+          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["identifier"] for x in reversed(d["runtimes"]) if "iOS" in x["name"] and x["isAvailable"]))')
+          DEVICE=$(xcrun simctl create 'Honor iPhone 13' com.apple.CoreSimulator.SimDeviceType.iPhone-13 "$RUNTIME")
           xcrun simctl boot "$DEVICE" || true
           xcrun simctl bootstatus "$DEVICE" -b
           xcrun simctl status_bar "$DEVICE" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100

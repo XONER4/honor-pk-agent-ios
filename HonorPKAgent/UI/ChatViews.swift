@@ -11,6 +11,7 @@ struct ChatRootView: View {
     @State private var attachmentsOpen = false
     @State private var settingsOpen = false
     @State private var selectedText: SelectedText?
+    @State private var menuMessage: ChatMessage?
     @State private var shareItem: SharedText?
     @State private var deviceError: String?
     @State private var toast: String?
@@ -47,9 +48,38 @@ struct ChatRootView: View {
                         }
                     }
                     .offset(x: drawerOpen ? drawerWidth : 0)
-                    .accessibilityHidden(drawerOpen)
+                    .accessibilityHidden(drawerOpen || menuMessage != nil)
+            }
+            .overlayPreferenceValue(MessageBoundsKey.self) { anchors in
+                if let message = menuMessage, let anchor = anchors[message.id] {
+                    let frame = geometry[anchor]
+                    let rowHeight = max(CGFloat(45), CGFloat(26 * settings.fontScale * dynamicScale))
+                    let menuHeight: CGFloat = CGFloat(message.role == .user ? 4 : 7) * rowHeight + 24
+                    let menuWidth: CGFloat = min(244, geometry.size.width - 28)
+                    let top = min(max(12, message.role == .user ? frame.maxY + 16 : frame.minY + 72),
+                                  max(12, geometry.size.height - menuHeight - 12))
+                    ZStack(alignment: .topLeading) {
+                        Button { menuMessage = nil } label: {
+                            Color.black.opacity(0.04).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(text("Закрыть меню", "Dismiss menu"))
+                        .accessibilityIdentifier("message.menu.dismiss")
+                        MessageActionPopup(message: message, settings: settings, rowHeight: rowHeight) { action in
+                            performMenuAction(action, message: message)
+                        }
+                        .frame(width: menuWidth)
+                        .position(x: message.role == .user ? geometry.size.width / 2 : 9 + menuWidth / 2,
+                                  y: top + menuHeight / 2)
+                        .accessibilitySortPriority(1)
+                    }
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .transition(.opacity)
+                    .zIndex(5)
+                }
             }
             .simultaneousGesture(DragGesture(minimumDistance: 24).onEnded { value in
+                guard menuMessage == nil else { return }
                 guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else { return }
                 if drawerOpen && value.translation.width < -45 { closeDrawer() }
                 else if !drawerOpen && value.startLocation.x < 24 && value.translation.width > 60 { openDrawer() }
@@ -93,7 +123,12 @@ struct ChatRootView: View {
             } else {
                 MessageTimeline(store: store, settings: settings,
                                 onCopy: copy, onSelect: { selectedText = SelectedText(content: $0) },
-                                onShare: { shareItem = SharedText(content: $0) }, onSpeak: speak)
+                                onShare: { shareItem = SharedText(content: $0) }, onSpeak: speak,
+                                onMenu: { message in
+                                    composerFocused = false
+                                    menuMessage = message
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                })
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -146,11 +181,11 @@ struct ChatRootView: View {
                     speech.stopRecording(); speech.stopSpeaking()
                     store.newChat(); attachmentsOpen = false
                 } label: {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.system(size: 20))
+                    Image(systemName: "bubble.left")
+                        .font(.system(size: 23))
                         .overlay(alignment: .center) {
-                            Image(systemName: "plus").font(.system(size: 9, weight: .bold))
-                                .offset(x: -2, y: -2)
+                            Image(systemName: "plus").font(.system(size: 11, weight: .semibold))
+                                .offset(y: -1)
                         }
                         .frame(width: 44, height: 42)
                 }
@@ -330,6 +365,22 @@ struct ChatRootView: View {
         animate { attachmentsOpen = false }
     }
 
+    private func performMenuAction(_ action: MessageMenuAction, message: ChatMessage) {
+        menuMessage = nil
+        switch action {
+        case .copy: copy(message.content)
+        case .select: selectedText = SelectedText(content: message.content)
+        case .edit:
+            store.edit(messageID: message.id)
+            composerFocused = true
+        case .share: shareItem = SharedText(content: message.content)
+        case .retry: store.regenerate(messageID: message.id)
+        case .like: store.setFeedback(messageID: message.id, feedback: message.feedback == .like ? nil : .like)
+        case .dislike: store.setFeedback(messageID: message.id, feedback: message.feedback == .dislike ? nil : .dislike)
+        case .speak: speak(message.content)
+        }
+    }
+
     private func toggleRecording() {
         if speech.isRecording { speech.stopRecording(); return }
         composerFocused = false
@@ -356,6 +407,7 @@ struct ChatRootView: View {
 
     private func openDrawer() {
         composerFocused = false
+        menuMessage = nil
         animate { drawerOpen = true; attachmentsOpen = false }
     }
     private func closeDrawer() { animate { drawerOpen = false } }
@@ -371,6 +423,7 @@ private struct MessageTimeline: View {
     let onSelect: (String) -> Void
     let onShare: (String) -> Void
     let onSpeak: (String) -> Void
+    let onMenu: (ChatMessage) -> Void
     @State private var followLatest = true
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
 
@@ -392,7 +445,8 @@ private struct MessageTimeline: View {
                                    onCopy: onCopy, onSelect: onSelect, onShare: onShare, onSpeak: onSpeak,
                                    onRetry: { store.regenerate(messageID: message.id) },
                                    onEdit: { store.edit(messageID: message.id) },
-                                   onFeedback: { store.setFeedback(messageID: message.id, feedback: $0) })
+                                   onFeedback: { store.setFeedback(messageID: message.id, feedback: $0) },
+                                   onMenu: onMenu)
                             .id(message.id)
                     }
                     Color.clear.frame(height: 8).id("message-bottom")
@@ -449,6 +503,7 @@ private struct MessageRow: View {
     let onRetry: () -> Void
     let onEdit: () -> Void
     let onFeedback: (MessageFeedback?) -> Void
+    let onMenu: (ChatMessage) -> Void
     @State private var reasoningOpen = false
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
 
@@ -459,23 +514,9 @@ private struct MessageRow: View {
             if message.role == .user { userMessage }
             else { assistantMessage }
         }
-        .contextMenu {
-            Button { onCopy(message.content) } label: { Label(text("Копировать", "Copy"), systemImage: "square.on.square") }
-            Button { onSelect(message.content) } label: { Label(text("Выбрать текст", "Select text"), systemImage: "text.cursor") }
-            if message.role == .user {
-                Button(action: onEdit) { Label(text("Редактировать", "Edit"), systemImage: "pencil") }
-            } else {
-                Button(action: onRetry) { Label(text("Повторить", "Retry"), systemImage: "arrow.clockwise") }
-                Button { onFeedback(message.feedback == .like ? nil : .like) } label: {
-                    Label(text("Нравится", "Like"), systemImage: "hand.thumbsup")
-                }
-                Button { onFeedback(message.feedback == .dislike ? nil : .dislike) } label: {
-                    Label(text("Не нравится", "Dislike"), systemImage: "hand.thumbsdown")
-                }
-                Button { onSpeak(message.content) } label: { Label(text("Читать вслух", "Read aloud"), systemImage: "speaker.wave.2") }
-            }
-            Button { onShare(message.content) } label: { Label(text("Поделиться", "Share"), systemImage: "square.and.arrow.up") }
-        }
+        .anchorPreference(key: MessageBoundsKey.self, value: .bounds) { [message.id: $0] }
+        .onLongPressGesture(minimumDuration: 0.45) { onMenu(message) }
+        .accessibilityAction(named: Text(text("Действия с сообщением", "Message actions"))) { onMenu(message) }
     }
 
     private var userMessage: some View {
@@ -605,6 +646,90 @@ private struct MessageBubble: Shape {
         let path = UIBezierPath(roundedRect: rect, byRoundingCorners: [.topLeft, .topRight, .bottomLeft],
                                 cornerRadii: CGSize(width: 22, height: 22))
         return Path(path.cgPath)
+    }
+}
+
+private struct MessageBoundsKey: PreferenceKey {
+    static var defaultValue: [UUID: Anchor<CGRect>] = [:]
+    static func reduce(value: inout [UUID: Anchor<CGRect>], nextValue: () -> [UUID: Anchor<CGRect>]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private enum MessageMenuAction: String {
+    case copy, select, edit, share, retry, like, dislike, speak
+
+    var symbol: String {
+        switch self {
+        case .copy: return "square.on.square"
+        case .select: return "text.cursor"
+        case .edit: return "pencil"
+        case .share: return "arrowshape.turn.up.right"
+        case .retry: return "arrow.clockwise"
+        case .like: return "hand.thumbsup"
+        case .dislike: return "hand.thumbsdown"
+        case .speak: return "speaker.wave.2"
+        }
+    }
+
+    @MainActor func title(_ settings: AppSettings) -> String {
+        switch self {
+        case .copy: return settings.text("Копировать", "Copy")
+        case .select: return settings.text("Выбрать текст", "Select text")
+        case .edit: return settings.text("Редактировать", "Edit")
+        case .share: return settings.text("Поделиться", "Share")
+        case .retry: return settings.text("Повторить", "Retry")
+        case .like: return settings.text("Нравится", "Like")
+        case .dislike: return settings.text("Не нравится", "Dislike")
+        case .speak: return settings.text("Читать вслух", "Read aloud")
+        }
+    }
+}
+
+private struct MessageActionPopup: View {
+    let message: ChatMessage
+    @ObservedObject var settings: AppSettings
+    let rowHeight: CGFloat
+    let onAction: (MessageMenuAction) -> Void
+    @ScaledMetric(relativeTo: .body) private var textSize = 17.0
+
+    private var actions: [MessageMenuAction] {
+        message.role == .user
+            ? [.copy, .select, .edit, .share]
+            : [.copy, .select, .retry, .like, .dislike, .speak, .share]
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(actions, id: \.rawValue) { action in
+                Button { onAction(action) } label: {
+                    HStack(spacing: 15) {
+                        Image(systemName: action.symbol)
+                            .font(.system(size: 19, weight: .regular))
+                            .frame(width: 23)
+                        Text(action.title(settings))
+                            .font(.system(size: textSize * settings.fontScale, weight: .medium))
+                            .lineLimit(1).minimumScaleFactor(0.72)
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(isSelected(action) ? HonorTheme.accent : HonorTheme.foreground)
+                    .frame(height: rowHeight)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("message.menu." + action.rawValue)
+            }
+        }
+        .padding(.horizontal, 21)
+        .padding(.vertical, 12)
+        .background(HonorTheme.sidebar, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(HonorTheme.divider, lineWidth: 0.8))
+        .shadow(color: .black.opacity(0.28), radius: 18, x: 0, y: 10)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func isSelected(_ action: MessageMenuAction) -> Bool {
+        (action == .like && message.feedback == .like) || (action == .dislike && message.feedback == .dislike)
     }
 }
 

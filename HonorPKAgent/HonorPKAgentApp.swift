@@ -40,7 +40,11 @@ struct HonorPKAgentApp: App {
                     let chat = Conversation(title: "Приветствие", messages: [ChatMessage(role: .user, content: "Привет, как твои дела?"), answer])
                     var pinned = Conversation(title: "Идеи для проекта")
                     pinned.pinned = true
-                    store.conversations = [chat, pinned]
+                    var yesterday = Conversation(title: "Выбор смартфона")
+                    yesterday.updatedAt = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+                    var earlier = Conversation(title: "Дизайн приложения")
+                    earlier.updatedAt = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
+                    store.conversations = [chat, pinned, yesterday, earlier]
                     store.selectedConversationID = chat.id
                 }
             }

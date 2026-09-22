@@ -34,13 +34,37 @@ final class InterfaceTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Привет, как твои дела?"].exists)
         capture("04-conversation")
         app.staticTexts["Привет, как твои дела?"].press(forDuration: 1.1)
+        XCTAssertTrue(app.buttons["message.menu.edit"].waitForExistence(timeout: 5))
         capture("05-message-menu")
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.14)).tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.16)).tap()
+        app.staticTexts["Привет! У меня всё отлично, спасибо, что спросил. А как твои дела?"].firstMatch.press(forDuration: 1.1)
+        XCTAssertTrue(app.buttons["message.menu.speak"].waitForExistence(timeout: 5))
+        capture("08-assistant-menu")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.16)).tap()
         app.buttons["chat.sidebar"].tap()
         XCTAssertTrue(app.buttons["sidebar.settings"].waitForExistence(timeout: 5))
         capture("06-history")
+        app.buttons["Выбрать чаты"].tap()
+        XCTAssertTrue(app.staticTexts["Выберите чаты"].waitForExistence(timeout: 5))
+        capture("09-select-chats")
+        app.buttons["Отмена"].tap()
         app.buttons["sidebar.settings"].tap()
         XCTAssertTrue(app.staticTexts["Настройки"].waitForExistence(timeout: 5))
         capture("07-settings")
+    }
+
+    func testLiveDeepSeekRoundTrip() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestWelcome"]
+        app.launch()
+        XCTAssertTrue(app.buttons["composer.reasoning"].waitForExistence(timeout: 10))
+        app.buttons["composer.reasoning"].tap()
+        let field = app.textViews["chat.composer"].exists ? app.textViews["chat.composer"] : app.textFields["chat.composer"]
+        field.tap()
+        field.typeText("Return exactly the concatenation of HONOR, underscore, TEST, underscore, OK. Nothing else.")
+        app.buttons["chat.send"].tap()
+        let reply = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "HONOR_TEST_OK")).firstMatch
+        XCTAssertTrue(reply.waitForExistence(timeout: 60), "Native DeepSeek request should return expected text")
+        capture("10-live-reply")
     }
 }

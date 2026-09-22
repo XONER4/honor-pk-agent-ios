@@ -147,6 +147,7 @@ struct AttachmentTray: View {
     @State private var processingTask: Task<Void, Never>?
 
     var body: some View {
+        let photoLabel = tile("photo", settings.text("Альбом", "Photos"))
         VStack(spacing: 14) {
             if isLoading {
                 HStack(spacing: 10) {
@@ -160,7 +161,7 @@ struct AttachmentTray: View {
             HStack(spacing: 9) {
                 Button { openCamera() } label: { tile("camera", settings.text("Камера", "Camera")) }
                 PhotosPicker(selection: $selectedPhoto, matching: .images, photoLibrary: .shared()) {
-                    tile("photo", settings.text("Альбом", "Photos"))
+                    photoLabel
                 }
                 Button { showsFiles = true } label: { tile("paperclip", settings.text("Файл", "File")) }
             }

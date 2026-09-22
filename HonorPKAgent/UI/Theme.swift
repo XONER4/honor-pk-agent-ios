@@ -29,12 +29,12 @@ struct HonorMark: View {
     var body: some View {
         ZStack {
             HonorRibbon()
-                .fill(LinearGradient(colors: [Color(red: 0.45, green: 0.70, blue: 1), HonorTheme.accent],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                .fill(LinearGradient(colors: [Color(red: 0.86, green: 0.94, blue: 1), Color(red: 0.48, green: 0.59, blue: 0.94)],
+                                     startPoint: .top, endPoint: .bottom))
+                .scaleEffect(x: -1, y: 1)
             HonorRibbon()
-                .fill(LinearGradient(colors: [HonorTheme.accent, Color(red: 0.37, green: 0.39, blue: 0.94)],
+                .fill(LinearGradient(colors: [Color(red: 0.28, green: 0.69, blue: 1), Color(red: 0.22, green: 0.43, blue: 0.98)],
                                      startPoint: .topLeading, endPoint: .bottomTrailing))
-                .rotationEffect(.degrees(90))
         }
         .frame(width: size, height: size)
         .accessibilityLabel("Honor")

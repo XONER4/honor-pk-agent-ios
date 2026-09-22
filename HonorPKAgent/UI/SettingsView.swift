@@ -18,7 +18,7 @@ struct SettingsView: View {
                         }
                         SettingsDivider()
                         NavigationLink { DataSettingsPage() } label: {
-                            SettingsRow(symbol: "externaldrive.badge.gearshape", title: settings.text("Управление данными", "Data management"))
+                            SettingsRow(symbol: "externaldrive", title: settings.text("Управление данными", "Data management"))
                         }
                     }
                     SettingsGroup(title: settings.text("Приложение", "Application")) {
@@ -95,7 +95,7 @@ struct SettingsView: View {
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
                             .frame(width: 35, height: 35)
                             .background(Color.primary.opacity(0.06), in: Circle())
                             .overlay(Circle().stroke(Color.primary.opacity(0.08), lineWidth: 1))
