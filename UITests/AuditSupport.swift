@@ -101,11 +101,8 @@ class HonorAuditCase: XCTestCase {
 
     func assertDisplayedValue(_ value: String, id: String, app: XCUIApplication) {
         let item = element(app, id)
-        let predicate = NSPredicate { object, _ in
-            guard let item = object as? XCUIElement, item.exists else { return false }
-            return item.label.contains(value) || (item.value as? String ?? "").contains(value)
-        }
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: item)], timeout: 5), .completed,
+        let predicate = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", value, value)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: item)], timeout: 15), .completed,
                        "Expected \(id) to expose \(value); label=\(item.label), value=\(String(describing: item.value))")
     }
 

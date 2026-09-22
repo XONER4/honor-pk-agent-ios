@@ -9,6 +9,7 @@ on:
         options:
           - full
           - history-layout
+          - layouts-only
   push:
     branches: [main]
 jobs:
@@ -42,11 +43,18 @@ jobs:
         env:
           TEST_SCOPE: ${{ inputs.scope || 'full' }}
         run: |
-          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["identifier"] for x in reversed(d["runtimes"]) if "iOS" in x["name"] and x["isAvailable"]))')
-          DEVICE=$(xcrun simctl create 'Honor iPhone 13' com.apple.CoreSimulator.SimDeviceType.iPhone-13 "$RUNTIME")
-          xcrun simctl boot "$DEVICE" || true
-          xcrun simctl bootstatus "$DEVICE" -b
-          xcrun simctl status_bar "$DEVICE" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+          ACTION=test
+          DESTINATION='generic/platform=iOS Simulator'
+          if [ "$TEST_SCOPE" = "layouts-only" ]; then
+            ACTION=build-for-testing
+          else
+            RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["identifier"] for x in reversed(d["runtimes"]) if "iOS" in x["name"] and x["isAvailable"]))')
+            DEVICE=$(xcrun simctl create 'Honor iPhone 13' com.apple.CoreSimulator.SimDeviceType.iPhone-13 "$RUNTIME")
+            xcrun simctl boot "$DEVICE" || true
+            xcrun simctl bootstatus "$DEVICE" -b
+            xcrun simctl status_bar "$DEVICE" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+            DESTINATION="platform=iOS Simulator,id=$DEVICE"
+          fi
           EXTRA=()
           if [ "$TEST_SCOPE" = "history-layout" ]; then
             EXTRA=(-only-testing:HonorPKAgentTests
@@ -55,8 +63,8 @@ jobs:
               -only-testing:HonorPKAgentUITests/InterfaceTests/testWelcomeComposerAndAttachments)
           fi
           xcodebuild -project HonorPKAgent.xcodeproj -scheme HonorPKAgent -configuration Debug \
-            -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath build/simulator \
-            -parallel-testing-enabled NO -resultBundlePath build/TestResults.xcresult CODE_SIGNING_ALLOWED=NO "${EXTRA[@]}" test > build-tests.log 2>&1
+            -destination "$DESTINATION" -derivedDataPath build/simulator \
+            -parallel-testing-enabled NO -resultBundlePath build/TestResults.xcresult CODE_SIGNING_ALLOWED=NO "${EXTRA[@]}" "$ACTION" > build-tests.log 2>&1
       - name: Check compact and large iPhone layouts
         run: |
           RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["identifier"] for x in reversed(d["runtimes"]) if "iOS" in x["name"] and x["isAvailable"]))')
