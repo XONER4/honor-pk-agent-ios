@@ -285,6 +285,42 @@ final class HonorPKAgentTests: XCTestCase {
     }
 
     @MainActor
+    func testDraftRemovalAndNewChatCleanOrphansButPreserveEditedAndBranchedFiles() throws {
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("HonorPKAgent/Attachments")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let urls = (0..<3).map { _ in directory.appendingPathComponent("draft-test-\(UUID()).jpg") }
+        for url in urls { try Data([0xff, 0xd8, 0xff, 0xd9]).write(to: url) }
+        defer { for url in urls { try? FileManager.default.removeItem(at: url) } }
+        let items = urls.map { MessageAttachment(name: "photo.jpg", kind: .image, localPath: $0.path) }
+        let store = ChatStore(configuration: .init(apiKey: "test"), storageURL: temporaryHistory())
+
+        store.attachments = [items[0]]
+        store.attachments.removeAll { $0.id == items[0].id }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: urls[0].path))
+
+        store.attachments = [items[1]]
+        store.newChat()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: urls[1].path))
+
+        let message = ChatMessage(role: .user, content: "Keep shared photo", attachments: [items[2]])
+        let source = Conversation(messages: [message])
+        store.conversations = [source]; store.selectedConversationID = source.id
+        store.edit(messageID: message.id)
+        store.attachments.removeAll()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: urls[2].path))
+        store.cancelEditing()
+        let branchID = try XCTUnwrap(store.forkConversation(at: message.id))
+        store.deleteChats(ids: [source.id])
+        let copiedMessage = try XCTUnwrap(store.selectedConversation?.messages.first)
+        store.edit(messageID: copiedMessage.id)
+        store.newChat()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: urls[2].path))
+        store.deleteChats(ids: [branchID])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: urls[2].path))
+    }
+
+    @MainActor
     func testExplicitMemoryIsValidatedEditablePersistentAndPreservedWhenChatsCleared() throws {
         let url = temporaryHistory()
         let store = ChatStore(configuration: .init(apiKey: "test"), storageURL: url)

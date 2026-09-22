@@ -6,7 +6,15 @@ final class ChatStore: ObservableObject {
     @Published var conversations: [Conversation] = []
     @Published var selectedConversationID: UUID?
     @Published var draft: String = "" { didSet { scheduleSave() } }
-    @Published var attachments: [MessageAttachment] = [] { didSet { scheduleSave() } }
+    @Published var attachments: [MessageAttachment] = [] {
+        didSet {
+            if !isLoading {
+                let retainedIDs = Set(attachments.map(\.id))
+                removeUnreferencedAttachments(oldValue.filter { !retainedIDs.contains($0.id) })
+            }
+            scheduleSave()
+        }
+    }
     @Published private(set) var isGenerating = false
     @Published var reasoningEnabled = true
     @Published var searchEnabled = false
