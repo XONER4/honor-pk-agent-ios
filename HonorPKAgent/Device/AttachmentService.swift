@@ -134,6 +134,7 @@ enum AttachmentService {
     }
 }
 
+@MainActor
 struct AttachmentTray: View {
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.colorScheme) private var colorScheme
@@ -143,6 +144,7 @@ struct AttachmentTray: View {
     @State private var showsCamera = false
     @State private var showsFiles = false
     @State private var isLoading = false
+    @State private var processingTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 14) {
@@ -172,16 +174,20 @@ struct AttachmentTray: View {
         .padding(.vertical, 16)
         .onChange(of: selectedPhoto) { photo in
             guard let photo else { return }
-            Task { @MainActor in
+            processingTask = Task { @MainActor in
                 isLoading = true
                 defer { isLoading = false; selectedPhoto = nil }
                 do {
                     guard let data = try await photo.loadTransferable(type: Data.self) else {
                         throw AttachmentService.AttachmentError.invalidImage
                     }
-                    onAttachment(try await AttachmentService.importImage(data: data,
-                        name: settings.text("Фото.jpg", "Photo.jpg")))
-                } catch { onError(error.localizedDescription) }
+                    let attachment = try await AttachmentService.importImage(data: data,
+                        name: settings.text("Фото.jpg", "Photo.jpg"))
+                    try Task.checkCancellation()
+                    onAttachment(attachment)
+                } catch {
+                    if !(error is CancellationError) { onError(error.localizedDescription) }
+                }
             }
         }
         .sheet(isPresented: $showsCamera) {
@@ -191,12 +197,17 @@ struct AttachmentTray: View {
                     onError(AttachmentService.AttachmentError.invalidImage.localizedDescription)
                     return
                 }
-                Task { @MainActor in
+                processingTask = Task { @MainActor in
                     isLoading = true
                     defer { isLoading = false }
-                    do { onAttachment(try await AttachmentService.importImage(data: data,
-                        name: settings.text("Камера.jpg", "Camera.jpg"))) }
-                    catch { onError(error.localizedDescription) }
+                    do {
+                        let attachment = try await AttachmentService.importImage(data: data,
+                            name: settings.text("Камера.jpg", "Camera.jpg"))
+                        try Task.checkCancellation()
+                        onAttachment(attachment)
+                    } catch {
+                        if !(error is CancellationError) { onError(error.localizedDescription) }
+                    }
                 }
             } onCancel: { showsCamera = false }
             .ignoresSafeArea()
@@ -209,15 +220,21 @@ struct AttachmentTray: View {
             switch result {
             case .success(let urls):
                 guard let url = urls.first else { return }
-                Task { @MainActor in
+                processingTask = Task { @MainActor in
                     isLoading = true
                     defer { isLoading = false }
-                    do { onAttachment(try await AttachmentService.importFile(url: url)) }
-                    catch { onError(error.localizedDescription) }
+                    do {
+                        let attachment = try await AttachmentService.importFile(url: url)
+                        try Task.checkCancellation()
+                        onAttachment(attachment)
+                    } catch {
+                        if !(error is CancellationError) { onError(error.localizedDescription) }
+                    }
                 }
             case .failure(let error): onError(error.localizedDescription)
             }
         }
+        .onDisappear { processingTask?.cancel() }
     }
 
     private func tile(_ symbol: String, _ title: String) -> some View {
@@ -237,8 +254,9 @@ struct AttachmentTray: View {
             onError(settings.text("Камера на этом устройстве недоступна.", "Camera is unavailable on this device."))
             return
         }
-        Task { @MainActor in
+        processingTask = Task { @MainActor in
             let allowed = await AVCaptureDevice.requestAccess(for: .video)
+            guard !Task.isCancelled else { return }
             if allowed { showsCamera = true }
             else { onError(settings.text("Разрешите доступ к камере в настройках iPhone → Honor PK Agent.",
                                           "Allow camera access in iPhone Settings → Honor PK Agent.")) }

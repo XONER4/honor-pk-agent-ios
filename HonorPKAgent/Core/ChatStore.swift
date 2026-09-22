@@ -148,6 +148,7 @@ final class ChatStore: ObservableObject {
 
     func deleteChats(ids: Set<UUID>) {
         if let activeConversationID, ids.contains(activeConversationID) { stop() }
+        let removedAttachments = conversations.filter { ids.contains($0.id) }.flatMap(\.messages).flatMap(\.attachments)
         conversations.removeAll { ids.contains($0.id) }
         if let selectedConversationID, ids.contains(selectedConversationID) {
             self.selectedConversationID = nil
@@ -155,6 +156,7 @@ final class ChatStore: ObservableObject {
             draft = ""
             attachments = []
         }
+        removeUnreferencedAttachments(removedAttachments)
         persistNow()
     }
 
@@ -218,6 +220,8 @@ final class ChatStore: ObservableObject {
         generationTask = Task { [weak self] in
             guard let self else { return }
             do {
+                try Task.checkCancellation()
+                guard self.activeRunID == runID else { return }
                 var context = ""
                 if searching {
                     let query = input.last(where: { $0.role == .user })?.content ?? ""
@@ -237,7 +241,7 @@ final class ChatStore: ObservableObject {
                 var lastSaved = Date()
                 var finishReason: String?
 
-                func flush() {
+                @MainActor func flush() {
                     guard !pendingContent.isEmpty || !pendingReasoning.isEmpty else { return }
                     let seconds = firstReasoningAt.map { max(1, Int((reasoningEndedAt ?? Date()).timeIntervalSince($0).rounded())) } ?? 0
                     self.mutateMessage(chatID: chatID, messageID: response.id) {
@@ -303,6 +307,18 @@ final class ChatStore: ObservableObject {
         guard let chatIndex = conversations.firstIndex(where: { $0.id == chatID }),
               let messageIndex = conversations[chatIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
         update(&conversations[chatIndex].messages[messageIndex])
+    }
+
+    private func removeUnreferencedAttachments(_ candidates: [MessageAttachment]) {
+        let retained = conversations.flatMap(\.messages).flatMap(\.attachments) + attachments
+        let retainedPaths = Set(retained.compactMap { $0.resolvedURL?.standardizedFileURL.path })
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("HonorPKAgent/Attachments", isDirectory: true).standardizedFileURL.path + "/"
+        for attachment in candidates {
+            guard let url = attachment.resolvedURL?.standardizedFileURL,
+                  url.path.hasPrefix(root), !retainedPaths.contains(url.path) else { continue }
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     private func scheduleSave() {

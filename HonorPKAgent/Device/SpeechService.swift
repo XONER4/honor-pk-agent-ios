@@ -1,6 +1,7 @@
 import AVFoundation
 import Combine
 import Speech
+import UIKit
 
 @MainActor
 final class SpeechService: NSObject, ObservableObject {
@@ -18,6 +19,7 @@ final class SpeechService: NSObject, ObservableObject {
     private var recordingID = UUID()
     private var preparingRecording = false
     private var interruptionObserver: NSObjectProtocol?
+    private var backgroundObserver: NSObjectProtocol?
 
     override init() {
         super.init()
@@ -30,10 +32,19 @@ final class SpeechService: NSObject, ObservableObject {
                 self?.stopSpeaking()
             }
         }
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.stopRecording()
+                self?.stopSpeaking()
+            }
+        }
     }
 
     deinit {
         if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
+        if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
     }
 
     func startRecording(language: String = "ru-RU") async {

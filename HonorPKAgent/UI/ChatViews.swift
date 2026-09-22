@@ -5,6 +5,7 @@ struct ChatRootView: View {
     @EnvironmentObject private var store: ChatStore
     @EnvironmentObject private var settings: AppSettings
     @StateObject private var speech = SpeechService()
+    @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var drawerOpen = false
     @State private var attachmentsOpen = false
@@ -126,7 +127,7 @@ struct ChatRootView: View {
                               label: text("История чатов", "Chat history"), action: openDrawer)
                 .accessibilityIdentifier("chat.sidebar")
             Text(store.selectedConversation?.title ?? "")
-                .font(.system(size: 17 * settings.fontScale, weight: .semibold))
+                .font(.system(size: 17 * settings.fontScale * dynamicScale, weight: .semibold))
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 4)
@@ -171,7 +172,7 @@ struct ChatRootView: View {
             VStack(spacing: 23) {
                 HonorMark(size: 47)
                 Text(text("Привет! О чём хотите\nпоговорить сегодня?", "Hi! What would you like\nto talk about today?"))
-                    .font(.system(size: 22 * settings.fontScale, weight: .bold))
+                    .font(.system(size: 22 * settings.fontScale * dynamicScale, weight: .bold))
                     .lineSpacing(5)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -227,7 +228,7 @@ struct ChatRootView: View {
                 }
             }
             TextField(text("Напишите сообщение…", "Message Honor…"), text: $store.draft, axis: .vertical)
-                .font(.system(size: 17 * settings.fontScale))
+                .font(.system(size: 17 * settings.fontScale * dynamicScale))
                 .lineLimit(1...6)
                 .focused($composerFocused)
                 .tint(HonorTheme.accent)
@@ -371,13 +372,14 @@ private struct MessageTimeline: View {
     let onShare: (String) -> Void
     let onSpeak: (String) -> Void
     @State private var followLatest = true
+    @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 25) {
                     Text(settings.text("Сгенерированный ИИ ответ, только для справки.", "AI-generated answers are for reference."))
-                        .font(.system(size: 13 * settings.fontScale, weight: .medium))
+                        .font(.system(size: 13 * settings.fontScale * dynamicScale, weight: .medium))
                         .foregroundStyle(HonorTheme.secondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
@@ -448,6 +450,7 @@ private struct MessageRow: View {
     let onEdit: () -> Void
     let onFeedback: (MessageFeedback?) -> Void
     @State private var reasoningOpen = false
+    @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
 
     private func text(_ ru: String, _ en: String) -> String { settings.text(ru, en) }
 
@@ -482,7 +485,7 @@ private struct MessageRow: View {
                 attachmentLabels
                 if !message.content.isEmpty {
                     Text(message.content)
-                        .font(.system(size: 17 * settings.fontScale))
+                        .font(.system(size: 17 * settings.fontScale * dynamicScale))
                         .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -492,7 +495,7 @@ private struct MessageRow: View {
         }
         .padding(.top, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(text("Вы: ", "You: ") + message.content)
+        .accessibilityHint(text("Ваше сообщение. Удерживайте для действий.", "Your message. Touch and hold for actions."))
     }
 
     private var assistantMessage: some View {
@@ -503,7 +506,7 @@ private struct MessageRow: View {
                 } label: {
                     HStack(spacing: 7) {
                         if streaming && message.content.isEmpty { ProgressView().scaleEffect(0.7).tint(HonorTheme.secondary) }
-                        Text(reasoningTitle).font(.system(size: 16 * settings.fontScale, weight: .medium))
+                        Text(reasoningTitle).font(.system(size: 16 * settings.fontScale * dynamicScale, weight: .medium))
                         Image(systemName: reasoningOpen ? "chevron.down" : "chevron.right").font(.system(size: 12, weight: .medium))
                     }
                     .foregroundStyle(HonorTheme.secondary)
@@ -515,7 +518,7 @@ private struct MessageRow: View {
                 .accessibilityHint(text("Открыть или свернуть рассуждение", "Expand or collapse reasoning"))
                 if reasoningOpen && !message.reasoning.isEmpty {
                     Text(message.reasoning)
-                        .font(.system(size: 14 * settings.fontScale))
+                        .font(.system(size: 14 * settings.fontScale * dynamicScale))
                         .foregroundStyle(HonorTheme.secondary)
                         .lineSpacing(5)
                         .textSelection(.enabled)
@@ -524,11 +527,11 @@ private struct MessageRow: View {
                 }
             }
             if !message.content.isEmpty {
-                MarkdownMessage(content: message.content, fontSize: 17 * settings.fontScale, onCopy: onCopy)
+                MarkdownMessage(content: message.content, fontSize: 17 * settings.fontScale * dynamicScale, onCopy: onCopy)
             }
             if let error = message.error {
                 Label(error, systemImage: "exclamationmark.circle")
-                    .font(.system(size: 14 * settings.fontScale))
+                    .font(.system(size: 14 * settings.fontScale * dynamicScale))
                     .foregroundStyle(Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(action: onRetry) { Label(text("Повторить запрос", "Try again"), systemImage: "arrow.clockwise") }
@@ -617,6 +620,7 @@ private struct HistoryDrawer: View {
     @State private var renameTitle = ""
     @State private var deleteTargets: Set<UUID> = []
     @FocusState private var searchFocused: Bool
+    @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
 
     private func text(_ ru: String, _ en: String) -> String { settings.text(ru, en) }
 
@@ -757,7 +761,7 @@ private struct HistoryDrawer: View {
                         .font(.system(size: 20))
                         .foregroundStyle(selectedIDs.contains(chat.id) ? HonorTheme.accent : HonorTheme.secondary.opacity(0.5))
                 }
-                Text(chat.title).font(.system(size: 16 * settings.fontScale, weight: .medium))
+                Text(chat.title).font(.system(size: 16 * settings.fontScale * dynamicScale, weight: .medium))
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if store.selectedConversationID == chat.id && !selecting {
@@ -860,7 +864,8 @@ private struct SelectableTextView: UIViewRepresentable {
     }
     func updateUIView(_ view: UITextView, context: Context) {
         view.text = content
-        view.font = .systemFont(ofSize: fontSize)
+        view.font = UIFontMetrics.default.scaledFont(for: .systemFont(ofSize: fontSize))
+        view.adjustsFontForContentSizeCategory = true
         view.textColor = .label
     }
 }
@@ -901,7 +906,6 @@ private struct MarkdownMessage: View {
                         .font(.system(size: fontSize))
                         .lineSpacing(5)
                         .tint(HonorTheme.accent)
-                        .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

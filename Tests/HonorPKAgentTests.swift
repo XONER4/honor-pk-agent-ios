@@ -155,6 +155,39 @@ final class HonorPKAgentTests: XCTestCase {
     }
 
     @MainActor
+    func testImportNeverFollowsExternalLocalPaths() throws {
+        let sourceURL = temporaryHistory()
+        let privatePath = FileManager.default.temporaryDirectory.appendingPathComponent("external-private-photo.jpg").path
+        let attachment = MessageAttachment(name: "photo.jpg", kind: .image, localPath: privatePath)
+        let conversation = Conversation(messages: [ChatMessage(role: .user, content: "Photo", attachments: [attachment])])
+        let archive = HistoryArchive(conversations: [conversation], selectedConversationID: conversation.id)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(archive).write(to: sourceURL)
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+        let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"), storageURL: temporaryHistory())
+        try store.importData(from: sourceURL)
+        XCTAssertNil(store.conversations.first?.messages.first?.attachments.first?.localPath)
+        XCTAssertEqual(store.conversations.first?.messages.first?.attachments.first?.name, "photo.jpg")
+    }
+
+    @MainActor
+    func testRelaunchMarksPartiallySavedStreamInterrupted() throws {
+        let url = temporaryHistory()
+        let answer = ChatMessage(role: .assistant, content: "Частичный ответ")
+        let conversation = Conversation(messages: [ChatMessage(role: .user, content: "Вопрос"), answer])
+        let archive = HistoryArchive(conversations: [conversation], selectedConversationID: conversation.id, inFlightMessageID: answer.id)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(archive).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"), storageURL: url)
+        XCTAssertEqual(store.messages.last?.content, "Частичный ответ")
+        XCTAssertEqual(store.messages.last?.isInterrupted, true)
+        XCTAssertFalse(store.isGenerating)
+    }
+
+    @MainActor
     private func waitUntilIdle(_ store: ChatStore) async throws {
         for _ in 0..<200 {
             if !store.isGenerating { return }

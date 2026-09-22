@@ -18,8 +18,11 @@ final class InterfaceTests: XCTestCase {
         XCTAssertTrue(app.buttons["Камера"].waitForExistence(timeout: 5))
         capture("02-attachments")
         app.buttons["composer.attachments"].tap()
-        let field = app.textFields["chat.composer"]
-        if field.exists { field.tap(); field.typeText("Hello Honor") }
+        let field = app.textViews["chat.composer"].exists ? app.textViews["chat.composer"] : app.textFields["chat.composer"]
+        XCTAssertTrue(field.exists)
+        field.tap()
+        field.typeText("Hello Honor")
+        XCTAssertTrue(app.buttons["chat.send"].waitForExistence(timeout: 5))
         capture("03-keyboard")
     }
 
