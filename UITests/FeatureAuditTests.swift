@@ -117,16 +117,15 @@ final class FeatureAuditTests: HonorAuditCase {
         XCTAssertFalse(app.buttons["history.row." + pinnedID].exists)
         app.buttons["history.clear"].tap()
         app.buttons["history.select"].tap()
-        app.buttons["history.row." + chatID].tap()
-        app.buttons["history.row." + pinnedID].tap()
-        XCTAssertTrue(app.buttons["history.row." + chatID].isSelected)
+        selectHistoryRow(chatID, app: app)
+        selectHistoryRow(pinnedID, app: app)
         XCTAssertTrue(app.buttons["history.bulk.pin"].label.contains("Открепить"))
         app.buttons["history.bulk.pin"].tap()
         XCTAssertTrue(app.buttons["sidebar.settings"].waitForExistence(timeout: 5))
 
         app.buttons["history.select"].tap()
-        app.buttons["history.row." + chatID].tap()
-        app.buttons["history.row." + pinnedID].tap()
+        selectHistoryRow(chatID, app: app)
+        selectHistoryRow(pinnedID, app: app)
         XCTAssertTrue(app.buttons["history.bulk.pin"].label.contains("Закрепить"))
         app.buttons["history.bulk.delete"].tap()
         tapSystemAction("history.delete.confirm", title: "Удалить", app: app)
@@ -247,5 +246,18 @@ final class FeatureAuditTests: HonorAuditCase {
 
     private func historyRow(titled title: String, app: XCUIApplication) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "history.row.", title)).firstMatch
+    }
+
+    private func selectHistoryRow(_ id: String, app: XCUIApplication) {
+        let row = app.buttons["history.row." + id]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(row.isEnabled)
+        XCTAssertTrue(app.frame.contains(row.frame), "Selection row must be visible before tapping its circle")
+        // SwiftUI exposes a full-row StaticText inside the selection button, so XCTest
+        // cannot resolve the parent's hit point. Exercise its visible circle directly.
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.085, dy: 0.5)).tap()
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: row)
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed,
+                       "Tapping the row's selection circle must select that conversation")
     }
 }
