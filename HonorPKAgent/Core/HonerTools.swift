@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// Инструменты, которые модель может вызвать сама (пункт 11 ТЗ: function calling).
 ///
