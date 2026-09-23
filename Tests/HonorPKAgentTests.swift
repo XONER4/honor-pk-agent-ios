@@ -119,20 +119,20 @@ final class HonorPKAgentTests: XCTestCase {
     func testStreamPersistsContentReasoningAndFeedback() async throws {
         let url = temporaryHistory()
         defer { try? FileManager.default.removeItem(at: url) }
-        let client = ImmediateClient(events: [.init(reasoning: "Анализ"), .init(content: "Ответ"), .init(finishReason: "stop")])
+        let client = ImmediateClient(events: [.init(reasoning: "Анализ вопроса"), .init(content: "Ответ готов."), .init(finishReason: "stop")])
         let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"), client: client, storageURL: url)
         store.draft = "Вопрос"
         store.send()
         try await waitUntilIdle(store)
         let answer = try XCTUnwrap(store.messages.last)
-        XCTAssertEqual(answer.content, "Ответ")
-        XCTAssertEqual(answer.reasoning, "Анализ")
+        XCTAssertEqual(answer.content, "Ответ готов.")
+        XCTAssertEqual(answer.reasoning, "Анализ вопроса")
         XCTAssertGreaterThanOrEqual(answer.reasoningSeconds, 1)
         store.setFeedback(messageID: answer.id, feedback: .like)
         store.persistNow()
         let restored = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"), storageURL: url)
         XCTAssertEqual(restored.messages.last?.feedback, .like)
-        XCTAssertEqual(restored.messages.last?.content, "Ответ")
+        XCTAssertEqual(restored.messages.last?.content, "Ответ готов.")
     }
 
     @MainActor
@@ -164,7 +164,7 @@ final class HonorPKAgentTests: XCTestCase {
         for _ in 0..<50 where client.continuations.isEmpty { try await Task.sleep(nanoseconds: 5_000_000) }
         let firstID = try XCTUnwrap(store.selectedConversationID)
         let oldStream = try XCTUnwrap(client.continuations.first)
-        oldStream.yield(.init(content: "Начало"))
+        oldStream.yield(.init(content: "Начало ответа."))
         try await Task.sleep(nanoseconds: 20_000_000)
         store.newChat()
         oldStream.yield(.init(content: "Устаревший токен"))
@@ -180,7 +180,7 @@ final class HonorPKAgentTests: XCTestCase {
     @MainActor
     func testSearchFailureDoesNotGenerateFabricatedAnswer() async throws {
         let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"),
-                              client: ImmediateClient(events: [.init(content: "Нельзя показывать")]),
+                              client: ImmediateClient(events: [.init(content: "Ответ не должен появиться без поиска.")]),
                               searchClient: FailingSearch(), storageURL: temporaryHistory())
         store.searchEnabled = true
         store.draft = "Новости"
@@ -415,24 +415,24 @@ final class HonorPKAgentTests: XCTestCase {
         for _ in 0..<50 where client.continuations.isEmpty { try await Task.sleep(nanoseconds: 5_000_000) }
         let firstID = try XCTUnwrap(store.selectedConversationID)
         let firstStream = try XCTUnwrap(client.continuations.first)
-        firstStream.yield(.init(content: "First "))
-        firstStream.yield(.init(content: "buffered"))
+        firstStream.yield(.init(content: "Первая часть. "))
+        firstStream.yield(.init(content: "вторая часть."))
         try await Task.sleep(nanoseconds: 10_000_000)
         store.stop()
-        XCTAssertEqual(store.messages.last?.content, "First buffered")
+        XCTAssertEqual(store.messages.last?.content, "Первая часть. вторая часть.")
         store.deleteChats(ids: [firstID])
         firstStream.yield(.init(content: "STALE")); firstStream.finish()
         store.draft = "Keep this conversation"; store.send()
         for _ in 0..<50 where client.continuations.count < 2 { try await Task.sleep(nanoseconds: 5_000_000) }
         XCTAssertEqual(client.continuations.count, 2)
-        client.continuations.last?.yield(.init(content: "Fresh"))
+        client.continuations.last?.yield(.init(content: "Свежий ответ."))
         client.continuations.last?.finish()
         try await waitUntilIdle(store)
         store.persistNow()
         let restored = ChatStore(configuration: .init(apiKey: "test"), storageURL: url)
         XCTAssertEqual(restored.conversations.count, 1)
         XCTAssertFalse(restored.conversations.contains(where: { $0.id == firstID }))
-        XCTAssertEqual(restored.messages.last?.content, "Fresh")
+        XCTAssertEqual(restored.messages.last?.content, "Свежий ответ.")
     }
 
     @MainActor
@@ -494,7 +494,7 @@ private final class CapturingClient: DeepSeekStreaming {
                 searchContext: String, tools: [[String: Any]]?) -> AsyncThrowingStream<DeepSeekDelta, Error> {
         instructions.append(systemInstruction)
         return AsyncThrowingStream { continuation in
-            continuation.yield(.init(content: "Мне нравится зелёный"))
+            continuation.yield(.init(content: "Мне нравится зелёный цвет."))
             continuation.yield(.init(finishReason: "stop"))
             continuation.finish()
         }
