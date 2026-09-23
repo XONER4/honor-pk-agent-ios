@@ -38,11 +38,27 @@ final class ChatStore: ObservableObject {
               let whole = Range(match.range, in: content),
               let emojiRange = Range(match.range(at: 1), in: content) else { return }
         let emoji = String(content[emojiRange])
-        conversations[chatIndex].messages[messageIndex].content =
-            content.replacingCharacters(in: whole, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let remainder = content.replacingCharacters(in: whole, with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // Если вся реплика состояла из строки реакции, стирать её нельзя: иначе
+        // в чате остаётся сообщение без текста и без ошибки — полная тишина.
+        guard !remainder.isEmpty else { return }
+        conversations[chatIndex].messages[messageIndex].content = remainder
         if let userIndex = conversations[chatIndex].messages[..<messageIndex].lastIndex(where: { $0.role == .user }) {
             conversations[chatIndex].messages[userIndex].assistantReaction = emoji
         }
+    }
+
+    /// Страховка: сообщение ассистента не может остаться без текста и без ошибки.
+    /// Проверяется в самом конце генерации, когда все ветки уже отработали.
+    private func ensureVisibleOutcome(chatID: UUID, messageID: UUID) {
+        guard let chatIndex = conversations.firstIndex(where: { $0.id == chatID }),
+              let messageIndex = conversations[chatIndex].messages.firstIndex(where: { $0.id == messageID })
+        else { return }
+        let message = conversations[chatIndex].messages[messageIndex]
+        let isEmpty = message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard isEmpty, message.error == nil, !message.isInterrupted else { return }
+        conversations[chatIndex].messages[messageIndex].error = HonorError.emptyResponse.errorDescription
     }
 
     /// Статистика использования приложения (раздел «Статистика» в настройках).
@@ -796,9 +812,11 @@ final class ChatStore: ObservableObject {
                                                                  systemInstruction: instruction,
                                                                  searchContext: context)
                         if !retryContent.isEmpty {
+                            // Публикуем текст напрямую: flush() дописывает pendingContent
+                            // к rawContent, и раньше из-за этого текст на секунду удваивался.
                             rawContent = retryContent
-                            pendingContent = retryContent
-                            flush()
+                            pendingContent = ""
+                            self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = rawContent }
                         }
                     } catch {
                         if Task.isCancelled { throw CancellationError() }
@@ -814,20 +832,28 @@ final class ChatStore: ObservableObject {
                                 streamed += delta.content
                                 if !delta.reasoning.isEmpty { rawReasoning += delta.reasoning }
                                 rawContent = streamed
-                                pendingContent = streamed
-                                if Date().timeIntervalSince(lastPublished) >= 1.0 / 30.0 { flush() }
+                                pendingContent = ""
+                                if Date().timeIntervalSince(lastPublished) >= 1.0 / 30.0 {
+                                    self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = streamed }
+                                    lastPublished = Date()
+                                }
                             }
-                            flush()
                             retryContent = streamed
                         } catch {
                             if Task.isCancelled { throw CancellationError() }
                         }
                     }
-                    rawContent = retryContent
+                    // Показываем повтор только если он что-то дал. Иначе сохраняем то,
+                    // что уже было: раньше неудачный повтор стирал полный ответ,
+                    // который пользователь уже видел.
+                    let retryIsAnswer = !Self.isTooShortToBeAnAnswer(retryContent)
+                    if retryIsAnswer || Self.isTooShortToBeAnAnswer(rawContent) {
+                        rawContent = retryContent
+                        self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = rawContent }
+                    }
                     // Первый проход закончился ничем — его finish_reason
                     // больше не относится к показанному ответу.
-                    if !Self.isTooShortToBeAnAnswer(retryContent) { finishReason = nil }
-                    self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = rawContent }
+                    if retryIsAnswer { finishReason = nil }
                 }
                 let final = self.conversations.first(where: { $0.id == chatID })?.messages.first(where: { $0.id == response.id })
                 guard !(final?.content.isEmpty ?? true) else { throw HonorError.emptyResponse }
@@ -871,6 +897,8 @@ final class ChatStore: ObservableObject {
                 // Реакция агента на сообщение пользователя (пункт 38 ТЗ).
                 self.extractAssistantReaction(chatID: chatID, messageID: response.id)
             }
+            // Последняя проверка: сообщение не может остаться без текста и без ошибки.
+            self.ensureVisibleOutcome(chatID: chatID, messageID: response.id)
             self.saveSnapshot()
             // Уведомление о готовом ответе, если пользователь вышел из приложения (пункт 36).
             if !(delivered?.content.isEmpty ?? true) {
@@ -1049,12 +1077,17 @@ final class ChatStore: ObservableObject {
             memories = Array((loaded.memories ?? []).filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.text.count <= Self.maximumMemoryLength }.prefix(Self.maximumMemoryCount))
             memoryEnabled = loaded.memoryEnabled ?? true
             // A process termination can leave an incomplete placeholder; make the interrupted state visible.
+            // Проверяем ВСЕ сообщения, а не только последнее: пустое сообщение ассистента,
+            // после которого пользователь успел написать ещё одно, иначе осталось бы
+            // немым навсегда — ни текста, ни ошибки.
             for chatIndex in conversations.indices {
-                guard let last = conversations[chatIndex].messages.indices.last else { continue }
-                if conversations[chatIndex].messages[last].role == .assistant,
-                   (conversations[chatIndex].messages[last].content.isEmpty || conversations[chatIndex].messages[last].id == loaded.inFlightMessageID),
-                   conversations[chatIndex].messages[last].error == nil {
-                    conversations[chatIndex].messages[last].isInterrupted = true
+                for messageIndex in conversations[chatIndex].messages.indices {
+                    let message = conversations[chatIndex].messages[messageIndex]
+                    guard message.role == .assistant else { continue }
+                    let isEmpty = message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    guard isEmpty || message.id == loaded.inFlightMessageID else { continue }
+                    guard message.error == nil else { continue }
+                    conversations[chatIndex].messages[messageIndex].isInterrupted = true
                 }
             }
         }

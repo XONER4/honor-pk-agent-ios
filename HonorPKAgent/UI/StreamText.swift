@@ -536,10 +536,27 @@ enum MarkdownBlockParser {
     static func splitRow(_ line: String) -> [String] {
         var value = line.trimmingCharacters(in: .whitespaces)
         let marker = separator(value) ?? "|"
-        if value.hasPrefix(String(marker)) { value = String(value.dropFirst()) }
-        if value.hasSuffix(String(marker)) { value = String(value.dropLast()) }
-        return value.components(separatedBy: String(marker))
-            .map { $0.replacingOccurrences(of: "\\|", with: "|").trimmingCharacters(in: .whitespaces) }
+        let markerText = String(marker)
+        if value.hasPrefix(markerText) { value = String(value.dropFirst()) }
+        // Хвост «\|» — это экранированная палочка внутри ячейки, а не внешняя граница.
+        if value.hasSuffix(markerText), !value.hasSuffix("\\" + markerText) { value = String(value.dropLast()) }
+        // Режем только по НЕэкранированным палочкам: раньше «| a \| b | 5 |» давала
+        // лишнюю колонку, потому что замена «\|» выполнялась уже после разрезания.
+        var cells: [String] = []
+        var current = ""
+        var iterator = value.makeIterator()
+        var pending: Character?
+        while let character = pending ?? iterator.next() {
+            pending = nil
+            if character == "\\", let next = iterator.next() {
+                if next == marker { current.append(marker) } else { current.append(character); current.append(next) }
+                continue
+            }
+            if character == marker { cells.append(current); current = ""; continue }
+            current.append(character)
+        }
+        cells.append(current)
+        return cells.map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     /// Строка выравнивания под шапкой.
@@ -1849,9 +1866,10 @@ struct MarkdownTableView: View {
             result.sort { lhs, rhs in
                 let left = column < lhs.count ? lhs[column] : ""
                 let right = column < rhs.count ? rhs[column] : ""
-                // Числа сравниваем как числа, иначе как текст.
-                if let a = Double(left.replacingOccurrences(of: ",", with: ".")),
-                   let b = Double(right.replacingOccurrences(of: ",", with: ".")) {
+                // Числа сравниваем как числа, иначе как текст. Разбор общий с итогами:
+                // раньше пробелы-разделители тысяч («1 200») не срезались, и столбец
+                // сортировался по алфавиту: «1 000», «1 200», «900».
+                if let a = Self.numericValue(left), let b = Self.numericValue(right) {
                     return sortAscending ? a < b : a > b
                 }
                 let order = left.localizedStandardCompare(right)
@@ -1861,18 +1879,30 @@ struct MarkdownTableView: View {
         return result
     }
 
+    /// Число из ячейки таблицы: убираем пробелы и неразрывные пробелы, валюту и процент,
+    /// запятую читаем как десятичный разделитель.
+    static func numericValue(_ raw: String) -> Double? {
+        let cleaned = raw
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "\u{00A0}", with: "")
+            .replacingOccurrences(of: "\u{202F}", with: "")
+            .replacingOccurrences(of: ",", with: ".")
+            .replacingOccurrences(of: "₽", with: "")
+            .replacingOccurrences(of: "$", with: "")
+            .replacingOccurrences(of: "€", with: "")
+            .replacingOccurrences(of: "%", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return nil }
+        return Double(cleaned)
+    }
+
     /// Есть ли в столбце числа — тогда показываем итоги.
     private var numericColumns: [Int] {
         let sample = shownRows
         return (0..<columnCount).filter { column in
             let values = sample.compactMap { row -> Double? in
                 guard column < row.count else { return nil }
-                let cleaned = row[column]
-                    .replacingOccurrences(of: " ", with: "")
-                    .replacingOccurrences(of: ",", with: ".")
-                    .replacingOccurrences(of: "₽", with: "")
-                    .replacingOccurrences(of: "%", with: "")
-                return Double(cleaned)
+                return Self.numericValue(row[column])
             }
             return values.count >= 2 && values.count == sample.count
         }
@@ -1925,6 +1955,25 @@ struct MarkdownTableView: View {
                 fitTable
             } else {
                 wideTable
+            }
+
+            // Фильтр может не найти ни одной строки: раньше тело таблицы просто исчезало,
+            // оставалась панель фильтра без данных и без объяснения.
+            if visibleRows.isEmpty {
+                VStack(spacing: 6) {
+                    Text(filter.isEmpty ? "Нет строк для показа" : "Ничего не найдено")
+                        .font(.system(size: 12)).foregroundStyle(HonorTheme.secondary)
+                    if !filter.isEmpty {
+                        Button("Сбросить фильтр") {
+                            withAnimation(.easeOut(duration: 0.18)) { filter = ""; sortColumn = nil }
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(HonorTheme.accent)
+                        .accessibilityIdentifier("table.filter.reset")
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(HonorTheme.raised.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
             }
 
             if !showAllRows, visibleRows.count > rowLimit {
@@ -2195,12 +2244,7 @@ struct MarkdownTableView: View {
         guard numericColumns.contains(column) else { return [] }
         return shownRows.compactMap { row in
             guard column < row.count else { return nil }
-            let cleaned = row[column]
-                .replacingOccurrences(of: " ", with: "")
-                .replacingOccurrences(of: ",", with: ".")
-                .replacingOccurrences(of: "₽", with: "")
-                .replacingOccurrences(of: "%", with: "")
-            return Double(cleaned)
+            return Self.numericValue(row[column])
         }
     }
 
