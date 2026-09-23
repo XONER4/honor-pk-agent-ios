@@ -288,12 +288,19 @@ final class Honer10CoreTests: XCTestCase {
 
     func testTruncatedOrForeignTranslationIsRejected() throws {
         // Полный ответ не должен подменяться обрывком перевода или английским текстом.
-        let source = String(repeating: "Ice melts when it receives enough heat energy. ", count: 12)
+        let source = String(repeating: "Ice melts when it receives enough heat energy. ", count: 40)
+        // Настоящий перевод в 12 раз длиннее порога — принимается.
         XCTAssertTrue(RussianTextPolicy.isAcceptableTranslation(String(repeating: "Лёд тает, когда получает достаточно тепла. ", count: 12), source: source))
+        // Краткий, но законченный русский пересказ тоже принимается: именно такой
+        // перевод рассуждения отвергался раньше, и пользователь видел английский текст.
+        let brief = String(repeating: "Сначала разберу условие задачи и проверю логику. ", count: 12)
+        XCTAssertTrue(RussianTextPolicy.isAcceptableTranslation(brief, source: source))
         XCTAssertFalse(RussianTextPolicy.isAcceptableTranslation("В", source: source))
         XCTAssertFalse(RussianTextPolicy.isAcceptableTranslation("Лёд тает.", source: source))
         XCTAssertFalse(RussianTextPolicy.isAcceptableTranslation("", source: source))
         XCTAssertFalse(RussianTextPolicy.isAcceptableTranslation(source, source: source))
+        // Обрыв на полуслове — отклоняем.
+        XCTAssertFalse(RussianTextPolicy.isAcceptableTranslation(String(repeating: "Сначала разберу условие и проверю", count: 4), source: source))
         XCTAssertTrue(RussianTextPolicy.isAcceptableTranslation("Ок.", source: "Hi"))
     }
 

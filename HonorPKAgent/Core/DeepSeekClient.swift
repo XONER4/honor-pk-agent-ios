@@ -195,13 +195,23 @@ enum RussianTextPolicy {
     }
 
     /// Проверка перевода: он не должен быть пустым, не должен остаться чужим языком
-    /// и не должен быть заметно короче исходника (иначе это обрывок, а не перевод).
+    /// и не должен быть обрывком.
+    ///
+    /// Раньше требовалось не меньше половины длины исходника, и это отбрасывало
+    /// законный краткий русский пересказ: живой случай — рассуждение 2052 символа
+    /// и полный, законченный перевод 862 символа (42 %) отвергался, после чего
+    /// пользователь видел английское рассуждение. Поэтому теперь обрывок
+    /// определяется по незаконченному последнему предложению, а не по длине.
     static func isAcceptableTranslation(_ translated: String, source: String) -> Bool {
         let cleaned = translated.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty, !needsNormalization(cleaned) else { return false }
         let sourceLength = source.trimmingCharacters(in: .whitespacesAndNewlines).count
-        if sourceLength < 40 { return true }
-        return cleaned.count >= sourceLength / 2
+        guard sourceLength >= 200 else { return true }
+        guard cleaned.count >= max(60, sourceLength / 5) else { return false }
+        // Незаконченное предложение на конце — почти наверняка обрыв генерации.
+        let terminators: Set<Character> = [".", "!", "?", "…", ":", "»", "\"", ")", "`", "*", "|", "-"]
+        if let last = cleaned.last, !terminators.contains(last), !last.isNumber { return false }
+        return true
     }
 
     /// Рассуждение — короткий текст, и порог на 220 букв его не ловил: модель
