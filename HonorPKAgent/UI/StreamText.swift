@@ -99,6 +99,10 @@ enum MarkdownBlockKind: Equatable {
     case copyBlock
     case card(style: String, title: String)
     case ask([QuickQuestion])
+    /// Формула отдельным блоком: $$ … $$
+    case mathBlock(String)
+    /// Диаграмма Mermaid: ```mermaid
+    case diagram(String)
     case table(headers: [String], alignments: [TableAlignment], rows: [[String]])
     case divider
 }
@@ -165,6 +169,9 @@ enum MarkdownBlockParser {
                 let marker = language.lowercased()
                 if marker == "copy" {
                     blocks.append(MarkdownBlockModel(id: blocks.count, kind: .copyBlock, text: blockBody))
+                } else if marker == "mermaid" {
+                    // Диаграмма рисуется нативно, без веб-вью (пункт 10 ТЗ).
+                    blocks.append(MarkdownBlockModel(id: blocks.count, kind: .diagram(blockBody), text: blockBody))
                 } else if marker == "ask" || marker == "questions" {
                     blocks.append(MarkdownBlockModel(id: blocks.count,
                                                      kind: .ask(Self.parseQuestions(blockBody)),
@@ -181,10 +188,50 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Блок формулы $$ … $$
+            if trimmed == "$$" || trimmed.hasPrefix("$$") {
+                flushParagraph()
+                var body: [String] = []
+                let afterOpen = String(trimmed.dropFirst(2))
+                if afterOpen.hasSuffix("$$"), afterOpen.count > 2 {
+                    body.append(String(afterOpen.dropLast(2)))
+                    index += 1
+                } else {
+                    if !afterOpen.isEmpty { body.append(afterOpen) }
+                    index += 1
+                    while index < lines.count {
+                        let line = lines[index]
+                        if line.contains("$$") {
+                            let head = line.components(separatedBy: "$$").first ?? ""
+                            if !head.trimmingCharacters(in: .whitespaces).isEmpty { body.append(head) }
+                            index += 1
+                            break
+                        }
+                        body.append(line)
+                        index += 1
+                    }
+                }
+                let expression = body.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !expression.isEmpty {
+                    blocks.append(MarkdownBlockModel(id: blocks.count, kind: .mathBlock(expression), text: expression))
+                }
+                continue
+            }
+
             // Горизонтальный разделитель
-            if isDivider(trimmed) {
+            if isDivider(trimmed) && !isSetextUnderline(lines: lines, index: index) {
                 flushParagraph()
                 blocks.append(MarkdownBlockModel(id: blocks.count, kind: .divider, text: ""))
+                index += 1
+                continue
+            }
+
+            // Setext-заголовок: строка текста, подчёркнутая ===== (H1) или ----- (H2)
+            if isSetextUnderline(lines: lines, index: index), !buffer.isEmpty {
+                let title = buffer.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+                buffer.removeAll()
+                let level = trimmed.hasPrefix("=") ? 1 : 2
+                blocks.append(MarkdownBlockModel(id: blocks.count, kind: .heading(level: level), text: title))
                 index += 1
                 continue
             }
@@ -305,9 +352,22 @@ enum MarkdownBlockParser {
         return Array(result.prefix(30))
     }
 
-    private static func isDivider(_ line: String) -> Bool {        let stripped = line.replacingOccurrences(of: " ", with: "")
+    private static func isDivider(_ line: String) -> Bool {
+        let stripped = line.replacingOccurrences(of: " ", with: "")
         guard stripped.count >= 3 else { return false }
         return stripped.allSatisfy { $0 == "-" } || stripped.allSatisfy { $0 == "*" } || stripped.allSatisfy { $0 == "_" }
+    }
+
+    /// Строка вида `=====` или `-----` служит подчёркиванием Setext-заголовка,
+    /// если над ней есть текст (пункт 1 ТЗ).
+    private static func isSetextUnderline(lines: [String], index: Int) -> Bool {
+        guard index > 0 else { return false }
+        let current = lines[index].trimmingCharacters(in: .whitespaces)
+        let previous = lines[index - 1].trimmingCharacters(in: .whitespaces)
+        guard !previous.isEmpty, !previous.hasPrefix("#"), !previous.hasPrefix("|") else { return false }
+        let stripped = current.replacingOccurrences(of: " ", with: "")
+        guard stripped.count >= 3 else { return false }
+        return stripped.allSatisfy { $0 == "=" } || stripped.allSatisfy { $0 == "-" }
     }
 
     private static func headingLevel(_ line: String) -> Int? {
@@ -493,6 +553,10 @@ private struct MarkdownBlockView: View {
                 QuestionsCardView(questions: questions, fontSize: fontSize) { answer in
                     onAnswer?(answer)
                 }
+            case .mathBlock(let expression):
+                MathExpressionView(latex: expression, fontSize: fontSize * 1.1, block: true)
+            case .diagram(let source):
+                MermaidDiagramView(source: source, fontSize: fontSize)
             case .table(let headers, let alignments, let rows):
                 MarkdownTableView(headers: headers, alignments: alignments, rows: rows,
                                   fontSize: fontSize, findQuery: findQuery)
@@ -614,13 +678,103 @@ enum InlineStyleParser {
         applyUpper(in: &result)
         applyMark(in: &result)
         applySpoiler(in: &result)
+        applyInlineMath(in: &result)
+        return result
+    }
+
+    /// Инлайн-формулы вида $x^2$ превращаются в читаемый текст с настоящими
+    /// надстрочными и подстрочными символами — нативно, без веб-вью.
+    private static let inlineMathPattern = try! NSRegularExpression(pattern: "\\$([^$\\n]{1,120})\\$")
+
+    private static func applyInlineMath(in value: inout AttributedString) {
+        var guardCount = 0
+        while guardCount < 100 {
+            guardCount += 1
+            let plain = String(value.characters)
+            guard let match = inlineMathPattern.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)),
+                  let whole = Range(match.range, in: plain),
+                  let bodyRange = Range(match.range(at: 1), in: plain) else { return }
+            let converted = unicodeMath(String(plain[bodyRange]))
+            guard replace(&value, whole: whole, body: converted,
+                          background: false, color: HonorTheme.foreground) else { return }
+        }
+    }
+
+    private static let superscripts: [Character: Character] = [
+        "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
+        "+": "⁺", "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾", "n": "ⁿ", "i": "ⁱ", "x": "ˣ"
+    ]
+    private static let subscripts: [Character: Character] = [
+        "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
+        "+": "₊", "-": "₋", "=": "₌", "(": "₍", ")": "₎", "a": "ₐ", "e": "ₑ", "i": "ᵢ", "j": "ⱼ", "o": "ₒ",
+        "x": "ₓ", "n": "ₙ", "m": "ₘ", "k": "ₖ", "p": "ₚ", "s": "ₛ", "t": "ₜ"
+    ]
+    private static let greek: [String: String] = [
+        "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ", "epsilon": "ε", "zeta": "ζ", "eta": "η",
+        "theta": "θ", "iota": "ι", "kappa": "κ", "lambda": "λ", "mu": "μ", "nu": "ν", "xi": "ξ", "pi": "π",
+        "rho": "ρ", "sigma": "σ", "tau": "τ", "phi": "φ", "chi": "χ", "psi": "ψ", "omega": "ω",
+        "sum": "∑", "int": "∫", "infty": "∞", "times": "×", "cdot": "·", "pm": "±", "le": "≤", "leq": "≤",
+        "ge": "≥", "geq": "≥", "ne": "≠", "neq": "≠", "approx": "≈", "to": "→", "rightarrow": "→",
+        "sqrt": "√", "partial": "∂", "nabla": "∇", "in": "∈", "notin": "∉", "forall": "∀", "exists": "∃"
+    ]
+
+    /// Переводит простую LaTeX-запись в юникод: x^2 → x², H_2O → H₂O, \alpha → α, \frac{a}{b} → a/b.
+    static func unicodeMath(_ input: String) -> String {
+        var text = input
+        // \frac{a}{b} → (a)/(b)
+        while let range = text.range(of: "\\frac"), let open = text[range.upperBound...].firstIndex(of: "{"),
+              let close = text[open...].firstIndex(of: "}") {
+            let numerator = String(text[text.index(after: open)..<close])
+            let afterNumerator = text.index(after: close)
+            guard let secondOpen = text[afterNumerator...].firstIndex(of: "{"),
+                  let secondClose = text[secondOpen...].firstIndex(of: "}") else { break }
+            let denominator = String(text[text.index(after: secondOpen)..<secondClose])
+            let whole = text[range.lowerBound...secondClose]
+            text.replaceSubrange(whole, with: "(\(numerator))/(\(denominator))")
+        }
+        // \команды → символы
+        for (command, symbol) in greek {
+            text = text.replacingOccurrences(of: "\\" + command, with: symbol)
+        }
+        text = text.replacingOccurrences(of: "\\left", with: "")
+        text = text.replacingOccurrences(of: "\\right", with: "")
+        text = text.replacingOccurrences(of: "{", with: "")
+        text = text.replacingOccurrences(of: "}", with: "")
+        // Степени и индексы
+        var result = ""
+        var iterator = Array(text)
+        var position = 0
+        while position < iterator.count {
+            let character = iterator[position]
+            if (character == "^" || character == "_"), position + 1 < iterator.count {
+                let map = character == "^" ? superscripts : subscripts
+                var converted = ""
+                var cursor = position + 1
+                while cursor < iterator.count, let symbol = map[iterator[cursor]] {
+                    converted.append(symbol)
+                    cursor += 1
+                }
+                if converted.isEmpty {
+                    result.append(character)
+                    position += 1
+                } else {
+                    result.append(converted)
+                    position = cursor
+                }
+                continue
+            }
+            result.append(character)
+            position += 1
+        }
         return result
     }
 
     /// Заменяет разметку на чистый текст, попутно применяя стиль.
     private static func applyStyle(_ expression: NSRegularExpression, in value: inout AttributedString,
                                    background: Bool) {
-        while true {
+        var guardCount = 0
+        while guardCount < 200 {
+            guardCount += 1
             let plain = String(value.characters)
             let range = NSRange(plain.startIndex..., in: plain)
             guard let match = expression.firstMatch(in: plain, range: range),
@@ -628,47 +782,58 @@ enum InlineStyleParser {
                   let tokenRange = Range(match.range(at: 1), in: plain),
                   let bodyRange = Range(match.range(at: 2), in: plain),
                   let color = color(from: String(plain[tokenRange])) else { return }
-            replace(&value, whole: whole, body: String(plain[bodyRange]), background: background, color: color)
+            guard replace(&value, whole: whole, body: String(plain[bodyRange]),
+                          background: background, color: color) else { return }
         }
     }
 
     private static func applyUpper(in value: inout AttributedString) {
-        while true {
+        var guardCount = 0
+        while guardCount < 200 {
+            guardCount += 1
             let plain = String(value.characters)
             guard let match = upperPattern.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)),
                   let whole = Range(match.range, in: plain),
                   let bodyRange = Range(match.range(at: 1), in: plain) else { return }
-            replace(&value, whole: whole, body: String(plain[bodyRange]).uppercased(),
-                    background: false, color: HonorTheme.foreground)
+            guard replace(&value, whole: whole, body: String(plain[bodyRange]).uppercased(),
+                          background: false, color: HonorTheme.foreground) else { return }
         }
     }
 
     private static func applyMark(in value: inout AttributedString) {
-        while true {
+        var guardCount = 0
+        while guardCount < 200 {
+            guardCount += 1
             let plain = String(value.characters)
             guard let match = markPattern.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)),
                   let whole = Range(match.range, in: plain),
                   let bodyRange = Range(match.range(at: 1), in: plain) else { return }
-            replace(&value, whole: whole, body: String(plain[bodyRange]),
-                    background: true, color: Color.yellow.opacity(0.35))
+            guard replace(&value, whole: whole, body: String(plain[bodyRange]),
+                          background: true, color: Color.yellow.opacity(0.35)) else { return }
         }
     }
 
     private static func applySpoiler(in value: inout AttributedString) {
-        while true {
+        var guardCount = 0
+        while guardCount < 200 {
+            guardCount += 1
             let plain = String(value.characters)
             guard let match = spoilerPattern.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)),
-                  let whole = Range(match.range, in: plain) else { return }
-            // Спойлер: содержимое скрыто за плашкой до нажатия.
-            replace(&value, whole: whole, body: "▮▮▮▮▮",
-                    background: true, color: HonorTheme.secondary.opacity(0.45))
+                  let whole = Range(match.range, in: plain),
+                  let bodyRange = Range(match.range(at: 1), in: plain) else { return }
+            // Содержимое спойлера сохраняется — оно затемнено фоном, а не стёрто.
+            guard replace(&value, whole: whole, body: String(plain[bodyRange]),
+                          background: true, color: HonorTheme.secondary.opacity(0.45)) else { return }
         }
     }
 
+    /// Возвращает true, если замена выполнена. Без этого при неудачном преобразовании
+    /// индекса регулярка совпадала бы снова и цикл крутился бы вечно, вешая интерфейс.
+    @discardableResult
     private static func replace(_ value: inout AttributedString, whole: Range<String.Index>, body: String,
-                                background: Bool, color: Color) {
+                                background: Bool, color: Color) -> Bool {
         guard let lower = AttributedString.Index(whole.lowerBound, within: value),
-              let upper = AttributedString.Index(whole.upperBound, within: value) else { return }
+              let upper = AttributedString.Index(whole.upperBound, within: value) else { return false }
         var replacement = AttributedString(body)
         if background {
             replacement.backgroundColor = color
@@ -676,6 +841,7 @@ enum InlineStyleParser {
             replacement.foregroundColor = color
         }
         value.replaceSubrange(lower..<upper, with: replacement)
+        return true
     }
 }
 
@@ -752,6 +918,267 @@ struct QuestionsCardView: View {
         .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(HonorTheme.accent.opacity(0.35), lineWidth: 0.8))
         .accessibilityIdentifier("message.questions")
+    }
+}
+
+/// Нативный рендер математики без WKWebView: дроби, степени, индексы, корни,
+/// греческие буквы и крупные операторы (пункты 9 и 14 ТЗ).
+struct MathExpressionView: View {
+    let latex: String
+    let fontSize: Double
+    var block: Bool = false
+
+    var body: some View {
+        let tokens = MathTokenizer.tokenize(latex)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .center, spacing: block ? 6 : 2) {
+                ForEach(Array(tokens.enumerated()), id: \.offset) { _, token in
+                    tokenView(token)
+                }
+            }
+            .padding(.horizontal, block ? 12 : 2)
+            .padding(.vertical, block ? 10 : 0)
+            .frame(maxWidth: .infinity, alignment: block ? .center : .leading)
+        }
+        .background(block ? HonorTheme.surface : Color.clear,
+                    in: RoundedRectangle(cornerRadius: block ? 10 : 0))
+        .overlay {
+            if block {
+                RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.6)
+            }
+        }
+        .accessibilityIdentifier(block ? "message.math.block" : "message.math.inline")
+    }
+
+    @ViewBuilder
+    private func tokenView(_ token: MathToken) -> some View {
+        switch token {
+        case .text(let value):
+            Text(value)
+                .font(.system(size: fontSize, design: .serif))
+                .italic(isSymbolic(value))
+        case .sup(let value):
+            Text(value)
+                .font(.system(size: fontSize * 0.72, design: .serif))
+                .baselineOffset(fontSize * 0.45)
+        case .sub(let value):
+            Text(value)
+                .font(.system(size: fontSize * 0.72, design: .serif))
+                .baselineOffset(-fontSize * 0.18)
+        case .frac(let numerator, let denominator):
+            VStack(spacing: 2) {
+                Text(numerator).font(.system(size: fontSize * 0.78, design: .serif))
+                Rectangle().fill(HonorTheme.foreground).frame(height: 1)
+                Text(denominator).font(.system(size: fontSize * 0.78, design: .serif))
+            }
+        case .sqrt(let value):
+            HStack(alignment: .center, spacing: 1) {
+                Text("√").font(.system(size: fontSize))
+                Text(value)
+                    .font(.system(size: fontSize * 0.9, design: .serif))
+                    .padding(.horizontal, 3)
+                    .overlay(alignment: .top) { Rectangle().fill(HonorTheme.foreground).frame(height: 1) }
+            }
+        }
+    }
+
+    private func isSymbolic(_ value: String) -> Bool {
+        value.count == 1 && value.rangeOfCharacter(from: .letters) != nil
+    }
+}
+
+enum MathToken: Equatable {
+    case text(String)
+    case sup(String)
+    case sub(String)
+    case frac(String, String)
+    case sqrt(String)
+}
+
+enum MathTokenizer {
+    /// Простой разбор: \frac{a}{b}, \sqrt{x}, ^ и _ с одним символом или {группой},
+    /// греческие команды и прочие \команды превращаются в читаемые символы.
+    static func tokenize(_ input: String) -> [MathToken] {
+        let source = Array(input)
+        var index = 0
+        var result: [MathToken] = []
+
+        func readGroup() -> String {
+            guard index < source.count, source[index] == "{" else {
+                if index < source.count { let value = String(source[index]); index += 1; return value }
+                return ""
+            }
+            index += 1
+            var depth = 1
+            var value = ""
+            while index < source.count {
+                let character = source[index]
+                if character == "{" { depth += 1 }
+                if character == "}" {
+                    depth -= 1
+                    if depth == 0 { index += 1; break }
+                }
+                value.append(character)
+                index += 1
+            }
+            return value
+        }
+
+        while index < source.count {
+            let character = source[index]
+            if character == "\\" {
+                index += 1
+                var command = ""
+                while index < source.count, source[index].isLetter {
+                    command.append(source[index]); index += 1
+                }
+                switch command {
+                case "frac":
+                    let numerator = readGroup()
+                    let denominator = readGroup()
+                    result.append(.frac(numerator, denominator))
+                case "sqrt":
+                    result.append(.sqrt(readGroup()))
+                case "sum": result.append(.text("∑"))
+                case "int": result.append(.text("∫"))
+                case "infty": result.append(.text("∞"))
+                case "pi": result.append(.text("π"))
+                case "alpha": result.append(.text("α"))
+                case "beta": result.append(.text("β"))
+                case "gamma": result.append(.text("γ"))
+                case "delta": result.append(.text("δ"))
+                case "theta": result.append(.text("θ"))
+                case "lambda": result.append(.text("λ"))
+                case "mu": result.append(.text("μ"))
+                case "sigma": result.append(.text("σ"))
+                case "phi": result.append(.text("φ"))
+                case "omega": result.append(.text("ω"))
+                case "times": result.append(.text("×"))
+                case "cdot": result.append(.text("·"))
+                case "pm": result.append(.text("±"))
+                case "le", "leq": result.append(.text("≤"))
+                case "ge", "geq": result.append(.text("≥"))
+                case "ne", "neq": result.append(.text("≠"))
+                case "approx": result.append(.text("≈"))
+                case "to", "rightarrow": result.append(.text("→"))
+                case "left", "right", "displaystyle", "limits", "text": break
+                case "": result.append(.text(String(character)))
+                default: result.append(.text(command))
+                }
+                continue
+            }
+            if character == "^" {
+                index += 1
+                result.append(.sup(readGroup()))
+                continue
+            }
+            if character == "_" {
+                index += 1
+                result.append(.sub(readGroup()))
+                continue
+            }
+            if character == "{" || character == "}" {
+                index += 1
+                continue
+            }
+            // Собираем обычный текст до следующего специального символа.
+            var plain = ""
+            while index < source.count,
+                  !["\\", "^", "_", "{", "}"].contains(source[index]) {
+                plain.append(source[index]); index += 1
+            }
+            if !plain.isEmpty { result.append(.text(plain)) }
+        }
+        return result.isEmpty ? [.text(input)] : result
+    }
+}
+
+/// Простая нативная отрисовка Mermaid-диаграммы: узлы и стрелки без веб-вью (пункт 10 ТЗ).
+struct MermaidDiagramView: View {
+    let source: String
+    let fontSize: Double
+
+    private struct Edge: Identifiable {
+        let id = UUID()
+        let from: String
+        let to: String
+        let label: String
+    }
+
+    private var edges: [Edge] {
+        var result: [Edge] = []
+        for rawLine in source.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            guard line.contains("-->") || line.contains("->") || line.contains("==>") else { continue }
+            let separator = line.contains("==>") ? "==>" : (line.contains("-->") ? "-->" : "->")
+            let parts = line.components(separatedBy: separator)
+            guard parts.count >= 2 else { continue }
+            let from = clean(parts[0])
+            var to = parts[1]
+            var label = ""
+            if let labelStart = to.firstIndex(of: "|"), let labelEnd = to[labelStart...].dropFirst().firstIndex(of: "|") {
+                label = String(to[to.index(after: labelStart)..<labelEnd])
+                to = String(to[to.index(after: labelEnd)...])
+            }
+            let target = clean(to)
+            guard !from.isEmpty, !target.isEmpty else { continue }
+            result.append(Edge(from: from, to: target, label: label))
+        }
+        return result
+    }
+
+    private func clean(_ value: String) -> String {
+        var text = value.trimmingCharacters(in: .whitespaces)
+        if let open = text.firstIndex(of: "["), let close = text.firstIndex(of: "]"), open < close {
+            text = String(text[text.index(after: open)..<close])
+        }
+        if let open = text.firstIndex(of: "("), let close = text.firstIndex(of: ")"), open < close {
+            text = String(text[text.index(after: open)..<close])
+        }
+        return text.trimmingCharacters(in: CharacterSet(charactersIn: " ;\"'"))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if edges.isEmpty {
+                // Не удалось разобрать — показываем исходник, чтобы ничего не терялось.
+                Text(source)
+                    .font(.system(size: fontSize * 0.82, design: .monospaced))
+                    .textSelection(.enabled)
+            } else {
+                ForEach(edges) { edge in
+                    HStack(spacing: 8) {
+                        node(edge.from)
+                        VStack(spacing: 1) {
+                            if !edge.label.isEmpty {
+                                Text(edge.label)
+                                    .font(.system(size: fontSize * 0.72))
+                                    .foregroundStyle(HonorTheme.secondary)
+                            }
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(HonorTheme.accent)
+                        }
+                        node(edge.to)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.6))
+        .accessibilityIdentifier("message.diagram")
+    }
+
+    private func node(_ title: String) -> some View {
+        Text(title.isEmpty ? "?" : title)
+            .font(.system(size: fontSize * 0.85, weight: .medium))
+            .padding(.horizontal, 10)
+            .frame(minHeight: 30)
+            .background(HonorTheme.raised, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(HonorTheme.divider, lineWidth: 0.6))
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

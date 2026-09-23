@@ -23,6 +23,27 @@ final class ChatStore: ObservableObject {
     @Published private(set) var generationStatus: String?
     @Published private(set) var editingMessageID: UUID?
     @Published private(set) var memories: [HonorMemory] = []
+    /// Реакция агента на сообщение пользователя: агент может поставить эмодзи
+    /// отдельной строкой «РЕАКЦИЯ: 🙂» — она убирается из текста и показывается бейджем.
+    private func extractAssistantReaction(chatID: UUID, messageID: UUID) {
+        guard let chatIndex = conversations.firstIndex(where: { $0.id == chatID }),
+              let messageIndex = conversations[chatIndex].messages.firstIndex(where: { $0.id == messageID })
+        else { return }
+        let content = conversations[chatIndex].messages[messageIndex].content
+        let pattern = "(?m)^\\s*(?:РЕАКЦИЯ|РЕАКЦИЯ НА СООБЩЕНИЕ|REACTION)\\s*[:\\-]\\s*(\\S{1,4})\\s*$"
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return }
+        let range = NSRange(content.startIndex..., in: content)
+        guard let match = expression.firstMatch(in: content, range: range),
+              let whole = Range(match.range, in: content),
+              let emojiRange = Range(match.range(at: 1), in: content) else { return }
+        let emoji = String(content[emojiRange])
+        conversations[chatIndex].messages[messageIndex].content =
+            content.replacingCharacters(in: whole, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if let userIndex = conversations[chatIndex].messages[..<messageIndex].lastIndex(where: { $0.role == .user }) {
+            conversations[chatIndex].messages[userIndex].assistantReaction = emoji
+        }
+    }
+
     /// Статистика использования приложения (раздел «Статистика» в настройках).
     @Published private(set) var statistics = UsageStatistics() {
         didSet { persistStatistics() }
@@ -147,12 +168,26 @@ final class ChatStore: ObservableObject {
         return text
     }
 
-    var effectiveSystemInstruction: String {
+    /// Собирает системную инструкцию: имя пользователя, инструкция чата и память,
+    /// подобранная под текущий вопрос. Используется в beginGeneration.
+    func systemInstruction(forChat chatID: UUID, query: String) -> String {
         var instruction = systemInstruction
         let name = String(profileName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
-        if !name.isEmpty { instruction += "\nИмя пользователя в локальном профиле (данные): \(String(reflecting: name)). Обращайся по имени естественно, без повторения в каждом ответе." }
-        guard memoryEnabled, !memories.isEmpty else { return instruction }
-        return instruction + "\n\n" + Self.memoryBlock(for: memories, query: nil)
+        if !name.isEmpty {
+            instruction += "\nИмя пользователя в локальном профиле (данные): \(String(reflecting: name)). Обращайся по имени естественно, без повторения в каждом ответе."
+        }
+        if memoryEnabled, !memories.isEmpty {
+            let scoped = Self.relevantMemories(memories, for: query)
+            let entries = scoped.map { "• \($0.text)" }.joined(separator: "\n")
+            instruction += "\n\nПамять Honer AI — факты и предпочтения, которые пользователь сохранил. Учитывай их, когда они относятся к запросу; последнее сообщение пользователя важнее сохранённых предпочтений.\n\(entries)"
+        }
+        if let chat = conversations.first(where: { $0.id == chatID }) {
+            let prompt = chat.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !prompt.isEmpty {
+                instruction += "\n\nИнструкция этого чата (задана пользователем, действует только здесь):\n\(prompt)"
+            }
+        }
+        return instruction
     }
 
     /// Отбирает факты памяти, относящиеся к текущему вопросу.
@@ -507,23 +542,9 @@ final class ChatStore: ObservableObject {
         let query = input.last(where: { $0.role == .user })?.content ?? ""
         let searching = SearchIntent.needsSearch(query: query, searchToggleOn: searchEnabled)
         let recentContext = input.suffix(4).map { String($0.content.prefix(1500)) }.joined(separator: "\n")
-        // Инструкция конкретного чата (меню «три точки») применяется поверх общей памяти.
-        // Память подбирается под текущий вопрос — так факт, сохранённый в другом чате,
-        // реально применяется и в этом (пункт 24).
-        var instruction = systemInstruction
-        let name = String(profileName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
-        if !name.isEmpty {
-            instruction += "\nИмя пользователя в локальном профиле (данные): \(String(reflecting: name)). Обращайся по имени естественно, без повторения в каждом ответе."
-        }
-        if memoryEnabled, !memories.isEmpty {
-            let scoped = Self.relevantMemories(memories, for: query)
-            let entries = scoped.map { "• \($0.text)" }.joined(separator: "\n")
-            instruction += "\n\nПамять Honer AI — факты и предпочтения, которые пользователь сохранил. Учитывай их, когда они относятся к запросу; последнее сообщение пользователя важнее сохранённых предпочтений.\n\(entries)"
-        }
-        let chatPrompt = conversations[index].systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !chatPrompt.isEmpty {
-            instruction += "\n\nИнструкция этого чата (задана пользователем, действует только здесь):\n\(chatPrompt)"
-        }
+        // Инструкция собирается одним методом: имя, инструкция чата и память,
+        // подобранная под текущий вопрос (пункты 18 и 24).
+        var instruction = systemInstruction(forChat: chatID, query: query)
         instruction += HonerIdentity.context(for: query, recentContext: recentContext)
         let client = injectedClient ?? DeepSeekClient(configuration: configuration)
         let russianNormalizer = client as? RussianTextNormalizing
@@ -654,7 +675,11 @@ final class ChatStore: ObservableObject {
             self.generationTask = nil
             let delivered = self.conversations.first(where: { $0.id == chatID })?
                 .messages.first(where: { $0.id == response.id })
-            if !(delivered?.content.isEmpty ?? true) { self.recordReceivedMessage() }
+            if !(delivered?.content.isEmpty ?? true) {
+                self.recordReceivedMessage()
+                // Реакция агента на сообщение пользователя (пункт 38 ТЗ).
+                self.extractAssistantReaction(chatID: chatID, messageID: response.id)
+            }
             self.saveSnapshot()
             // Уведомление о готовом ответе, если пользователь вышел из приложения (пункт 36).
             if !(delivered?.content.isEmpty ?? true) {

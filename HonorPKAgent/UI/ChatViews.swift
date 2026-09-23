@@ -871,6 +871,11 @@ private struct MessageTimeline: View {
                        onReaction: { (emoji: String?) in
                            store.setReaction(messageID: message.id, emoji: emoji)
                        },
+                       onAnswer: { (answer: String) in
+                           // Ответ на вопрос агента уходит как обычное сообщение (пункт 33).
+                           store.draft = answer
+                           store.send(inputKind: .suggestion)
+                       },
                        onMenu: onMenu)
                 .equatable()
                 .id(message.id.uuidString)
@@ -937,7 +942,8 @@ private struct MessageRow: View, Equatable {
     let onEdit: () -> Void
     let onFeedback: (MessageFeedback?) -> Void
     let onReaction: (String?) -> Void
-    let onReaction: (String?) -> Void
+    /// Нажатие варианта в блоке вопросов агента (пункт 33).
+    let onAnswer: (String) -> Void
     let onMenu: (ChatMessage) -> Void
     @State private var reasoningOpen = false
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
@@ -991,6 +997,18 @@ private struct MessageRow: View, Equatable {
                     .padding(.trailing, 4)
                     .accessibilityIdentifier("message.voice." + message.id.uuidString)
             }
+            if let reaction = message.assistantReaction {
+                // Реакция агента на сообщение пользователя.
+                Text(reaction)
+                    .font(.system(size: 16))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(HonorTheme.raised, in: Capsule())
+                    .overlay(Capsule().stroke(HonorTheme.divider, lineWidth: 0.6))
+                    .padding(.trailing, 4)
+                    .accessibilityLabel(text("Реакция Honer AI: \(reaction)", "Honer AI reaction: \(reaction)"))
+                    .accessibilityIdentifier("message.assistant.reaction." + message.id.uuidString)
+            }
         }
         .padding(.top, 2)
         .accessibilityElement(children: message.attachments.isEmpty ? .combine : .contain)
@@ -1040,11 +1058,7 @@ private struct MessageRow: View, Equatable {
                 StreamText(target: message.content, streaming: streaming, baseRate: 58) { visible in
                     BlockMarkdownView(content: visible, fontSize: 17 * settings.fontScale * dynamicScale,
                                       sources: message.sources, findQuery: findQuery,
-                                      onAnswer: { answer in
-                                          // Ответ на вопрос агента уходит как обычное сообщение (пункт 33).
-                                          store.draft = answer
-                                          store.send(inputKind: .suggestion)
-                                      })
+                                      onAnswer: onAnswer)
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(message.content)
@@ -1919,9 +1933,9 @@ private struct AttachmentPreviewSheet: View {
         NavigationStack {
             Group {
                 if attachment.kind == .video, let url = attachment.resolvedURL {
-                    // Видео со звуком: свой плеер вместо простого просмотра файла (пункт 31).
-                    VideoPlayer(player: AVPlayer(url: url))
-                        .ignoresSafeArea(edges: .bottom)
+                    // Видео со звуком: плеер хранится в состоянии, иначе он
+                    // пересоздавался на каждой перерисовке и воспроизведение срывалось.
+                    MediaPreviewPlayer(url: url)
                         .accessibilityIdentifier("attachment.preview.video")
                 } else if let url = attachment.resolvedURL, attachment.kind == .image,
                           let image = UIImage(contentsOfFile: url.path) {
@@ -1959,8 +1973,33 @@ private struct AttachmentPreviewSheet: View {
     }
 }
 
-private struct OriginalFilePreview: UIViewControllerRepresentable {
+/// Плеер для видео и голосовых: AVPlayer создаётся один раз и живёт в состоянии,
+/// иначе каждая перерисовка перезапускала воспроизведение.
+private struct MediaPreviewPlayer: View {
     let url: URL
+    @State private var player: AVPlayer?
+
+    var body: some View {
+        Group {
+            if let player {
+                VideoPlayer(player: player)
+            } else {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .onAppear {
+            guard player == nil else { return }
+            let created = AVPlayer(url: url)
+            player = created
+            created.play()
+        }
+        .onDisappear {
+            player?.pause()
+        }
+    }
+}
+
+private struct OriginalFilePreview: UIViewControllerRepresentable {    let url: URL
     func makeCoordinator() -> Coordinator { Coordinator(url: url) }
     func makeUIViewController(context: Context) -> QLPreviewController {
         let controller = QLPreviewController()
