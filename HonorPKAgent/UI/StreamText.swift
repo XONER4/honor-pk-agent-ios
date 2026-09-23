@@ -2034,7 +2034,7 @@ struct MarkdownTableView: View {
                 Button {
                     exportRequest = ExportRequest(content: asCSV)
                 } label: {
-                    Text("В Numbers").font(.system(size: 11, weight: .medium))
+                    Text("Открыть в Numbers").font(.system(size: 11, weight: .medium))
                         .padding(.horizontal, 10).frame(minHeight: 28)
                         .overlay(Capsule().stroke(HonorTheme.divider, lineWidth: 0.7))
                 }
@@ -2359,9 +2359,14 @@ struct MarkdownTableView: View {
     }
 
     private var asMarkdown: String {
+        // Палочку внутри ячейки экранируем: иначе вставленная в документ таблица
+        // распадается на лишние столбцы.
+        func cell(_ value: String) -> String {
+            value.replacingOccurrences(of: "|", with: "\\|")
+        }
         var lines: [String] = []
         if !headers.isEmpty {
-            lines.append("| " + headers.joined(separator: " | ") + " |")
+            lines.append("| " + headers.map(cell).joined(separator: " | ") + " |")
             lines.append("|" + (0..<max(headers.count, 1)).map { index in
                 switch alignment(index) {
                 case .leading: return ":---"
@@ -2371,20 +2376,24 @@ struct MarkdownTableView: View {
             }.joined(separator: "|") + "|")
         }
         // Копируется то, что видно с учётом фильтра и сортировки.
-        for cells in visibleRows { lines.append("| " + cells.joined(separator: " | ") + " |") }
+        for cells in visibleRows { lines.append("| " + cells.map(cell).joined(separator: " | ") + " |") }
         return lines.joined(separator: "\n")
     }
 
     private var asTSV: String {
-        ([headers] + visibleRows).map { $0.joined(separator: "\t") }.joined(separator: "\n")
+        ([headers] + visibleRows)
+            .map { row in row.map { $0.replacingOccurrences(of: "\t", with: " ") }.joined(separator: "\t") }
+            .joined(separator: "\n")
     }
 
     private var asCSV: String {
         func escape(_ value: String) -> String {
-            value.contains(",") || value.contains("\"") || value.contains("\n")
+            value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains(";")
                 ? "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
                 : value
         }
-        return ([headers] + visibleRows).map { $0.map(escape).joined(separator: ",") }.joined(separator: "\n")
+        let body = ([headers] + visibleRows).map { $0.map(escape).joined(separator: ",") }.joined(separator: "\n")
+        // BOM в начале: без него Excel и Numbers открывают русский текст крякозябрами.
+        return "\u{FEFF}" + body
     }
 }
