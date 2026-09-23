@@ -332,9 +332,12 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
             "model": configuration.model,
             "messages": payloadMessages,
             "thinking": ["type": thinking ? "enabled" : "disabled"],
-            "stream": true,
-            "max_tokens": 16384
+            "stream": true
         ]
+        // max_tokens НЕ отправляем. По документации этот лимит покрывает и рассуждение,
+        // и ответ вместе, а значение по умолчанию — 64K в режиме рассуждения и 8K без
+        // него. Прежние 16384 могли целиком уйти в блок рассуждения, и тогда итоговый
+        // ответ приходил обрезанным до одного символа.
         if thinking { body["reasoning_effort"] = "high" }
         // Список инструментов: модель может вызвать их сама (пункт 11 ТЗ).
         if let tools, !tools.isEmpty {
@@ -374,6 +377,11 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
                     var decoder = SSEDecoder()
                     var completed = false
                     var bytesSinceEvent = 0
+                    // Терминальные причины: генерация этого прохода закончена.
+                    // "tool_calls" здесь нет: по документации вызов инструмента завершает
+                    // проход, и приложение обязано прочитать поток до конца, иначе ответ
+                    // обрывается на первом же символе.
+                    let terminal: Set<String> = ["stop", "length", "content_filter", "insufficient_system_resource", "aborted"]
                     for try await byte in bytes {
                         try Task.checkCancellation()
                         bytesSinceEvent += 1
@@ -383,11 +391,7 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
                         if event == "[DONE]" { completed = true; break }
                         if let delta = try decodeEvent(event) {
                             continuation.yield(delta)
-                            // Раньше поток закрывался на любом finish_reason, в том числе на
-                            // "tool_calls". Из-за этого приложение обрывало чтение до того,
-                            // как приходил настоящий ответ, и в чате оставалась одна буква.
-                            // Ждём именно завершения ответа.
-                            if delta.finishReason == "stop" { completed = true; break }
+                            if let reason = delta.finishReason, terminal.contains(reason) { completed = true; break }
                         }
                     }
                     if let event = decoder.finish() {

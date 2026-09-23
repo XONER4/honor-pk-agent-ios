@@ -605,9 +605,14 @@ final class ChatStore: ObservableObject {
                 var toolRounds = 0
 
                 do {
+                    // Инструменты сознательно НЕ передаём. По документации DeepSeek при
+                    // наличии tools обязателен полный возврат reasoning_content во всех
+                    // последующих запросах, иначе API отвечает 400, а сам вызов инструмента
+                    // завершает поток с finish_reason=tool_calls — именно из-за этого в чате
+                    // оставалась одна буква. Все нужные данные (время, устройство, память)
+                    // и так приходят в системной части, инструменты не нужны.
                     for try await delta in client.stream(messages: input, thinking: thinking,
-                                                         systemInstruction: instruction, searchContext: context,
-                                                         tools: HonerTool.apiSchemas) {
+                                                         systemInstruction: instruction, searchContext: context) {
                         try Task.checkCancellation()
                         guard self.activeRunID == runID else { return }
                         if !delta.reasoning.isEmpty, firstReasoningAt == nil { firstReasoningAt = Date() }
@@ -639,13 +644,15 @@ final class ChatStore: ObservableObject {
                 }
 
                 // Выполняем запрошенные инструменты и повторяем запрос с результатами.
-                while !toolCalls.isEmpty, toolRounds < 3 {
+                // Ветка оставлена на случай, если инструменты снова включат: без
+                // корректного возврата reasoning_content этот путь ломает ответ.
+                while !toolCalls.isEmpty, toolRounds < 3, Self.toolsEnabled {
                     toolRounds += 1
                     // Имя не `context`: так уже называется строка с результатами поиска.
                     let toolContext = ToolExecutionContext(
                         deviceModel: DeviceModel.name,
                         systemVersion: UIDevice.current.systemVersion,
-                        appVersion: "10.8",
+                        appVersion: "10.9",
                         messageCount: self.messages.count,
                         voiceMessageCount: self.messages.filter { $0.inputKind == .voice }.count,
                         chatStartedAt: self.selectedConversation?.createdAt,
@@ -723,12 +730,15 @@ final class ChatStore: ObservableObject {
                 }
                 // Последняя защита от обрывка. Раньше при неудачной склейке вызова
                 // инструмента в чате оставалась одна буква, и это уходило в историю.
-                // Теперь короткий огрызок перезапрашивается без инструментов.
-                if Self.isTooShortToBeAnAnswer(rawContent) {
+                // Теперь короткий огрызок перезапрашивается — без инструментов
+                // и без режима рассуждения, чтобы получить полный ответ быстро.
+                let answerIsEmpty = rawContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                let answerIsFragment = Self.isTooShortToBeAnAnswer(rawContent)
+                if !answerIsEmpty, (answerIsFragment || finishReason == "insufficient_system_resource" || finishReason == "aborted") {
                     self.generationStatus = "Дописываю ответ…"
                     do {
                         var retryContent = ""
-                        for try await delta in client.stream(messages: input, thinking: thinking,
+                        for try await delta in client.stream(messages: input, thinking: false,
                                                              systemInstruction: instruction,
                                                              searchContext: context, tools: nil) {
                             try Task.checkCancellation()
@@ -751,11 +761,12 @@ final class ChatStore: ObservableObject {
                 }
                 let final = self.conversations.first(where: { $0.id == chatID })?.messages.first(where: { $0.id == response.id })
                 guard !(final?.content.isEmpty ?? true) else { throw HonorError.emptyResponse }
-                guard !(final.map { Self.isTooShortToBeAnAnswer($0.content) } ?? false) else { throw HonorError.emptyResponse }
                 if finishReason == "length" {
                     self.mutateMessage(chatID: chatID, messageID: response.id) { $0.error = "Достигнута максимальная длина ответа. Попросите продолжить." }
                 } else if finishReason == "content_filter" {
                     self.mutateMessage(chatID: chatID, messageID: response.id) { $0.error = "Сервис остановил этот ответ." }
+                } else if finishReason == "insufficient_system_resource" {
+                    self.mutateMessage(chatID: chatID, messageID: response.id) { $0.error = "Ответ оборвался на стороне сервиса. Повторите запрос." }
                 }
             } catch {
                 guard self.activeRunID == runID else { return }
@@ -791,6 +802,11 @@ final class ChatStore: ObservableObject {
             }
         }
     }
+
+    /// Вызов инструментов моделью отключён: параметр tools в режиме рассуждения
+    /// требует полного возврата reasoning_content, иначе API отвечает 400, а сам
+    /// вызов обрывает поток на finish_reason=tool_calls и оставляет в чате одну букву.
+    static let toolsEnabled = false
 
     /// Склеивает куски одного вызова инструмента. Куски одного вызова опознаются
     /// по index (он есть всегда), затем по id, затем по имени функции.
