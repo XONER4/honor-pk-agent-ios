@@ -768,13 +768,17 @@ struct BlockMarkdownView: View {
 
     private var blocks: [MarkdownBlockModel] {
         // Между кадрами текст успевает вырасти на десятки символов; пересобираем
-        // блоки только когда накопилось 24 новых символа или текст закончился.
-        if parsedLength < 0 || abs(content.count - parsedLength) >= 24 { return MarkdownBlockParser.parse(content) }
+        // блоки только когда накопилось 24 новых символа. Если текст стал короче
+        // (новый ответ в том же представлении), показываем точный разбор сразу —
+        // иначе на экране оставался текст предыдущего сообщения.
+        if parsedLength < 0 || content.count < parsedLength || abs(content.count - parsedLength) >= 24 {
+            return MarkdownBlockParser.parse(content)
+        }
         return parsed
     }
 
     private func reparse(force: Bool) {
-        guard force || parsedLength < 0 || content.count - parsedLength >= 24 || content.count < parsedLength else { return }
+        guard force || parsedLength < 0 || content.count < parsedLength || content.count - parsedLength >= 24 else { return }
         parsed = MarkdownBlockParser.parse(content)
         parsedLength = content.count
     }

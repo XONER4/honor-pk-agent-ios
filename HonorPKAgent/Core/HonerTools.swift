@@ -214,7 +214,7 @@ struct ChatTranscriptLine: Sendable {
 struct ToolExecutionContext: Sendable {
     var deviceModel: String = "iPhone"
     var systemVersion: String = ""
-    var appVersion: String = "10.13"
+    var appVersion: String = "10.14"
     var currentDateTime: String = ""
     var messageCount: Int = 0
     var voiceMessageCount: Int = 0

@@ -11,6 +11,14 @@ final class NotificationCenterService: NSObject, UNUserNotificationCenterDelegat
     static let shared = NotificationCenterService()
 
     private var authorized = false
+    /// Настройка «Уведомления о готовом ответе». Сервис проверяет её сам,
+    /// а не полагается на вызывающий код: иначе уведомление могло прийти
+    /// при выключенном переключателе.
+    var isEnabled = false {
+        didSet {
+            if isEnabled { configure() }
+        }
+    }
 
     func configure() {
         UNUserNotificationCenter.current().delegate = self
@@ -30,6 +38,7 @@ final class NotificationCenterService: NSObject, UNUserNotificationCenterDelegat
     /// Вызывается после завершения ответа. Уведомление показывается только если
     /// приложение не на переднем плане.
     func notifyAnswerReady(_ text: String) {
+        guard isEnabled else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         guard UIApplication.shared.applicationState != .active else { return }

@@ -55,9 +55,8 @@ struct HonorPKAgentApp: App {
                     store.purgeOldChats(olderThan: settings.autoDeleteDays)
                 }
                 sessionStartedAt = Date()
-                if settings.notificationsEnabled {
-                    NotificationCenterService.shared.configure()
-                }
+                // Сервис проверяет настройку сам — здесь только начальная синхронизация.
+                NotificationCenterService.shared.isEnabled = settings.notificationsEnabled
                 #if DEBUG
                 UITestSupport.seedIfNeeded(store: store)
                 #endif
@@ -65,6 +64,7 @@ struct HonorPKAgentApp: App {
             .onChange(of: settings.customInstructions) { store.systemInstruction = $0 }
             .onChange(of: settings.displayName) { store.profileName = $0 }
             .onChange(of: settings.notificationsEnabled) { (enabled: Bool) in
+                NotificationCenterService.shared.isEnabled = enabled
                 if enabled { NotificationCenterService.shared.configure() }
             }
             .onChange(of: settings.autoDeleteDays) { (days: Int) in
