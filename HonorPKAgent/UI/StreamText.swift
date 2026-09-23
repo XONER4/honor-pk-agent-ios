@@ -437,7 +437,7 @@ private struct MarkdownBlockView: View {
             case .copyBlock:
                 CopyBlockView(text: block.text, fontSize: fontSize)
             case .card(let style, _):
-                CardBlockView(style: style, body: block.text, fontSize: fontSize,
+                CardBlockView(style: style, cardText: block.text, fontSize: fontSize,
                               sources: sources, findQuery: findQuery)
             case .table(let headers, let alignments, let rows):
                 MarkdownTableView(headers: headers, alignments: alignments, rows: rows,
@@ -665,7 +665,8 @@ struct CopyBlockView: View {
 /// Блок ```card:info|success|warn|error — цветная карточка с полосой слева (пункт 42 ТЗ).
 struct CardBlockView: View {
     let style: String
-    let body: String
+    /// Содержимое карточки. Имя не `body`, иначе конфликтует с View.body.
+    let cardText: String
     let fontSize: Double
     let sources: [WebSource]
     let findQuery: String
@@ -713,16 +714,17 @@ struct CardBlockView: View {
     }
 
     private var rendered: AttributedString {
-        let cited = linkedCitations(body, sources: sources)
+        let cited = linkedCitations(cardText, sources: sources)
         var value = (try? AttributedString(markdown: cited,
                                            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(body)
+            ?? AttributedString(cardText)
         value = InlineStyleParser.apply(to: value)
         return highlighted(value, query: findQuery)
     }
 }
 
-struct CodeBlockView: View {    let text: String
+struct CodeBlockView: View {
+    let text: String
     let language: String
     let fontSize: Double
     let findQuery: String
