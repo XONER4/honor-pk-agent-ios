@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Подсветка синтаксиса без внешних библиотек: свой разбор по языку.
 /// Поддерживает Swift, Python, JavaScript/TypeScript, JSON, SQL, Bash,

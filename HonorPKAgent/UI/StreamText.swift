@@ -1388,6 +1388,9 @@ struct CodeBlockView: View {
     @State private var copied = false
     @State private var showLineNumbers = false
     @State private var useLightTheme = false
+    @State private var showDiff = false
+    /// Результат запуска кода (пункт «Запустить» из ТЗ).
+    @State private var runResult: CodeRunner.Result?
 
     /// Длинный код сворачивается, чтобы не занимать весь экран.
     private var isLong: Bool { text.components(separatedBy: "\n").count > 24 }
@@ -1412,6 +1415,20 @@ struct CodeBlockView: View {
                     Image(systemName: "list.number").frame(width: 38, height: 32)
                 }
                 .accessibilityLabel("Номера строк")
+                Button { showDiff.toggle() } label: {
+                    Image(systemName: showDiff ? "plusminus.circle.fill" : "plusminus.circle").frame(width: 38, height: 32)
+                }
+                .accessibilityLabel("Режим изменений")
+                .accessibilityIdentifier("message.code.diff")
+                if CodeRunner.canRun(language) {
+                    Button {
+                        runResult = CodeRunner.run(text, language: language)
+                    } label: {
+                        Image(systemName: "play.circle").frame(width: 38, height: 32)
+                    }
+                    .accessibilityLabel("Запустить код")
+                    .accessibilityIdentifier("message.code.run")
+                }
                 Button { useLightTheme.toggle() } label: {
                     Image(systemName: useLightTheme ? "sun.max" : "moon").frame(width: 38, height: 32)
                 }
@@ -1469,6 +1486,41 @@ struct CodeBlockView: View {
                     }
                 }
             }
+
+            // Результат запуска (пункт «Запустить» из ТЗ).
+            if let runResult {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: runResult.isError ? "exclamationmark.triangle" : "checkmark.circle")
+                            .font(.system(size: 11))
+                        Text(runResult.isError ? "Ошибка выполнения" : "Результат")
+                            .font(.system(size: 11, weight: .semibold))
+                        Spacer(minLength: 0)
+                        Button {
+                            UIPasteboard.general.string = runResult.output
+                        } label: {
+                            Image(systemName: "square.on.square").font(.system(size: 11))
+                        }
+                        .accessibilityLabel("Копировать результат")
+                        Button {
+                            self.runResult = nil
+                        } label: {
+                            Image(systemName: "xmark").font(.system(size: 11))
+                        }
+                        .accessibilityLabel("Скрыть результат")
+                    }
+                    .foregroundStyle(runResult.isError ? Color.orange : HonorTheme.secondary)
+                    Text(runResult.output)
+                        .font(.system(size: fontSize * 0.78, design: .monospaced))
+                        .foregroundStyle(runResult.isError ? Color.orange : HonorTheme.foreground)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(HonorTheme.raised.opacity(0.7))
+                .accessibilityIdentifier("message.code.output")
+            }
         }
         .background(useLightTheme ? Color.white : HonorTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -1476,13 +1528,40 @@ struct CodeBlockView: View {
     }
 
     /// Подсветка синтаксиса своим разбором по языку (пункт 6 ТЗ).
+    /// В режиме изменений строки с «+» подсвечиваются зелёным, с «−» красным.
+    @ViewBuilder
     private var codeText: some View {
-        SyntaxHighlighter.highlight(visibleText,
-                                    language: language,
-                                    theme: SyntaxHighlighter.Theme.named(useLightTheme ? "light" : "dark"),
-                                    fontSize: fontSize)
-            .font(.system(size: fontSize * 0.82, design: .monospaced))
-            .textSelection(.enabled)
+        if showDiff {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(visibleText.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    Text(SyntaxHighlighter.highlight(line.isEmpty ? " " : line,
+                                                     language: language,
+                                                     theme: SyntaxHighlighter.Theme.named(useLightTheme ? "light" : "dark"),
+                                                     fontSize: fontSize))
+                        .font(.system(size: fontSize * 0.82, design: .monospaced))
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(diffBackground(trimmed))
+                }
+            }
+            .padding(.vertical, 8)
+        } else {
+            SyntaxHighlighter.highlight(visibleText,
+                                        language: language,
+                                        theme: SyntaxHighlighter.Theme.named(useLightTheme ? "light" : "dark"),
+                                        fontSize: fontSize)
+                .font(.system(size: fontSize * 0.82, design: .monospaced))
+                .textSelection(.enabled)
+        }
+    }
+
+    private func diffBackground(_ line: String) -> Color {
+        if line.hasPrefix("+") && !line.hasPrefix("+++") { return Color.green.opacity(0.16) }
+        if line.hasPrefix("-") && !line.hasPrefix("---") { return Color.red.opacity(0.16) }
+        if line.hasPrefix("@@") { return HonorTheme.accent.opacity(0.12) }
+        return .clear
     }
 }
 
