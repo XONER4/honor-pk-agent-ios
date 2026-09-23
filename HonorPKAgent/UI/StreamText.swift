@@ -827,7 +827,8 @@ enum InlineStyleParser {
             guard let secondOpen = text[afterNumerator...].firstIndex(of: "{"),
                   let secondClose = text[secondOpen...].firstIndex(of: "}") else { break }
             let denominator = String(text[text.index(after: secondOpen)..<secondClose])
-            let whole = text[range.lowerBound...secondClose]
+            // replaceSubrange требует Range, а не ClosedRange — иначе не компилируется.
+            let whole = range.lowerBound..<text.index(after: secondClose)
             text.replaceSubrange(whole, with: "(\(numerator))/(\(denominator))")
         }
         // \команды → символы

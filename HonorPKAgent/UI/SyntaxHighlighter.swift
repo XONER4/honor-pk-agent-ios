@@ -148,22 +148,26 @@ enum SyntaxHighlighter {
             current = ""
         }
 
-        while index < characters.count {
-            let character = characters[index]
+        // Индекс — целое число: индексы String здесь не подходят для арифметики.
+        var position = 0
+        let total = characters.count
+
+        while position < total {
+            let character = characters[position]
 
             if inComment {
                 current.append(character)
-                index += 1
+                position += 1
                 continue
             }
 
             if let quote = inString {
                 current.append(character)
-                if character == quote && (index == 0 || characters[index - 1] != "\\") {
+                if character == quote && (position == 0 || characters[position - 1] != "\\") {
                     flushString(&result, &current, theme: theme)
                     inString = nil
                 }
-                index += 1
+                position += 1
                 continue
             }
 
@@ -172,24 +176,24 @@ enum SyntaxHighlighter {
                 flushPlain()
                 inString = character
                 current.append(character)
-                index += 1
+                position += 1
                 continue
             }
 
             // Начало комментария
             if character == "#" && (language == "python" || language == "bash") {
                 flushPlain()
-                result = result + Text(String(characters[index...])).foregroundColor(theme.comment).italic()
+                result = result + Text(String(characters[position...])).foregroundColor(theme.comment).italic()
                 return result
             }
-            if character == "/" && index + 1 < characters.count && characters[index + 1] == "/" {
+            if character == "/" && position + 1 < total && characters[position + 1] == "/" {
                 flushPlain()
-                result = result + Text(String(characters[index...])).foregroundColor(theme.comment).italic()
+                result = result + Text(String(characters[position...])).foregroundColor(theme.comment).italic()
                 return result
             }
 
             current.append(character)
-            index += 1
+            position += 1
         }
 
         if inString != nil {
