@@ -462,6 +462,41 @@ final class HonorPKAgentTests: XCTestCase {
     }
 
     @MainActor
+    func testStreamingTextGoesToLiveBufferAndReachesTheModelAtTheEnd() async throws {
+        // Защита от возврата зависаний: пока идёт печать, текст обязан идти в живой
+        // буфер (перерисовывается одна строка), а модель чата обновляется только
+        // в конце. Если кто-то снова начнёт писать в модель на каждом куске,
+        // этот тест это поймает.
+        let client = ControlledClient()
+        let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"), client: client,
+                              storageURL: temporaryHistory())
+        store.draft = "Проверка печати"
+        store.send()
+        try await waitForContinuation(client)
+        let stream = try XCTUnwrap(client.continuations.first)
+        stream.yield(.init(reasoning: "Сначала подумаю."))
+        stream.yield(.init(content: "Первая часть. "))
+        try await Task.sleep(nanoseconds: 60_000_000)
+        // Текст виден пользователю через живой буфер…
+        XCTAssertTrue(store.live.content.contains("Первая часть"), "Живой буфер пуст: [\(store.live.content)]")
+        XCTAssertTrue(store.live.reasoning.contains("подумаю"))
+        // …а модель чата ещё не тронута: значит список сообщений не перерисовывается.
+        let assistant = try XCTUnwrap(store.messages.last)
+        XCTAssertTrue(assistant.content.isEmpty,
+                      "Во время печати модель чата обновляться не должна: [\(assistant.content)]")
+        stream.yield(.init(content: "Вторая часть."))
+        stream.yield(.init(finishReason: "stop"))
+        stream.finish()
+        try await waitUntilIdle(store)
+        // После завершения текст обязан оказаться в модели и сохраниться.
+        let final = try XCTUnwrap(store.messages.last)
+        XCTAssertTrue(final.content.contains("Первая часть"), "Ответ потерялся: [\(final.content)]")
+        XCTAssertTrue(final.content.contains("Вторая часть"))
+        XCTAssertTrue(final.reasoning.contains("подумаю"))
+        XCTAssertEqual(store.live.content, "", "Живой буфер должен очищаться после генерации")
+    }
+
+    @MainActor
     private func waitUntilIdle(_ store: ChatStore) async throws {
         // Раннер в CI медленный: генерация может занять секунды, поэтому ждём до 30 с.
         for _ in 0..<600 {
