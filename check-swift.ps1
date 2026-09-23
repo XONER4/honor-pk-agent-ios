@@ -34,26 +34,31 @@ Get-ChildItem $root -Recurse -Filter '*.swift' | ForEach-Object {
     $issue = Test-Balance $_.FullName
     if ($issue) { Write-Output "PROBLEM: $($_.Name) - $issue"; $script:problems++ }
     $lines = [System.IO.File]::ReadAllLines($_.FullName)
+    $depth = 0
     for ($k = 0; $k -lt $lines.Count; $k++) {
-        if ($lines[$k] -match '\)\s{2,}(func|private func|var|let|struct|enum|extension)\b') {
-            Write-Output "GLUED: $($_.Name):$($k + 1)"
-            $script:problems++
-        }
-        if ($lines[$k] -match '///.*\s{2,}func\s') {
-            Write-Output "GLUED COMMENT: $($_.Name):$($k + 1)"
-            $script:problems++
-        }
-        # property named 'body' inside a View conflicts with View.body (Scene.body is fine)
-        if ($lines[$k] -match '^\s+(let|var)\s+body\s*:' -and
-            $lines[$k] -notmatch 'var\s+body\s*:\s*some\s+(View|Scene)') {
+        $line = $lines[$k]
+        # depth 1 = уровень тела типа; глубже = внутри функции, там 'body' безопасен
+        $typeLevel = ($depth -eq 1)
+        if ($line -match '^\s*(private\s+)?(struct|class|enum|extension)\s+\w+.*\{\s*$') { $depth++ }
+        elseif ($line -match '^\s*(private\s+)?(struct|class|enum|extension)\s+\w+.*\{\s*\S') { $depth++ }
+        if ($typeLevel -and $line -match '^\s+(let|var)\s+body\s*:' -and
+            $line -notmatch 'var\s+body\s*:\s*some\s+(View|Scene)') {
             Write-Output "RESERVED NAME: $($_.Name):$($k + 1)"
             $script:problems++
         }
-        # glued struct header and first member on one line
-        if ($lines[$k] -match '^\s*(private\s+)?struct\s+\w+\s*:\s*View\s*\{\s+\S') {
+        if ($line -match '\)\s{2,}(func|private func|var|let|struct|enum|extension)\b') {
+            Write-Output "GLUED: $($_.Name):$($k + 1)"
+            $script:problems++
+        }
+        if ($line -match '///.*\s{2,}func\s') {
+            Write-Output "GLUED COMMENT: $($_.Name):$($k + 1)"
+            $script:problems++
+        }
+        if ($line -match '^\s*(private\s+)?struct\s+\w+\s*:\s*View\s*\{\s+\S') {
             Write-Output "GLUED STRUCT: $($_.Name):$($k + 1)"
             $script:problems++
         }
+        if ($line -match '^\s*\}') { $depth-- }
     }
 }
 
