@@ -72,24 +72,23 @@ struct WebSearchClient: WebSearching {
         let candidates = await (bing, duck)
         try Task.checkCancellation()
         var seen = Set<String>()
-        let unique = (candidates.0 + candidates.1).filter { seen.insert($0.url.absoluteString).inserted }
-        var ranked = unique.filter {
-            SearchRelevance.score(source: $0, query: searchQuery) > 0
+        // Фильтр релевантности обязателен: без него в контекст попадали страницы
+        // вида «Bing homepage quiz answers» — мусор, из-за которого ответы были
+        // про что угодно, кроме темы вопроса.
+        let ranked = (candidates.0 + candidates.1).filter {
+            SearchRelevance.score(source: $0, query: searchQuery) > 0 && seen.insert($0.url.absoluteString).inserted
         }.sorted { SearchRelevance.score(source: $0, query: searchQuery) > SearchRelevance.score(source: $1, query: searchQuery) }
         if ranked.isEmpty {
-            // Ни одна выдача не прошла фильтр релевантности — лучше показать модели
-            // найденные страницы, чем соврать, что поиск ничего не дал.
-            ranked = unique.sorted { SearchRelevance.score(source: $0, query: searchQuery) > SearchRelevance.score(source: $1, query: searchQuery) }
-            if ranked.isEmpty {
-                guard let urlDiscovery else { throw HonorError.searchUnavailable }
-                let suggested = try await urlDiscovery.candidates(for: query)
-                try Task.checkCancellation()
-                let fallback = Array(suggested.prefix(3)).map { WebSource(title: $0.host ?? "Страница", url: $0, snippet: "Проверенная по прямой ссылке страница; не поисковая выдержка") }
-                let fetchedFallback = (await readPages(fallback, limit: 3, timeout: 8)).filter { $0.content != nil }
-                try Task.checkCancellation()
-                guard !fetchedFallback.isEmpty else { throw HonorError.searchUnavailable }
-                return fetchedFallback
-            }
+            // Ни одна выдача не прошла фильтр — читаем проверенные страницы по прямой
+            // ссылке, а не отдаём модели мусорную выдачу.
+            guard let urlDiscovery else { throw HonorError.searchUnavailable }
+            let suggested = try await urlDiscovery.candidates(for: query)
+            try Task.checkCancellation()
+            let fallback = Array(suggested.prefix(3)).map { WebSource(title: $0.host ?? "Страница", url: $0, snippet: "Проверенная по прямой ссылке страница; не поисковая выдержка") }
+            let fetchedFallback = (await readPages(fallback, limit: 3, timeout: 8)).filter { $0.content != nil }
+            try Task.checkCancellation()
+            guard !fetchedFallback.isEmpty else { throw HonorError.searchUnavailable }
+            return fetchedFallback
         }
         let fetched = await readPages(Array(ranked.prefix(12)), limit: 5)
         try Task.checkCancellation()
