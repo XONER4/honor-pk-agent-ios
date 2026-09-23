@@ -2,7 +2,6 @@ import Foundation
 import Combine
 import UIKit
 
-@MainActor
 /// Живой буфер печатаемого ответа.
 ///
 /// Зачем отдельный объект: если писать текст в модель чата на каждом куске потока,
@@ -15,6 +14,7 @@ final class StreamBuffer: ObservableObject {
     @Published var reasoningSeconds = 0
 }
 
+@MainActor
 final class ChatStore: ObservableObject {
     @Published var conversations: [Conversation] = []
     @Published var selectedConversationID: UUID?
@@ -343,11 +343,13 @@ final class ChatStore: ObservableObject {
         flushStreamingBuffer?()
         // Переносим напечатанное в модель чата: пользователь нажал «остановить»,
         // ответ должен остаться в переписке и сохраниться в истории.
+        let printedContent = live.content
+        let printedReasoning = live.reasoning
         if let chatID = activeConversationID, let messageID = activeMessageID,
-           !live.content.isEmpty || !live.reasoning.isEmpty {
+           !printedContent.isEmpty || !printedReasoning.isEmpty {
             mutateMessage(chatID: chatID, messageID: messageID) {
-                if !self.live.content.isEmpty { $0.content = self.live.content }
-                if !self.live.reasoning.isEmpty { $0.reasoning = self.live.reasoning }
+                if !printedContent.isEmpty { $0.content = printedContent }
+                if !printedReasoning.isEmpty { $0.reasoning = printedReasoning }
             }
         }
         flushStreamingBuffer = nil
@@ -755,10 +757,11 @@ final class ChatStore: ObservableObject {
                 guard self.activeRunID == runID else { return }
                 // Поток закончился: переносим напечатанный текст в модель чата —
                 // дальше с ним работают перевод, сохранение и проверки.
+                let printedSeconds = self.live.reasoningSeconds
                 self.mutateMessage(chatID: chatID, messageID: response.id) {
                     $0.content = rawContent
                     $0.reasoning = rawReasoning
-                    $0.reasoningSeconds = self.live.reasoningSeconds
+                    $0.reasoningSeconds = printedSeconds
                 }
                 if let russianNormalizer {
                     let normalizeContent = RussianTextPolicy.needsNormalization(rawContent)
