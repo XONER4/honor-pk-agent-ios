@@ -1556,7 +1556,7 @@ struct ChatInfoSheet: View {
                 Section("Устройство и приложение") {
                     LabeledContent("Модель iPhone", value: DeviceModel.name)
                     LabeledContent("Система", value: DeviceModel.systemDescription)
-                    LabeledContent("Приложение", value: "Honer AI 10.21")
+                    LabeledContent("Приложение", value: "Honer AI 10.22")
                     LabeledContent("Язык интерфейса", value: settings.language == .russian ? "Русский" : "English")
                     LabeledContent("Оформление", value: appearanceName)
                 }
@@ -1771,6 +1771,8 @@ private struct HistoryDrawer: View {
     let onClose: () -> Void
     let onSettings: () -> Void
     @State private var search = ""
+    /// Кэш поиска по истории: без него поиск выполнялся при каждой перерисовке панели.
+    @State private var cachedGroups: (signature: String, groups: [HistoryGroup])?
     @State private var selecting = false
     @State private var selectedIDs: Set<UUID> = []
     @State private var renameTarget: UUID?
@@ -2120,8 +2122,13 @@ private struct HistoryDrawer: View {
 
     private var groups: [HistoryGroup] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Сортировка — по времени последнего сообщения, закреплённые всегда сверху
-        // и в своём порядке (их можно менять местами).
+        // Поиск по всей истории — самая дорогая работа здесь: он просматривает текст
+        // каждого сообщения. Раньше он выполнялся при каждой перерисовке панели,
+        // а во время печати ответа панель перерисовывается десятки раз в секунду —
+        // отсюда «зависания» в больших переписках. Теперь результат кэшируется
+        // и пересчитывается только когда меняется запрос или сама история.
+        let signature = "\(query)|\(store.conversations.count)|\(historyRevision)"
+        if let cache = cachedGroups, cache.signature == signature { return cache.groups }
         let chats = store.sortedConversations.filter { chat in
             query.isEmpty || chat.title.localizedCaseInsensitiveContains(query) || chat.messages.contains {
                 $0.content.localizedCaseInsensitiveContains(query) || $0.reasoning.localizedCaseInsensitiveContains(query) ||
@@ -2133,7 +2140,7 @@ private struct HistoryDrawer: View {
         let calendar = Calendar.current
         let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) ?? .distantPast
         let unpinned = chats.filter { !$0.pinned }
-        return [
+        let result = [
             HistoryGroup(id: "pinned", title: text("Закреплено", "Pinned"), chats: chats.filter(\.pinned)),
             HistoryGroup(id: "today", title: text("Сегодня", "Today"), chats: unpinned.filter { calendar.isDateInToday($0.lastMessageAt) }),
             HistoryGroup(id: "yesterday", title: text("Вчера", "Yesterday"), chats: unpinned.filter { calendar.isDateInYesterday($0.lastMessageAt) }),
@@ -2142,6 +2149,18 @@ private struct HistoryDrawer: View {
             }),
             HistoryGroup(id: "older", title: text("Ранее", "Older"), chats: unpinned.filter { $0.lastMessageAt < weekAgo })
         ].filter { !$0.chats.isEmpty }
+        cachedGroups = (signature, result)
+        return result
+    }
+
+    /// Признак того, что история изменилась по существу: число сообщений и последние
+    /// заголовки. Пока идёт печать ответа, он не меняется — значит и поиск не нужен.
+    private var historyRevision: Int {
+        var hash = 0
+        for chat in store.conversations {
+            hash = hash &+ chat.messages.count &+ chat.title.count &+ (chat.pinned ? 1 : 0)
+        }
+        return hash
     }
 }
 
