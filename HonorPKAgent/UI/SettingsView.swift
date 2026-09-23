@@ -542,9 +542,36 @@ private struct VoiceSettingsPage: View {
     @EnvironmentObject private var settings: AppSettings
     @StateObject private var speech = SpeechService()
     @State private var voices: [AVSpeechSynthesisVoice] = []
+
+    /// Что сейчас выбрано — понятной строкой.
+    private var currentVoiceDescription: String {
+        if settings.voiceIdentifier.isEmpty {
+            if let best = VoiceCatalog.bestAvailable() {
+                return "автоматически: \(best.name) (\(best.quality.title))"
+            }
+            return "автоматически"
+        }
+        if let match = VoiceCatalog.russianVoices().first(where: { $0.id == settings.voiceIdentifier }) {
+            return "\(match.name) · \(match.gender.title) · \(match.quality.title)"
+        }
+        return "выбран вручную"
+    }
     var body: some View {
         Form {
             Section(settings.text("Голос для чтения", "Reading voice")) {
+                NavigationLink {
+                    VoicePickerPage(settings: settings)
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(settings.text("Выбрать голос", "Choose voice"))
+                            Text(currentVoiceDescription)
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                }
+                .accessibilityIdentifier("voice.picker.link")
                 voiceRow(name: settings.text("Лучший доступный", "Best available"), identifier: "")
                 ForEach(voices, id: \.identifier) { voice in
                     voiceRow(name: "\(voice.name) · \(quality(voice))", identifier: voice.identifier)
