@@ -57,6 +57,17 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     var error: String? = nil
     var isInterrupted: Bool = false
     var reasoningWasTranslated: Bool? = nil
+    /// Как сообщение попало в чат: набрано текстом, наговорено голосом или выбрано из подсказки.
+    var inputKind: MessageInputKind = .text
+    /// Реакция пользователя или агента эмодзи.
+    var reaction: String? = nil
+
+    /// Устойчивый идентификатор для прокрутки к сообщению.
+    var anchorID: String { "message-anchor-" + id.uuidString }
+}
+
+enum MessageInputKind: String, Codable, Sendable {
+    case text, voice, suggestion
 }
 
 struct Conversation: Identifiable, Codable, Equatable, Sendable {

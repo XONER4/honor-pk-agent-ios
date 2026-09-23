@@ -24,6 +24,8 @@ struct ChatRootView: View {
     @State private var sourceSheet: SourceSelection?
     @State private var deleteChatConfirmation = false
     @State private var findOpen = false
+    /// Запрос на переход к сообщению по линиям навигации справа.
+    @State private var scrollRequest: ScrollRequest?
     @State private var findQuery = ""
     @State private var findIndex = 0
     @State private var voiceMode = false
@@ -96,6 +98,18 @@ struct ChatRootView: View {
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
                     .zIndex(5)
+                }
+                // Линии навигации по сообщениям справа: каждая линия — сообщение.
+                // Тап (или долгое нажатие) плавно прокручивает чат к нему.
+                if let request = scrollRequest, anchors.count > 1, menuMessage == nil {
+                    MessageNavigationLines(messages: store.messages,
+                                           anchors: anchors,
+                                           geometry: geometry,
+                                           streamingMessageID: streamingMessageID,
+                                           settings: settings) { id in
+                        scrollRequest = ScrollRequest(id: UUID(), messageID: id)
+                    }
+                    .zIndex(4)
                 }
                 }
                 // A fading-out menu must stop intercepting the next touch immediately.
@@ -205,6 +219,7 @@ struct ChatRootView: View {
             } else {
                 MessageTimeline(store: store, settings: settings,
                                 findQuery: findOpen ? findQuery : "", selectedMatch: selectedMatch,
+                                scrollRequest: $scrollRequest,
                                 onCopy: copy, onSelect: { selectedText = SelectedText(content: $0) },
                                 onShare: { shareItem = SharedText(content: $0) }, onSpeak: speak,
                                 onAttachment: { previewAttachment = $0 }, onSources: { sourceSheet = $0 },
@@ -716,6 +731,7 @@ private struct MessageTimeline: View {
     @ObservedObject var settings: AppSettings
     let findQuery: String
     let selectedMatch: UUID?
+    @Binding var scrollRequest: ScrollRequest?
     let onCopy: (String) -> Void
     let onSelect: (String) -> Void
     let onShare: (String) -> Void
@@ -725,12 +741,13 @@ private struct MessageTimeline: View {
     let onMenu: (ChatMessage) -> Void
     @State private var followLatest = true
     @State private var pendingScroll: Task<Void, Never>?
+    /// Ответ, который сейчас пишется, — для линий навигации справа.
+    @State private var streamingMessageID: UUID?
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
 
     var body: some View {
         let messages = store.messages
         let tail = messages.last
-        let tailRevision = "\(tail?.content.count ?? 0):\(tail?.reasoning.count ?? 0)"
         return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 25) {
@@ -752,7 +769,8 @@ private struct MessageTimeline: View {
                                    onEdit: { store.edit(messageID: message.id) },
                                    onFeedback: { store.setFeedback(messageID: message.id, feedback: $0) },
                                    onMenu: onMenu)
-                            .equatable().id(message.id)
+                            .equatable()
+                            .id(message.anchorID)
                     }
                     Color.clear.frame(height: 8).id("message-bottom")
                 }
@@ -780,7 +798,10 @@ private struct MessageTimeline: View {
                     .padding(.trailing, 14).padding(.bottom, 6)
                 }
             }
-            .onAppear { proxy.scrollTo("message-bottom", anchor: .bottom) }
+            .onAppear {
+                proxy.scrollTo("message-bottom", anchor: .bottom)
+                streamingMessageID = store.isGenerating ? messages.last?.id : nil
+            }
             .onChange(of: messages.count) { _ in
                 if messages.last?.role == .user || messages.dropLast().last?.role == .user { followLatest = true }
                 if followLatest && findQuery.isEmpty { proxy.scrollTo("message-bottom", anchor: .bottom) }
@@ -788,14 +809,27 @@ private struct MessageTimeline: View {
             .onChange(of: store.selectedConversationID) { _ in
                 pendingScroll?.cancel(); pendingScroll = nil
                 followLatest = true
+                streamingMessageID = nil
                 proxy.scrollTo("message-bottom", anchor: .bottom)
             }
-            .onChange(of: tailRevision) { _ in
-                guard followLatest, findQuery.isEmpty, pendingScroll == nil else { return }
+            // Начало нового ответа: один раз мягко доводим экран до начала этого ответа.
+            // Раньше прокрутка запускалась на каждом токене (22 раза в секунду) и спорила
+            // с ростом текста — отсюда были рывки и «прыжки» экрана.
+            .onChange(of: store.isGenerating) { generating in
+                guard generating, let id = messages.last?.id else {
+                    if !generating { streamingMessageID = nil }
+                    return
+                }
+                streamingMessageID = id
+                guard followLatest, findQuery.isEmpty else { return }
+                pendingScroll?.cancel()
                 pendingScroll = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 120_000_000)
-                    guard !Task.isCancelled else { return }
-                    if followLatest && findQuery.isEmpty { proxy.scrollTo("message-bottom", anchor: .bottom) }
+                    // ждём, пока вью ответа появится в иерархии
+                    try? await Task.sleep(nanoseconds: 90_000_000)
+                    guard !Task.isCancelled, followLatest, findQuery.isEmpty else { return }
+                    withAnimation(.easeOut(duration: 0.28)) {
+                        proxy.scrollTo(id.anchorID, anchor: .bottom)
+                    }
                     pendingScroll = nil
                 }
             }
@@ -803,6 +837,16 @@ private struct MessageTimeline: View {
                 guard let id else { return }
                 followLatest = false
                 withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(id, anchor: .center) }
+            }
+            // Линии навигации справа: плавный переход к выбранному сообщению.
+            .onChange(of: scrollRequest) { request in
+                guard let request else { return }
+                scrollRequest = nil
+                followLatest = false
+                pendingScroll?.cancel(); pendingScroll = nil
+                withAnimation(.easeInOut(duration: 0.5)) {
+                    proxy.scrollTo(request.messageID.anchorID, anchor: .center)
+                }
             }
             .onDisappear { pendingScroll?.cancel(); pendingScroll = nil }
         }
@@ -898,24 +942,27 @@ private struct MessageRow: View, Equatable {
                             .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
                             .accessibilityIdentifier("message.reasoning.translated." + message.id.uuidString)
                     }
-                    Text(highlighted(AttributedString(message.reasoning), query: findQuery))
-                        .font(.system(size: 14 * settings.fontScale * dynamicScale))
-                        .foregroundStyle(HonorTheme.secondary)
-                        .lineSpacing(5)
-                        .textSelection(.enabled)
-                        .padding(.leading, 13)
-                        .overlay(alignment: .leading) { Rectangle().fill(HonorTheme.divider).frame(width: 2) }
+                    StreamText(target: message.reasoning, streaming: streaming, baseRate: 80) { visible in
+                        BlockMarkdownView(content: visible, fontSize: 14 * settings.fontScale * dynamicScale,
+                                          sources: [], findQuery: findQuery)
+                            .foregroundStyle(HonorTheme.secondary)
+                            .padding(.leading, 13)
+                            .overlay(alignment: .leading) { Rectangle().fill(HonorTheme.divider).frame(width: 2) }
+                    }
                         .accessibilityIdentifier("message.reasoning.text." + message.id.uuidString)
                 }
                 if reasoningOpen && !message.sources.isEmpty { sourceProgress }
             }
             if !message.content.isEmpty {
-                MarkdownMessage(content: message.content, fontSize: 17 * settings.fontScale * dynamicScale,
-                                sources: message.sources, findQuery: findQuery, onCopy: onCopy)
-                    .equatable()
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel(message.content)
-                    .accessibilityIdentifier("message.content." + message.id.uuidString)
+                // Плавный посимвольный вывод: текст растёт по кадрам, а не рывками
+                // на каждом обновлении стрима.
+                StreamText(target: message.content, streaming: streaming, baseRate: 58) { visible in
+                    BlockMarkdownView(content: visible, fontSize: 17 * settings.fontScale * dynamicScale,
+                                      sources: message.sources, findQuery: findQuery)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(message.content)
+                .accessibilityIdentifier("message.content." + message.id.uuidString)
             }
             if let error = message.error {
                 Label(error, systemImage: "exclamationmark.circle")
@@ -1440,84 +1487,7 @@ private struct SelectableTextView: UIViewRepresentable {
     }
 }
 
-/// Inline Markdown and fenced code without a web view or remote renderer.
-private struct MarkdownMessage: View, Equatable {
-    let content: String
-    let fontSize: Double
-    let sources: [WebSource]
-    let findQuery: String
-    let onCopy: (String) -> Void
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.content == rhs.content && lhs.fontSize == rhs.fontSize &&
-        lhs.sources == rhs.sources && lhs.findQuery == rhs.findQuery
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                if block.code {
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack {
-                            Text(block.language.isEmpty ? "code" : block.language).font(.system(size: 11, weight: .medium))
-                            Spacer()
-                            Button { onCopy(block.text) } label: {
-                                Image(systemName: "square.on.square").frame(width: 44, height: 32)
-                            }.accessibilityLabel("Copy code")
-                                .accessibilityIdentifier("message.code.copy")
-                        }
-                        .foregroundStyle(HonorTheme.secondary)
-                        .padding(.leading, 12).padding(.trailing, 2)
-                        .background(HonorTheme.raised)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            Text(highlighted(AttributedString(block.text), query: findQuery))
-                                .font(.system(size: fontSize * 0.82, design: .monospaced))
-                                .textSelection(.enabled)
-                                .padding(12)
-                        }
-                    }
-                    .background(HonorTheme.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(HonorTheme.divider, lineWidth: 0.6))
-                } else {
-                    Text(attributed(block.text))
-                        .font(.system(size: fontSize))
-                        .lineSpacing(5)
-                        .tint(HonorTheme.accent)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-
-    private func attributed(_ source: String) -> AttributedString {
-        let cited = linkedCitations(source, sources: sources)
-        let value = (try? AttributedString(markdown: cited, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(source)
-        return highlighted(value, query: findQuery)
-    }
-
-    private var blocks: [MarkdownBlock] {
-        let parts = content.components(separatedBy: "```")
-        return parts.enumerated().compactMap { index, part in
-            if index % 2 == 0 {
-                let value = part.trimmingCharacters(in: .newlines)
-                return value.isEmpty ? nil : MarkdownBlock(text: value, code: false, language: "")
-            }
-            let pieces = part.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-            let language = pieces.first.map(String.init)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let body = pieces.count > 1 ? String(pieces[1]).trimmingCharacters(in: .newlines) : ""
-            return MarkdownBlock(text: body, code: true, language: language)
-        }
-    }
-}
-
-private struct MarkdownBlock {
-    let text: String
-    let code: Bool
-    let language: String
-}
-
-private func attachmentSymbol(_ attachment: MessageAttachment) -> String {
+func attachmentSymbol(_ attachment: MessageAttachment) -> String {
     switch attachment.kind {
     case .image: return "photo"
     case .video: return "play.rectangle"
@@ -1526,7 +1496,7 @@ private func attachmentSymbol(_ attachment: MessageAttachment) -> String {
     }
 }
 
-private func highlighted(_ value: AttributedString, query: String) -> AttributedString {
+func highlighted(_ value: AttributedString, query: String) -> AttributedString {
     guard !query.isEmpty else { return value }
     var result = value
     let plain = String(result.characters)
@@ -1541,11 +1511,11 @@ private func highlighted(_ value: AttributedString, query: String) -> Attributed
     return result
 }
 
-private enum CitationPattern {
+enum CitationPattern {
     static let expression = try? NSRegularExpression(pattern: #"(?<!!)\[(\d+)\](?!\()"#)
 }
 
-private func linkedCitations(_ content: String, sources: [WebSource]) -> String {
+func linkedCitations(_ content: String, sources: [WebSource]) -> String {
     guard !sources.isEmpty, let expression = CitationPattern.expression else { return content }
     var result = content
     let matches = expression.matches(in: content, range: NSRange(content.startIndex..., in: content))

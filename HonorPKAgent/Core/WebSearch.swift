@@ -1,5 +1,47 @@
 import Foundation
 
+/// Решает, нужен ли вообще выход в интернет.
+///
+/// Раньше поиск запускался при включённом переключателе, при любом упоминании погоды
+/// или любой ссылке в тексте — и модель лезла в сеть даже на вопрос «сколько будет 2+2».
+/// Теперь поиск по умолчанию выключен и включается только по явной нужде.
+enum SearchIntent {
+    /// Прямая просьба искать.
+    private static let explicit = try! NSRegularExpression(
+        pattern: "(?i)(?:\\bнайд|\\bпоищ|\\bпогугл|\\bзагугл|\\bпоры(?:й|л)|посмотри в интернете|поиск в интернете|найти в интернете|\\bsearch\\b|\\blook\\s*up\\b|google it)")
+
+    /// Вопрос про свежие данные — без сети на него честно не ответить.
+    private static let freshness = try! NSRegularExpression(
+        pattern: "(?i)(?:\\bсегодня\\b|\\bвчера\\b|\\bсейчас\\b|\\bактуальн|\\bпоследн(?:ие|их|яя|юю)|\\bновост|\\bкурс\\b|\\bкотировк|\\bстоимость\\b|\\bцен[аыу]\\b|\\bпогод|\\bпробк|\\bсвежие данные|\\bна этой неделе\\b|\\bв этом месяце\\b|20(?:2[4-9]|[3-9]\\d))")
+
+    /// Вопросы, на которые модель отвечает своими знаниями.
+    private static let selfSufficient = try! NSRegularExpression(
+        pattern: "(?i)^\\s*(?:что такое|кто такой|кто такие|объясни|расскажи|как работает|как сделать|как настроить|напиши|сделай|создай|переведи|посчитай|реши|определение|в чём разница|сравни|придумай|составь)")
+
+    /// Активная просьба про погоду (а не упоминание слова «погода»).
+    private static let weatherRequest = try! NSRegularExpression(
+        pattern: "(?i)(?:какая\\s+погода|погода\\s+(?:в|на|сегодня|завтра)|прогноз\\s+погоды|сколько\\s+градусов|температура\\s+(?:воздуха|на улице)|будет\\s+ли\\s+дождь|weather\\s+(?:in|today|tomorrow))")
+
+    static func needsSearch(query: String, searchToggleOn: Bool, hasAttachments: Bool = false) -> Bool {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let range = NSRange(trimmed.startIndex..., in: trimmed)
+
+        // 1. Явная просьба искать — всегда выполняем.
+        if explicit.firstMatch(in: trimmed, range: range) != nil { return true }
+        // 2. Прямая ссылка в тексте — её надо открыть.
+        if !WebPageText.urls(in: trimmed).isEmpty { return true }
+        // 3. Погода — только если реально спрашивают прогноз.
+        if weatherRequest.firstMatch(in: trimmed, range: range) != nil,
+           WeatherIntent.location(in: trimmed) != nil { return true }
+        // 4. Вопросы «объясни/что такое» решаем без сети.
+        if selfSufficient.firstMatch(in: trimmed, range: range) != nil { return false }
+        // 5. Свежесть данных или включённый пользователем режим «Поиск».
+        if freshness.firstMatch(in: trimmed, range: range) != nil { return true }
+        return searchToggleOn
+    }
+}
+
 protocol WebSearching {
     func search(_ query: String) async throws -> [WebSource]
 }

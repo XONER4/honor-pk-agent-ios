@@ -17,8 +17,8 @@ final class ChatStore: ObservableObject {
     }
     @Published private(set) var isGenerating = false
     @Published private(set) var isLoadingHistory = false
-    @Published var reasoningEnabled = true
-    @Published var searchEnabled = false
+    @Published var reasoningEnabled = true { didSet { UserDefaults.standard.set(reasoningEnabled, forKey: "honor.reasoningEnabled") } }
+    @Published var searchEnabled = false { didSet { UserDefaults.standard.set(searchEnabled, forKey: "honor.searchEnabled") } }
     @Published var errorMessage: String?
     @Published private(set) var generationStatus: String?
     @Published private(set) var editingMessageID: UUID?
@@ -26,8 +26,8 @@ final class ChatStore: ObservableObject {
     @Published var memoryEnabled = true { didSet { scheduleSave() } }
     @Published private var configuration: DeepSeekConfiguration
 
-    static let maximumMemoryCount = 50
-    static let maximumMemoryLength = 1000
+    static let maximumMemoryCount = 1000
+    static let maximumMemoryLength = 4000
 
     var systemInstruction = ""
     var profileName = ""
@@ -60,6 +60,10 @@ final class ChatStore: ObservableObject {
         let resolvedStorageURL = storageURL ?? Self.defaultStorageURL
         self.storageURL = resolvedStorageURL
         self.persistence = HistoryPersistence(url: resolvedStorageURL)
+        // Режимы «Рассуждение» и «Поиск» раньше не сохранялись и сбрасывались сами —
+        // теперь запоминаются между запусками.
+        self.reasoningEnabled = UserDefaults.standard.object(forKey: "honor.reasoningEnabled") as? Bool ?? true
+        self.searchEnabled = UserDefaults.standard.object(forKey: "honor.searchEnabled") as? Bool ?? false
         if loadHistoryAsynchronously {
             isLoadingHistory = true
             Task { [weak self] in
@@ -357,7 +361,7 @@ final class ChatStore: ObservableObject {
         isGenerating = true
         let thinking = reasoningEnabled
         let query = input.last(where: { $0.role == .user })?.content ?? ""
-        let searching = searchEnabled || WeatherIntent.location(in: query) != nil || !WebPageText.urls(in: query).isEmpty
+        let searching = SearchIntent.needsSearch(query: query, searchToggleOn: searchEnabled)
         let recentContext = input.suffix(4).map { String($0.content.prefix(1500)) }.joined(separator: "\n")
         let instruction = effectiveSystemInstruction + HonerIdentity.context(for: query, recentContext: recentContext)
         let client = injectedClient ?? DeepSeekClient(configuration: configuration)
@@ -398,8 +402,8 @@ final class ChatStore: ObservableObject {
                     rawContent += pendingContent
                     rawReasoning += pendingReasoning
                     self.mutateMessage(chatID: chatID, messageID: response.id) {
-                        if contentChanged { $0.content = russianNormalizer != nil && RussianTextPolicy.holdWhileStreaming(rawContent) ? "" : rawContent }
-                        if reasoningChanged { $0.reasoning = russianNormalizer != nil && RussianTextPolicy.holdWhileStreaming(rawReasoning) ? "" : rawReasoning }
+                        if contentChanged { $0.content = rawContent }
+                        if reasoningChanged { $0.reasoning = rawReasoning }
                         $0.reasoningSeconds = seconds
                     }
                     pendingContent = ""; pendingReasoning = ""; lastPublished = Date()
@@ -421,7 +425,7 @@ final class ChatStore: ObservableObject {
                         pendingContent += delta.content
                         pendingReasoning += delta.reasoning
                         finishReason = delta.finishReason ?? finishReason
-                        if Date().timeIntervalSince(lastPublished) >= 0.045 { flush() }
+                        if Date().timeIntervalSince(lastPublished) >= 0.1 { flush() }
                         if Date().timeIntervalSince(lastSaved) >= 1.5 { self.saveSnapshot(); lastSaved = Date() }
                     }
                     flush()
