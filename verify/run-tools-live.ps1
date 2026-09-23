@@ -72,7 +72,7 @@ if ($r1.Error) { Write-Output ("  SERVICE ERROR: " + $r1.Error) }
 $toolBlock = [string]$spec.toolResult
 
 Write-Output ''
-Write-Output '=== TURN 2: with reasoning_content returned (fixed behaviour) ==='
+Write-Output '=== TURN 2: tool result via tool role, plus a nudge to answer ==='
 $assistant = [ordered]@{ role = 'assistant'; content = $r1.Content; reasoning_content = $r1.Reasoning }
 if ($r1.Calls.Count -gt 0) {
   $list = @()
@@ -87,11 +87,12 @@ if ($r1.Calls.Count -gt 0) {
   foreach ($k in $r1.Calls.Keys) {
     $messages2 += @{ role = 'tool'; tool_call_id = $r1.Calls[$k].id; content = $toolBlock }
   }
+  $messages2 += @{ role = 'user'; content = 'Use the received data and give the final answer to the user. Do not call this tool again.' }
 } else {
   $messages2 += @{ role = 'user'; content = ('Tool result: ' + $toolBlock + ' Use it in the answer.') }
 }
 $body2 = [ordered]@{ model = 'deepseek-flash'; messages = $messages2; thinking = @{ type = 'enabled' }; reasoning_effort = 'high'
-                     stream = $true; tools = $spec.tools; tool_choice = 'auto' }
+                     stream = $true }
 $r2 = Invoke-Turn -Body $body2 -Name 'turn2'
 Write-Output ("HTTP {0} | finish={1} | content={2} chars | reasoning={3} chars" -f $r2.Http, $r2.Finish, $r2.Content.Length, $r2.Reasoning.Length)
 $preview = ($r2.Content -replace "`r?`n", ' | ')
@@ -105,7 +106,7 @@ $assistantWrong = [ordered]@{ role = 'assistant'; content = $r1.Content; reasoni
 if ($r1.Calls.Count -gt 0) { $assistantWrong['tool_calls'] = $assistant['tool_calls'] }
 $messages3 = $messages + $assistantWrong + @{ role = 'user'; content = ('Tool result: ' + $toolBlock + ' Use it in the answer.') }
 $body3 = [ordered]@{ model = 'deepseek-flash'; messages = $messages3; thinking = @{ type = 'enabled' }; reasoning_effort = 'high'
-                     stream = $true; tools = $spec.tools; tool_choice = 'auto' }
+                     stream = $true }
 $r3 = Invoke-Turn -Body $body3 -Name 'turn3'
 Write-Output ("HTTP {0} | finish={1} | content={2} chars" -f $r3.Http, $r3.Finish, $r3.Content.Length)
 if ($r3.Error) { Write-Output ("  SERVICE ERROR: " + $r3.Error) }
@@ -117,7 +118,7 @@ if ($r1.Calls.Count -gt 0) { $assistantNoReason['tool_calls'] = $assistant['tool
 $messages4 = $messages + $assistantNoReason
 foreach ($k in $r1.Calls.Keys) { $messages4 += @{ role = 'tool'; tool_call_id = $r1.Calls[$k].id; content = $toolBlock } }
 $body4 = [ordered]@{ model = 'deepseek-flash'; messages = $messages4; thinking = @{ type = 'enabled' }; reasoning_effort = 'high'
-                     stream = $true; tools = $spec.tools; tool_choice = 'auto' }
+                     stream = $true }
 $r4 = Invoke-Turn -Body $body4 -Name 'turn4'
 Write-Output ("HTTP {0} | finish={1} | content={2} chars" -f $r4.Http, $r4.Finish, $r4.Content.Length)
 if ($r4.Error) { Write-Output ("  SERVICE ERROR: " + $r4.Error) }

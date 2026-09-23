@@ -723,6 +723,9 @@ final class ChatStore: ObservableObject {
                     // Запоминаем вызовы этого прохода: их нужно вернуть в API вместе
                     // с результатами, иначе сервис отвечает ошибкой 400.
                     let executedCalls = toolCalls
+                    // Результаты отправляем только текущего прохода: накопленные
+                    // раньше повторять не нужно, иначе растёт запрос и модель путается.
+                    toolResults.removeAll()
                     for call in toolCalls {
                         let result = ToolExecutor.executeExtended(call, context: toolContext)
                         if let effect = result.effect { self.apply(effect) }
@@ -744,12 +747,21 @@ final class ChatStore: ObservableObject {
                         toolMessage.toolCallID = result.callID
                         followUp.append(toolMessage)
                     }
+                    // Короткая просьба ответить по существу: без неё модель иногда
+                    // повторяет вызов инструмента вместо ответа.
+                    var nudge = ChatMessage(role: .user)
+                    nudge.content = "Используй полученные данные и дай итоговый ответ пользователю. Не вызывай этот инструмент повторно."
+                    followUp.append(nudge)
 
                     self.generationStatus = "Отвечаю…"
                     do {
+                        // На повторном проходе инструменты НЕ передаём. Проверено живым
+                        // тестом: с инструментами модель снова и снова просит вызов
+                        // и возвращает пустой текст, а без них — сразу даёт ответ по
+                        // полученным данным. Все нужные действия уже выполнены выше.
                         for try await delta in client.stream(messages: followUp, thinking: thinking,
                                                              systemInstruction: instruction, searchContext: context,
-                                                             tools: HonerTool.apiSchemas) {
+                                                             tools: nil) {
                             try Task.checkCancellation()
                             guard self.activeRunID == runID else { return }
                             for call in delta.toolCalls {
@@ -999,7 +1011,7 @@ final class ChatStore: ObservableObject {
         return ToolExecutionContext(
             deviceModel: DeviceModel.name,
             systemVersion: UIDevice.current.systemVersion,
-            appVersion: "10.18",
+            appVersion: "10.19",
             messageCount: messages.count,
             voiceMessageCount: messages.filter { $0.inputKind == .voice }.count,
             chatStartedAt: selectedConversation?.createdAt,
