@@ -28,11 +28,11 @@ enum HonerIdentity {
         let pcTerms = ["pk agent", "pc agent", "пк агент", "пк-агент", "настольн", "компьютерн"]
         var context = ""
         if ["создат", "создал", "разработчик", "владислав", "creator", "who made"].contains(where: text.contains) {
-            context += "\nЛокальная справка о создателе, выбранная по запросу: приложение разработал Владислав из России. Он также создал настольный Honer PK Agent (известный как Honor PC Agent). Других подтверждённых биографических данных в справке нет."
+            context += "\nЛокальная справка о создателе, выбранная по запросу: приложение разработал Владислав из России. Он также создал настольный Honor PK Agent (установлен как Honor PC Agent). Других подтверждённых биографических данных в справке нет."
         }
         if asksCreations || pcTerms.contains(where: text.contains) || (asksFunctions && pcTerms.contains(where: recentContext.lowercased().contains)) {
             context += """
-            \nЛокальная справка по запросу о ПК-приложении: Honer PK Agent — настольное приложение, известное также как Honor PC Agent. Подтверждённая установленная версия — 10.0.2. Разработчик Владислав из России. Приложение распространяется закрыто: установочный файл получают непосредственно от разработчика; публичная загрузка не подтверждена.
+            \nЛокальная справка по запросу о ПК-приложении: Honor PK Agent — настольное приложение, установленное также под названием Honor PC Agent. Подтверждённая установленная версия — 10.0.2. Разработчик Владислав из России. Приложение распространяется закрыто: установочный файл получают непосредственно от разработчика; публичная загрузка не подтверждена.
             Возможности настольной версии: файлы и папки Windows, PowerShell; поиск через несколько интернет-поисковиков и чтение страниц; открытие браузера, нажатия, заполнение полей и снимки экрана; изображения и OCR; извлечение кадров и аудио из видео; транскрибация аудио; явная память и история; диагностика драйверов и ошибок ПК. Это функции настольного приложения. Мобильное Honer AI не заявляет управление компьютером. Не выдумывай публичный сайт, ссылку загрузки или дополнительные функции.
             """
         }
@@ -43,7 +43,7 @@ enum HonerIdentity {
 enum RussianTextPolicy {
     private static let codeAndURLs = try! NSRegularExpression(pattern: "(?s)```.*?```|`[^`]*`|https?://\\S+")
     private static let markdownLinks = try! NSRegularExpression(pattern: "\\[[^]]*\\]\\([^)]*\\)")
-    private static let brandNames = try! NSRegularExpression(pattern: "(?i)\\b(?:Honer\\s+AI|Honor\\s+AI|Honer\\s+PK\\s+Agent|Honor\\s+PC\\s+Agent|DeepSeek|OpenAI)\\b")
+    private static let brandNames = try! NSRegularExpression(pattern: "(?i)\\b(?:Honer\\s+AI|Honor\\s+AI|Hon[oe]r\\s+PK\\s+Agent|Honor\\s+PC\\s+Agent|DeepSeek|OpenAI)\\b")
     private static let latinWords = try! NSRegularExpression(pattern: "[A-Za-z]+")
     private static let shortEnglishPhrases: Set<String> = ["hello", "hi", "hey", "hello there", "good morning", "good evening", "good night", "thank you", "thanks", "yes", "no", "of course", "sure"]
 

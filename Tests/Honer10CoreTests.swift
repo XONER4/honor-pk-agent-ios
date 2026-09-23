@@ -56,6 +56,7 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertTrue(HonerIdentity.context(for: "Как приготовить суп?").isEmpty)
         XCTAssertTrue(HonerIdentity.context(for: "Кто твой создатель?").contains("из России"))
         let pc = HonerIdentity.context(for: "Что умеет настольный Honer PK Agent?")
+        XCTAssertTrue(pc.contains("Honor PK Agent"))
         XCTAssertTrue(pc.contains("PowerShell"))
         XCTAssertTrue(pc.contains("закрыто"))
         XCTAssertTrue(pc.contains("Мобильное Honer AI не заявляет управление компьютером"))
