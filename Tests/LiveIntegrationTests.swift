@@ -89,11 +89,14 @@ final class LiveIntegrationTests: XCTestCase {
 
     func testLiveEnglishAndChineseQuestionsStayRussian() async throws {
         let english = try await answer("Explain why the sky is blue in one sentence. Answer in English.", thinking: true)
-        print("HONER_WHY_LOG \(TranslationLog.text)")
-        print("HONER_WHY_TRANSLATED \(english.reasoningWasTranslated ?? false) needs=\(RussianTextPolicy.needsReasoningNormalization(english.reasoning))")
-        print("HONER_WHY reasoning=[\(english.reasoning.prefix(400))]")
-        print("HONER_WHY needsReasoning=\(RussianTextPolicy.needsNormalization(english.reasoning)) translated=\(english.reasoningWasTranslated ?? false)")
+        let needsTranslation = RussianTextPolicy.needsReasoningNormalization(english.reasoning)
+        print("HONER_WHY translated=\(english.reasoningWasTranslated ?? false) stayedForeign=\(english.reasoningStayedForeign) needs=\(needsTranslation)")
+        // Ответ обязан быть по-русски.
         XCTAssertTrue(english.content.lowercased().contains("свет") || english.content.lowercased().contains("рассе"))
+        // А рассуждение — либо переведено, либо честно помечено как текст на языке модели.
+        // Раньше третьего варианта не было, и пользователь видел английский текст без пояснений.
+        XCTAssertTrue(!needsTranslation || english.reasoningStayedForeign,
+                      "Рассуждение осталось английским и без пометки: [\(english.reasoning.prefix(200))]")
         let chinese = try await answer("请只用中文解释为什么冰会融化。", thinking: false)
         XCTAssertTrue(chinese.content.lowercased().contains("лёд") || chinese.content.lowercased().contains("льд") || chinese.content.lowercased().contains("плав"))
     }

@@ -678,12 +678,13 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
         законченными предложениями, без вступлений и без markdown-заголовков. \
         Верни только русский текст.
         """
-        // Сначала пробуем половину текста, затем четверть: короткий запрос отвечает
-        // быстрее и не упирается в лимит длины. Раньше при единственной попытке
-        // на 8000 символов сбой оставлял пользователя с английским рассуждением.
-        let halves = [String(reasoning.prefix(5000)), String(reasoning.prefix(2000))]
+        // Сначала пробуем половину текста, затем четверть, затем ещё короче:
+        // короткий запрос отвечает быстрее и не упирается в лимит длины. Раньше
+        // при единственной попытке сбой оставлял пользователя с английским рассуждением.
+        let chunks = [String(reasoning.prefix(5000)), String(reasoning.prefix(2000)),
+                      String(reasoning.prefix(800))]
         var lastError: Error = HonorError.invalidResponse
-        for chunk in halves where !chunk.isEmpty {
+        for chunk in chunks where !chunk.isEmpty {
             do {
                 let result = try await summarizeReasoningRequest(instruction: instruction, text: chunk)
                 if !RussianTextPolicy.needsReasoningNormalization(result) { return result }
