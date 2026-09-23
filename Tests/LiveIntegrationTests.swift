@@ -50,6 +50,43 @@ final class LiveIntegrationTests: XCTestCase {
         XCTAssertTrue(result.content.contains("°") || result.content.lowercased().contains("градус"))
     }
 
+    /// Воспроизведение жалобы «она просто молчит»: чат из скриншотов, где ассистент
+    /// уже отвечал одной буквой, а следующая реплика пользователя оставалась без ответа.
+    /// Проверяем, что после короткого «Ку» приходит полноценный ответ, а огрызок
+    /// из истории не сбивает модель.
+    func testLiveShortChatWithBrokenHistoryStillGetsFullAnswer() async throws {
+        let store = try configuredStore()
+        store.reasoningEnabled = true
+        let chat = Conversation(title: "Ку")
+        var firstQuestion = ChatMessage(role: .user, content: "Ку")
+        firstQuestion.createdAt = Date().addingTimeInterval(-120)
+        var broken = ChatMessage(role: .assistant, content: "П")
+        broken.createdAt = Date().addingTimeInterval(-110)
+        var secondQuestion = ChatMessage(role: .user, content: "Больная чтоли ?")
+        secondQuestion.createdAt = Date().addingTimeInterval(-60)
+        chat.messages = [firstQuestion, broken, secondQuestion]
+        store.conversations = [chat]
+        store.selectedConversationID = chat.id
+        store.draft = "Создай мне таблицу лучших телефонов на 26 год"
+        store.send()
+        let start = Date()
+        while store.isGenerating && Date().timeIntervalSince(start) < 150 {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        if store.isGenerating { store.stop(); XCTFail("Ответ не пришёл за 150 секунд") }
+        let result = try XCTUnwrap(store.messages.last)
+        print("HONER_LIVE chat len=\(result.content.count) error=\(result.error ?? "nil") reasoning=\(result.reasoning.count)")
+        XCTAssertNil(result.error, "Появилась ошибка вместо ответа: \(result.error ?? "")")
+        XCTAssertGreaterThan(result.content.count, 40, "Ответ пришёл обрывком: [\(result.content)]")
+        // Огрызок «П» не должен попасть в контекст запроса как образец стиля.
+        let outgoing = store.messages.map(\.content)
+        XCTAssertTrue(outgoing.contains("Ку"))
+        let evidence = XCTAttachment(string: "ANSWER: \(result.content)\nREASONING: \(result.reasoning)")
+        evidence.name = "live-short-chat"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+    }
+
     func testLiveEnglishAndChineseQuestionsStayRussian() async throws {
         let english = try await answer("Explain why the sky is blue in one sentence. Answer in English.", thinking: true)
         print("HONER_WHY reasoning=[\(english.reasoning.prefix(400))]")

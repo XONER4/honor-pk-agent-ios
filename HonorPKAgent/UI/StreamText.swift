@@ -52,12 +52,28 @@ struct StreamText<Content: View>: View {
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: isSettled)) { context in
-            content(revealed)
+            content(displayed)
                 .onChange(of: context.date) { now in advance(to: now) }
         }
         .onAppear { syncTarget() }
         .onChange(of: target) { _ in syncTarget() }
         .onChange(of: streaming) { _ in syncTarget() }
+    }
+
+    /// Что реально показывается. Если аниматор по любой причине отстал от цели
+    /// (представление пересоздали, поток завершился, состояние потерялось),
+    /// показываем полный текст — ответ не может не появиться на экране.
+    private var displayed: String {
+        if !streaming {
+            return target
+        }
+        if revealed.isEmpty, !target.isEmpty {
+            return target
+        }
+        if revealedCount > target.count {
+            return target
+        }
+        return revealed
     }
 
     /// Всё показано и поток закончился — таймер можно останавливать.

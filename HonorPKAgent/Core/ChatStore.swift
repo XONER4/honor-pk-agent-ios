@@ -783,30 +783,46 @@ final class ChatStore: ObservableObject {
                 let serverAnomaly = finishReason == "insufficient_system_resource" || finishReason == "aborted"
                 if answerIsEmpty || answerIsFragment || serverAnomaly {
                     self.generationStatus = "Дописываю ответ…"
+                    // Сначала обычный запрос без потока: он приходит целиком и
+                    // обрываться на середине ему нечем. Если и он не дал текста —
+                    // повторяем потоком, уже без режима рассуждения.
+                    var retryContent = ""
                     do {
-                        var retryContent = ""
-                        for try await delta in client.stream(messages: input, thinking: false,
-                                                             systemInstruction: instruction,
-                                                             searchContext: context, tools: nil) {
-                            try Task.checkCancellation()
-                            guard self.activeRunID == runID else { return }
-                            retryContent += delta.content
-                            if !delta.reasoning.isEmpty { rawReasoning += delta.reasoning }
+                        retryContent = try await client.complete(messages: input, thinking: false,
+                                                                 systemInstruction: instruction,
+                                                                 searchContext: context)
+                        if !retryContent.isEmpty {
                             rawContent = retryContent
                             pendingContent = retryContent
-                            if Date().timeIntervalSince(lastPublished) >= 1.0 / 30.0 { flush() }
+                            flush()
                         }
-                        flush()
-                        rawContent = retryContent
-                        // Первый проход закончился ничем — его finish_reason
-                        // больше не относится к показанному ответу.
-                        if !Self.isTooShortToBeAnAnswer(retryContent) { finishReason = nil }
                     } catch {
-                        // Отмену пробрасываем, а сетевую ошибку повторного запроса —
-                        // нет: ниже сработает проверка пустого ответа и пользователь
-                        // увидит сообщение вместо молчания.
                         if Task.isCancelled { throw CancellationError() }
                     }
+                    if Self.isTooShortToBeAnAnswer(retryContent) {
+                        do {
+                            var streamed = ""
+                            for try await delta in client.stream(messages: input, thinking: false,
+                                                                 systemInstruction: instruction,
+                                                                 searchContext: context, tools: nil) {
+                                try Task.checkCancellation()
+                                guard self.activeRunID == runID else { return }
+                                streamed += delta.content
+                                if !delta.reasoning.isEmpty { rawReasoning += delta.reasoning }
+                                rawContent = streamed
+                                pendingContent = streamed
+                                if Date().timeIntervalSince(lastPublished) >= 1.0 / 30.0 { flush() }
+                            }
+                            flush()
+                            retryContent = streamed
+                        } catch {
+                            if Task.isCancelled { throw CancellationError() }
+                        }
+                    }
+                    rawContent = retryContent
+                    // Первый проход закончился ничем — его finish_reason
+                    // больше не относится к показанному ответу.
+                    if !Self.isTooShortToBeAnAnswer(retryContent) { finishReason = nil }
                     self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = rawContent }
                 }
                 let final = self.conversations.first(where: { $0.id == chatID })?.messages.first(where: { $0.id == response.id })

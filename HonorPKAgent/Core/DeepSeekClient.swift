@@ -11,6 +11,10 @@ struct DeepSeekDelta: Equatable {
 protocol DeepSeekStreaming {
     func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
                 searchContext: String, tools: [[String: Any]]?) -> AsyncThrowingStream<DeepSeekDelta, Error>
+    /// Обычный запрос без потока: ответ приходит целиком, обрываться на середине ему
+    /// нечем. Используется как запасной путь, когда поток не дал текста.
+    func complete(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
+                  searchContext: String) async throws -> String
 }
 
 extension DeepSeekStreaming {
@@ -19,6 +23,17 @@ extension DeepSeekStreaming {
                 searchContext: String) -> AsyncThrowingStream<DeepSeekDelta, Error> {
         stream(messages: messages, thinking: thinking, systemInstruction: systemInstruction,
                searchContext: searchContext, tools: nil)
+    }
+    /// Реализация по умолчанию: собираем поток в один текст.
+    func complete(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
+                  searchContext: String) async throws -> String {
+        var text = ""
+        for try await delta in stream(messages: messages, thinking: thinking,
+                                      systemInstruction: systemInstruction,
+                                      searchContext: searchContext, tools: nil) {
+            text += delta.content
+        }
+        return text
     }
 }
 
@@ -443,6 +458,31 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// Обычный запрос без потока. Ответ приходит целиком: обрываться на середине
+    /// ему нечем, поэтому это надёжный запасной путь, когда поток не дал текста.
+    func complete(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
+                  searchContext: String) async throws -> String {
+        try Task.checkCancellation()
+        var request = try makeRequest(messages: messages, thinking: thinking,
+                                      systemInstruction: systemInstruction,
+                                      searchContext: searchContext, tools: nil)
+        // Поток в этом запросе не нужен: снимаем флаг и заголовок.
+        if var body = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any] {
+            body["stream"] = false
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await session.data(for: request)
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse else { throw HonorError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            let envelope = try? JSONDecoder().decode(StreamEnvelope.self, from: data)
+            throw HonorError.http(http.statusCode, envelope?.error?.message ?? "")
+        }
+        let completion = try JSONDecoder().decode(RussianCompletion.self, from: data)
+        return (completion.choices.first?.message.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func decodeEvent(_ event: String) throws -> DeepSeekDelta? {
