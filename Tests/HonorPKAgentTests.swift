@@ -485,6 +485,32 @@ final class HonorPKAgentTests: XCTestCase {
                 file: file, line: line)
     }
 
+    @MainActor
+    func testVoiceServiceNeverStaysStuckInRecording() async throws {
+        // Проверка той самой жалобы «голосовой ввод зависает»: после завершения
+        // и после отмены сервис обязан быть готов к новой записи, а флаги — сняты.
+        let speech = SpeechService()
+        XCTAssertFalse(speech.isRecording)
+        XCTAssertFalse(speech.isPreparingRecording)
+        // Отмена без старта не должна ничего ломать.
+        speech.cancelRecording()
+        XCTAssertFalse(speech.isRecording)
+        XCTAssertFalse(speech.isPreparingRecording)
+        XCTAssertFalse(speech.isFinalizingRecording)
+        // Завершение без старта возвращает текст и не оставляет флагов.
+        let text = await speech.finishRecording()
+        XCTAssertEqual(text, "")
+        XCTAssertFalse(speech.isRecording)
+        XCTAssertFalse(speech.isFinalizingRecording)
+        // Повторная отмена тоже безопасна — состояние не залипает.
+        speech.cancelRecording()
+        speech.cancelRecording()
+        XCTAssertFalse(speech.isRecording)
+        XCTAssertFalse(speech.isPreparingRecording)
+        XCTAssertFalse(speech.isFinalizingRecording)
+        XCTAssertEqual(speech.transcript, "")
+    }
+
     private func temporaryHistory() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("HonorTest-\(UUID()).json")
     }
