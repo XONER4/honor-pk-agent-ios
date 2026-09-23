@@ -567,7 +567,7 @@ struct ChatRootView: View {
                     }.accessibilityLabel(text("Остановить ответ", "Stop response"))
                         .accessibilityIdentifier("chat.stop")
                 } else if store.canSend && !voiceMode {
-                    Button(action: send) {
+                    Button { send() } label: {
                         Image(systemName: "arrow.up").font(.system(size: 18, weight: .semibold))
                             .frame(width: 32, height: 32)
                             .background(HonorTheme.accent, in: Circle())

@@ -226,7 +226,7 @@ final class SpeechService: NSObject, ObservableObject {
             try session.setActive(true)
             let utterance = AVSpeechUtterance(string: spokenText)
             utterance.voice = Self.preferredVoice(identifier: voiceIdentifier, language: language)
-            let clamped = min(max(rate, 0.35), 1.8)
+            let clamped = Float(min(max(rate, 0.35), 1.8))
             utterance.rate = min(AVSpeechUtteranceMaximumSpeechRate,
                                  max(AVSpeechUtteranceMinimumSpeechRate,
                                      AVSpeechUtteranceDefaultSpeechRate * clamped))
