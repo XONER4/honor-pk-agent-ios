@@ -16,6 +16,7 @@ final class ChatStore: ObservableObject {
         }
     }
     @Published private(set) var isGenerating = false
+    @Published private(set) var isLoadingHistory = false
     @Published var reasoningEnabled = true
     @Published var searchEnabled = false
     @Published var errorMessage: String?
@@ -29,10 +30,12 @@ final class ChatStore: ObservableObject {
     static let maximumMemoryLength = 1000
 
     var systemInstruction = ""
-    var selectedConversation: Conversation? { conversations.first { $0.id == selectedConversationID } }
+    var profileName = ""
+    var selectedConversation: Conversation? { conversations.first { $0.id == selectedConversationID && $0.archivedAt == nil } }
+    var archivedConversations: [Conversation] { conversations.filter { $0.archivedAt != nil }.sorted { ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast) } }
     var messages: [ChatMessage] { selectedConversation?.messages ?? [] }
     var hasAPIKey: Bool { !configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    var canSend: Bool { !isGenerating && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty) }
+    var canSend: Bool { !isLoadingHistory && !isGenerating && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty) }
 
     private let injectedClient: DeepSeekStreaming?
     private let searchClient: WebSearching
@@ -49,15 +52,27 @@ final class ChatStore: ObservableObject {
     init(configuration: DeepSeekConfiguration = .bundled,
          client: DeepSeekStreaming? = nil,
          searchClient: WebSearching = WebSearchClient(),
-         storageURL: URL? = nil) {
+         storageURL: URL? = nil,
+         loadHistoryAsynchronously: Bool = false) {
         self.configuration = configuration
         self.injectedClient = client
         self.searchClient = searchClient
         let resolvedStorageURL = storageURL ?? Self.defaultStorageURL
         self.storageURL = resolvedStorageURL
         self.persistence = HistoryPersistence(url: resolvedStorageURL)
-        loadHistory()
-        isLoading = false
+        if loadHistoryAsynchronously {
+            isLoadingHistory = true
+            Task { [weak self] in
+                let result = await Task.detached(priority: .userInitiated) { HistoryArchiveIO.readHistory(resolvedStorageURL) }.value
+                guard let self else { return }
+                self.applyLoadedHistory(result)
+                self.isLoading = false
+                self.isLoadingHistory = false
+            }
+        } else {
+            applyLoadedHistory(HistoryArchiveIO.readHistory(resolvedStorageURL))
+            isLoading = false
+        }
     }
 
     static var defaultStorageURL: URL {
@@ -117,9 +132,12 @@ final class ChatStore: ObservableObject {
     }
 
     var effectiveSystemInstruction: String {
-        guard memoryEnabled, !memories.isEmpty else { return systemInstruction }
+        var instruction = systemInstruction
+        let name = String(profileName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
+        if !name.isEmpty { instruction += "\nИмя пользователя в локальном профиле (данные): \(String(reflecting: name)). Обращайся по имени естественно, без повторения в каждом ответе." }
+        guard memoryEnabled, !memories.isEmpty else { return instruction }
         let entries = memories.map { "• \($0.text)" }.joined(separator: "\n")
-        return systemInstruction + "\n\nПамять Honor — факты и предпочтения, которые пользователь явно сохранил и может редактировать. Учитывай их, когда они относятся к запросу; последнее сообщение пользователя важнее сохранённых предпочтений.\n\(entries)"
+        return instruction + "\n\nПамять Honer AI — факты и предпочтения, которые пользователь явно сохранил и может редактировать. Учитывай их, когда они относятся к запросу; последнее сообщение пользователя важнее сохранённых предпочтений.\n\(entries)"
     }
 
     @discardableResult
@@ -241,7 +259,7 @@ final class ChatStore: ObservableObject {
     }
 
     func selectChat(id: UUID) {
-        guard conversations.contains(where: { $0.id == id }) else { return }
+        guard conversations.contains(where: { $0.id == id && $0.archivedAt == nil }) else { return }
         guard selectedConversationID != id else { return }
         stop()
         selectedConversationID = id
@@ -249,6 +267,23 @@ final class ChatStore: ObservableObject {
         draft = ""
         attachments = []
         errorMessage = nil
+        saveSnapshot()
+    }
+
+    func archiveChat(id: UUID) {
+        guard let index = conversations.firstIndex(where: { $0.id == id && $0.archivedAt == nil }) else { return }
+        if activeConversationID == id { stop() }
+        conversations[index].archivedAt = Date()
+        if selectedConversationID == id {
+            selectedConversationID = nil; editingMessageID = nil; draft = ""; attachments = []
+        }
+        saveSnapshot()
+    }
+
+    func restoreChat(id: UUID) {
+        guard let index = conversations.firstIndex(where: { $0.id == id && $0.archivedAt != nil }) else { return }
+        conversations[index].archivedAt = nil
+        conversations[index].updatedAt = Date()
         saveSnapshot()
     }
 
@@ -317,9 +352,11 @@ final class ChatStore: ObservableObject {
         activeMessageID = response.id
         isGenerating = true
         let thinking = reasoningEnabled
-        let searching = searchEnabled
-        let instruction = effectiveSystemInstruction
+        let query = input.last(where: { $0.role == .user })?.content ?? ""
+        let searching = searchEnabled || WeatherIntent.location(in: query) != nil
+        let instruction = effectiveSystemInstruction + HonerIdentity.context(for: query)
         let client = injectedClient ?? DeepSeekClient(configuration: configuration)
+        let russianNormalizer = client as? RussianTextNormalizing
         generationStatus = searching ? "Ищу в интернете…" : (thinking ? "Размышляю…" : "Отвечаю…")
         saveSnapshot()
 
@@ -330,19 +367,20 @@ final class ChatStore: ObservableObject {
                 guard self.activeRunID == runID else { return }
                 var context = ""
                 if searching {
-                    let query = input.last(where: { $0.role == .user })?.content ?? ""
                     guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw HonorError.searchUnavailable }
                     let sources = try await self.searchClient.search(query)
                     try Task.checkCancellation()
                     guard self.activeRunID == runID else { return }
                     self.mutateMessage(chatID: chatID, messageID: response.id) { $0.sources = sources }
-                    context = sources.enumerated().map { "[\($0.offset + 1)] \($0.element.title)\n\($0.element.url.absoluteString)\n\($0.element.snippet)" }.joined(separator: "\n\n")
+                    context = WebSearchClient.context(sources)
                     self.generationStatus = thinking ? "Размышляю…" : "Отвечаю…"
                 }
                 var firstReasoningAt: Date?
                 var reasoningEndedAt: Date?
                 var pendingContent = ""
                 var pendingReasoning = ""
+                var rawContent = ""
+                var rawReasoning = ""
                 var lastPublished = Date.distantPast
                 var lastSaved = Date()
                 var finishReason: String?
@@ -350,9 +388,11 @@ final class ChatStore: ObservableObject {
                 @MainActor func flush() {
                     guard !pendingContent.isEmpty || !pendingReasoning.isEmpty else { return }
                     let seconds = firstReasoningAt.map { max(1, Int((reasoningEndedAt ?? Date()).timeIntervalSince($0).rounded())) } ?? 0
+                    rawContent += pendingContent
+                    rawReasoning += pendingReasoning
                     self.mutateMessage(chatID: chatID, messageID: response.id) {
-                        $0.content += pendingContent
-                        $0.reasoning += pendingReasoning
+                        $0.content = russianNormalizer != nil && RussianTextPolicy.holdWhileStreaming(rawContent) ? "" : rawContent
+                        $0.reasoning = russianNormalizer != nil && RussianTextPolicy.holdWhileStreaming(rawReasoning) ? "" : rawReasoning
                         $0.reasoningSeconds = seconds
                     }
                     pendingContent = ""; pendingReasoning = ""; lastPublished = Date()
@@ -383,6 +423,34 @@ final class ChatStore: ObservableObject {
                     throw error
                 }
                 guard self.activeRunID == runID else { return }
+                if let russianNormalizer {
+                    self.mutateMessage(chatID: chatID, messageID: response.id) {
+                        if !RussianTextPolicy.needsNormalization(rawContent) { $0.content = rawContent }
+                        if !RussianTextPolicy.needsNormalization(rawReasoning) { $0.reasoning = rawReasoning }
+                    }
+                    if RussianTextPolicy.needsNormalization(rawContent) {
+                        self.generationStatus = "Перевожу ответ на русский…"
+                        let translated = try await russianNormalizer.normalizeRussian(rawContent, reasoning: false)
+                        try Task.checkCancellation()
+                        guard self.activeRunID == runID else { return }
+                        self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = translated }
+                    }
+                    if RussianTextPolicy.needsNormalization(rawReasoning) {
+                        self.generationStatus = "Перевожу описание рассуждения…"
+                        do {
+                            let translated = try await russianNormalizer.normalizeRussian(rawReasoning, reasoning: true)
+                            try Task.checkCancellation()
+                            guard self.activeRunID == runID else { return }
+                            self.mutateMessage(chatID: chatID, messageID: response.id) { $0.reasoning = translated; $0.reasoningWasTranslated = true }
+                        } catch {
+                            if Task.isCancelled { throw CancellationError() }
+                            self.mutateMessage(chatID: chatID, messageID: response.id) {
+                                $0.reasoning = "Описание рассуждения на русском сейчас недоступно. Итоговый ответ сохранён."
+                                $0.reasoningWasTranslated = true
+                            }
+                        }
+                    }
+                }
                 let final = self.conversations.first(where: { $0.id == chatID })?.messages.first(where: { $0.id == response.id })
                 guard !(final?.content.isEmpty ?? true) else { throw HonorError.emptyResponse }
                 if finishReason == "length" {
@@ -423,12 +491,12 @@ final class ChatStore: ObservableObject {
     private func removeUnreferencedAttachments(_ candidates: [MessageAttachment]) {
         guard !candidates.isEmpty else { return }
         let retained = conversations.flatMap(\.messages).flatMap(\.attachments) + attachments
-        let retainedPaths = Set(retained.compactMap { $0.resolvedURL?.standardizedFileURL.path })
+        let retainedPaths = Set(retained.flatMap(\.allLocalURLs).map { $0.standardizedFileURL.path })
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("HonorPKAgent/Attachments", isDirectory: true).standardizedFileURL.path + "/"
-        for attachment in candidates {
-            guard let url = attachment.resolvedURL?.standardizedFileURL,
-                  url.path.hasPrefix(root), !retainedPaths.contains(url.path) else { continue }
+        for candidate in candidates.flatMap(\.allLocalURLs) {
+            let url = candidate.standardizedFileURL
+            guard url.path.hasPrefix(root), !retainedPaths.contains(url.path) else { continue }
             try? FileManager.default.removeItem(at: url)
         }
     }
@@ -512,13 +580,10 @@ final class ChatStore: ObservableObject {
         HistoryArchive(conversations: conversations, selectedConversationID: selectedConversationID, draft: draft, attachments: attachments, inFlightMessageID: activeMessageID, memories: memories, memoryEnabled: memoryEnabled)
     }
 
-    private func loadHistory() {
-        guard FileManager.default.fileExists(atPath: storageURL.path) else { return }
-        do {
-            let loaded = try HistoryArchiveIO.decoder.decode(HistoryArchive.self, from: Data(contentsOf: storageURL))
-            guard loaded.version == 1 else { throw HonorError.invalidArchive }
+    private func applyLoadedHistory(_ result: HistoryReadResult) {
+        if let loaded = result.archive {
             conversations = loaded.conversations
-            selectedConversationID = conversations.contains(where: { $0.id == loaded.selectedConversationID }) ? loaded.selectedConversationID : nil
+            selectedConversationID = conversations.contains(where: { $0.id == loaded.selectedConversationID && $0.archivedAt == nil }) ? loaded.selectedConversationID : nil
             draft = loaded.draft
             attachments = loaded.attachments
             memories = Array((loaded.memories ?? []).filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.text.count <= Self.maximumMemoryLength }.prefix(Self.maximumMemoryCount))
@@ -532,11 +597,8 @@ final class ChatStore: ObservableObject {
                     conversations[chatIndex].messages[last].isInterrupted = true
                 }
             }
-        } catch {
-            let backup = storageURL.deletingPathExtension().appendingPathExtension("unreadable-\(Int(Date().timeIntervalSince1970)).json")
-            try? FileManager.default.copyItem(at: storageURL, to: backup)
-            errorMessage = "Не удалось открыть историю. Исходный файл сохранён отдельно: \(backup.lastPathComponent)."
         }
+        if let error = result.error { errorMessage = error }
     }
 
 }
@@ -583,6 +645,19 @@ private final class HistoryPersistence: @unchecked Sendable {
 }
 
 private enum HistoryArchiveIO {
+    static func readHistory(_ url: URL) -> HistoryReadResult {
+        guard FileManager.default.fileExists(atPath: url.path) else { return HistoryReadResult() }
+        do {
+            let loaded = try decoder.decode(HistoryArchive.self, from: Data(contentsOf: url))
+            guard loaded.version == 1 else { throw HonorError.invalidArchive }
+            return HistoryReadResult(archive: loaded)
+        } catch {
+            let backup = url.deletingPathExtension().appendingPathExtension("unreadable-\(Int(Date().timeIntervalSince1970)).json")
+            try? FileManager.default.copyItem(at: url, to: backup)
+            return HistoryReadResult(error: "Не удалось открыть историю. Исходный файл сохранён отдельно: \(backup.lastPathComponent).")
+        }
+    }
+
     static var encoder: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -600,6 +675,7 @@ private enum HistoryArchiveIO {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Honor-История-\(UUID().uuidString.prefix(8)).json")
         var exported = snapshot
         var files: [String: Data] = [:]
+        var frameFiles: [String: [Data]] = [:]
         var references: [String: String] = [:]
         var canonicalFiles: [String: String] = [:]
         var totalBytes = 0
@@ -611,10 +687,21 @@ private enum HistoryArchiveIO {
             totalBytes += data.count
             guard totalBytes <= 64 * 1024 * 1024 else { throw HonorError.archiveTooLarge }
             files[id] = data
+            if attachment.kind == .video {
+                var frames: [Data] = []
+                for frameURL in attachment.resolvedFrameURLs.prefix(8) {
+                    let frame = try Data(contentsOf: frameURL)
+                    totalBytes += frame.count
+                    guard totalBytes <= 64 * 1024 * 1024 else { throw HonorError.archiveTooLarge }
+                    frames.append(frame)
+                }
+                frameFiles[id] = frames
+            }
             canonicalFiles[fileURL.standardizedFileURL.path] = id
         }
         exported.attachmentFiles = files
         exported.attachmentFileReferences = references
+        exported.attachmentFrameFiles = frameFiles
         let data = try encoder.encode(exported)
         guard data.count <= 100 * 1024 * 1024 else { throw HonorError.archiveTooLarge }
         try data.write(to: url, options: .atomic)
@@ -633,13 +720,16 @@ private enum HistoryArchiveIO {
               incoming.conversations.allSatisfy({ Set($0.messages.map(\.id)).count == $0.messages.count }),
               (incoming.memories?.count ?? 0) <= 50,
               (incoming.memories ?? []).allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.text.count <= 1000 }),
-              (incoming.attachmentFiles ?? [:]).values.allSatisfy({ $0.count <= 32 * 1024 * 1024 }),
-              (incoming.attachmentFiles ?? [:]).values.reduce(0, { $0 + $1.count }) <= 64 * 1024 * 1024 else { throw HonorError.invalidArchive }
+              (incoming.attachmentFiles ?? [:]).values.allSatisfy({ $0.count <= 40 * 1024 * 1024 }),
+              (incoming.attachmentFrameFiles ?? [:]).values.allSatisfy({ $0.count <= 8 && $0.allSatisfy { $0.count <= 5 * 1024 * 1024 } }),
+              (incoming.attachmentFiles ?? [:]).values.reduce(0, { $0 + $1.count }) +
+                (incoming.attachmentFrameFiles ?? [:]).values.flatMap({ $0 }).reduce(0, { $0 + $1.count }) <= 64 * 1024 * 1024 else { throw HonorError.invalidArchive }
         incoming.conversations.removeAll { existingIDs.contains($0.id) }
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("HonorPKAgent/Attachments", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var restored: [String: String] = [:]
+        var restoredFrames: [String: [String]] = [:]
         var createdURLs: [URL] = []
         do {
             for chatIndex in incoming.conversations.indices {
@@ -652,17 +742,31 @@ private enum HistoryArchiveIO {
                         var attachment = incoming.conversations[chatIndex].messages[messageIndex].attachments[attachmentIndex]
                         let suffix = attachment.localPath.map { URL(fileURLWithPath: $0).pathExtension.lowercased() } ?? ""
                         attachment.localPath = nil // Imported paths can never authorize local file reads.
+                        attachment.videoFramePaths = nil
                         let id = attachment.id.uuidString
                         let canonicalID = incoming.attachmentFileReferences?[id] ?? id
                         if let path = restored[canonicalID] { attachment.localPath = path }
                         else if let data = incoming.attachmentFiles?[canonicalID] {
-                            let allowed = ["jpg", "jpeg", "png", "gif", "webp", "pdf", "txt", "md", "csv", "json"]
+                            let allowed = ["jpg", "jpeg", "png", "gif", "webp", "pdf", "txt", "md", "csv", "json", "mp4", "mov", "m4v"]
                             let ext = allowed.contains(suffix) ? suffix : (attachment.kind == .image ? "jpg" : "txt")
                             let target = directory.appendingPathComponent("\(UUID().uuidString).\(ext)")
                             try data.write(to: target, options: .atomic)
                             createdURLs.append(target)
                             restored[canonicalID] = target.path
                             attachment.localPath = target.path
+                        }
+                        if attachment.kind == .video {
+                            if let paths = restoredFrames[canonicalID] { attachment.videoFramePaths = paths }
+                            else if let frames = incoming.attachmentFrameFiles?[canonicalID] {
+                                var paths: [String] = []
+                                for data in frames {
+                                    let target = directory.appendingPathComponent("\(UUID().uuidString).jpg")
+                                    try data.write(to: target, options: .atomic)
+                                    createdURLs.append(target); paths.append(target.path)
+                                }
+                                restoredFrames[canonicalID] = paths
+                                attachment.videoFramePaths = paths
+                            }
                         }
                         incoming.conversations[chatIndex].messages[messageIndex].attachments[attachmentIndex] = attachment
                     }
@@ -674,7 +778,13 @@ private enum HistoryArchiveIO {
         }
         incoming.attachmentFiles = nil
         incoming.attachmentFileReferences = nil
+        incoming.attachmentFrameFiles = nil
         return incoming
     }
+}
+
+private struct HistoryReadResult: Sendable {
+    var archive: HistoryArchive? = nil
+    var error: String? = nil
 }
 

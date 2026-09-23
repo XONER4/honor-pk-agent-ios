@@ -2,7 +2,7 @@ import Foundation
 
 enum MessageRole: String, Codable, Sendable { case user, assistant }
 enum MessageFeedback: String, Codable, Sendable { case like, dislike }
-enum AttachmentKind: String, Codable, Sendable { case image, document, text }
+enum AttachmentKind: String, Codable, Sendable { case image, document, text, video }
 
 struct MessageAttachment: Identifiable, Codable, Equatable, Sendable {
     var id: UUID = UUID()
@@ -10,10 +10,18 @@ struct MessageAttachment: Identifiable, Codable, Equatable, Sendable {
     var kind: AttachmentKind
     var extractedText: String = ""
     var localPath: String? = nil
+    var videoFramePaths: [String]? = nil
 
     /// Resolves files after iOS changes the app's sandbox UUID during an update.
     var resolvedURL: URL? {
         guard let localPath else { return nil }
+        return Self.resolve(localPath)
+    }
+
+    var resolvedFrameURLs: [URL] { (videoFramePaths ?? []).compactMap(Self.resolve) }
+    var allLocalURLs: [URL] { ([resolvedURL].compactMap { $0 } + resolvedFrameURLs) }
+
+    static func resolve(_ localPath: String) -> URL? {
         let original = URL(fileURLWithPath: localPath)
         if FileManager.default.fileExists(atPath: original.path) { return original }
         for directory in [FileManager.SearchPathDirectory.applicationSupportDirectory, .documentDirectory] {
@@ -32,6 +40,8 @@ struct WebSource: Identifiable, Codable, Equatable, Sendable {
     var title: String
     var url: URL
     var snippet: String
+    var content: String? = nil
+    var fetchedAt: Date? = nil
 }
 
 struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
@@ -46,6 +56,7 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     var sources: [WebSource] = []
     var error: String? = nil
     var isInterrupted: Bool = false
+    var reasoningWasTranslated: Bool? = nil
 }
 
 struct Conversation: Identifiable, Codable, Equatable, Sendable {
@@ -57,6 +68,7 @@ struct Conversation: Identifiable, Codable, Equatable, Sendable {
     var createdAt: Date = Date()
     var parentConversationID: UUID? = nil
     var forkedAtMessageID: UUID? = nil
+    var archivedAt: Date? = nil
 }
 
 struct HonorMemory: Identifiable, Codable, Equatable, Sendable {
@@ -73,6 +85,7 @@ struct HistoryArchive: Codable, Sendable {
     var attachments: [MessageAttachment] = []
     var attachmentFiles: [String: Data]? = nil
     var attachmentFileReferences: [String: String]? = nil
+    var attachmentFrameFiles: [String: [Data]]? = nil
     var inFlightMessageID: UUID? = nil
     var memories: [HonorMemory]? = nil
     var memoryEnabled: Bool? = nil

@@ -39,12 +39,16 @@ final class LiveFeatureTests: HonorAuditCase {
         typeMessage("Find Apple's iPhone 13 technical specifications. Give the display size in one short sentence with a source.", app: app)
         let started = Date()
         app.buttons["chat.send"].tap()
-        let source = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "message.source.")).firstMatch
-        XCTAssertTrue(source.waitForExistence(timeout: 90), "Search must attach real source links")
+        let sources = button(app, prefix: "message.sources.")
+        XCTAssertTrue(sources.waitForExistence(timeout: 90), "Search must attach real source links")
         waitAbsent(app.buttons["chat.stop"], timeout: 90)
         print("HONOR_LIVE_SEARCH_SECONDS=\(Date().timeIntervalSince(started))")
         XCTAssertTrue(button(app, prefix: "message.action.copy.").exists)
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "message.error.")).firstMatch.exists)
         capture("21-live-search")
+        sources.tap()
+        let source = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "message.source.")).firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 5))
+        capture("33-live-source-details")
     }
 }

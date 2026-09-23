@@ -18,18 +18,22 @@ struct HonorPKAgentApp: App {
         }
         #endif
         _settings = StateObject(wrappedValue: AppSettings())
-        _store = StateObject(wrappedValue: ChatStore())
+        _store = StateObject(wrappedValue: ChatStore(loadHistoryAsynchronously: true))
     }
 
     var body: some Scene {
         WindowGroup {
             Group {
                 if DeviceCompatibility.isSupported {
-                    ChatRootView()
+                    if settings.completedOnboarding {
+                        ChatRootView()
+                    } else {
+                        OnboardingView()
+                    }
                 } else {
                     VStack(spacing: 20) {
                         HonorMark().frame(width: 70, height: 70)
-                        Text("Honor PK Агент").font(.title.bold())
+                        Text("Honer AI").font(.title.bold())
                         Text("Приложение доступно на iPhone 13 и более новых моделях.")
                             .multilineTextAlignment(.center)
                     }.padding(32)
@@ -43,13 +47,13 @@ struct HonorPKAgentApp: App {
                 guard !didConfigure else { return }
                 didConfigure = true
                 store.systemInstruction = settings.customInstructions
-                if !settings.apiKeyOverride.isEmpty { store.updateAPIKey(settings.apiKeyOverride) }
+                store.profileName = settings.displayName
                 #if DEBUG
                 UITestSupport.seedIfNeeded(store: store)
                 #endif
             }
             .onChange(of: settings.customInstructions) { store.systemInstruction = $0 }
-            .onChange(of: settings.apiKeyOverride) { store.updateAPIKey($0.isEmpty ? DeepSeekConfiguration.bundled.apiKey : $0) }
+            .onChange(of: settings.displayName) { store.profileName = $0 }
             .onChange(of: scenePhase) { phase in
                 if phase != .active { store.persistNow() }
             }

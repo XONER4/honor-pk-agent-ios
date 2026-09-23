@@ -23,6 +23,7 @@ final class AppSettings: ObservableObject {
     @Published var autoRead: Bool { didSet { defaults.set(autoRead, forKey: "honor.autoRead") } }
     @Published var displayName: String { didSet { defaults.set(displayName, forKey: "honor.displayName") } }
     @Published var apiKeyOverride: String { didSet { defaults.set(apiKeyOverride, forKey: "honor.apiKeyOverride") } }
+    @Published var completedOnboarding: Bool { didSet { defaults.set(completedOnboarding, forKey: "honer.onboarding.completed") } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -34,13 +35,15 @@ final class AppSettings: ObservableObject {
         voiceIdentifier = defaults.string(forKey: "honor.voiceIdentifier") ?? ""
         speechLanguage = defaults.string(forKey: "honor.speechLanguage") ?? "ru-RU"
         autoRead = defaults.bool(forKey: "honor.autoRead")
-        displayName = defaults.string(forKey: "honor.displayName") ?? "Honor"
+        let savedName = defaults.string(forKey: "honor.displayName") ?? ""
+        displayName = savedName == "Honor" ? "" : savedName
         apiKeyOverride = defaults.string(forKey: "honor.apiKeyOverride") ?? ""
+        completedOnboarding = defaults.bool(forKey: "honer.onboarding.completed")
     }
 
     var preferredColorScheme: ColorScheme? {
         switch appearance {
-        case .system: return nil
+        case .system: return .dark
         case .light: return .light
         case .dark: return .dark
         }

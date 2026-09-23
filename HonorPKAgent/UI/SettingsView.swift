@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -22,6 +23,11 @@ struct SettingsView: View {
                             SettingsRow(symbol: "externaldrive", title: settings.text("Управление данными", "Data management"))
                         }
                         .accessibilityIdentifier("settings.data")
+                        SettingsDivider()
+                        NavigationLink { ArchivedChatsPage() } label: {
+                            SettingsRow(symbol: "archivebox", title: settings.text("Архив чатов", "Archived chats"),
+                                        value: "\(store.archivedConversations.count)")
+                        }.accessibilityIdentifier("settings.archive")
                     }
                     SettingsGroup(title: settings.text("Приложение", "Application")) {
                         NavigationLink { LanguageSettingsPage() } label: {
@@ -53,7 +59,7 @@ struct SettingsView: View {
                         .accessibilityIdentifier("settings.personalization")
                         SettingsDivider()
                         NavigationLink { MemorySettingsPage() } label: {
-                            SettingsRow(symbol: "brain", title: settings.text("Память Honor", "Honor memory"),
+                            SettingsRow(symbol: "brain", title: settings.text("Память Honer AI", "Honer AI memory"),
                                         value: "\(store.memories.count)")
                         }
                         .accessibilityIdentifier("settings.memory")
@@ -83,19 +89,12 @@ struct SettingsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 15)
                         .padding(.top, -13)
-                    SettingsGroup(title: settings.text("Подключение", "Connection")) {
-                        NavigationLink { APIKeySettingsPage() } label: {
-                            SettingsRow(symbol: "key", title: settings.text("API DeepSeek", "DeepSeek API"),
-                                        value: store.hasAPIKey ? settings.text("Подключён", "Configured") : settings.text("Добавить", "Add key"))
-                        }
-                        .accessibilityIdentifier("settings.api")
-                    }
                     SettingsGroup(title: settings.text("О программе", "About")) {
                         SettingsRow(symbol: "info.circle", title: settings.text("Версия", "Version"), value: appVersion, chevron: nil)
                             .accessibilityIdentifier("settings.version")
                         SettingsDivider()
                         NavigationLink { AboutSettingsPage() } label: {
-                            SettingsRow(symbol: "doc.text", title: "Honor PK Agent")
+                            SettingsRow(symbol: "doc.text", title: "Honer AI")
                         }
                         .accessibilityIdentifier("settings.about")
                     }
@@ -126,10 +125,7 @@ struct SettingsView: View {
         .preferredColorScheme(settings.preferredColorScheme)
         .tint(Color(red: 0.49, green: 0.65, blue: 1))
         .onChange(of: settings.customInstructions) { store.systemInstruction = $0 }
-        .onChange(of: settings.apiKeyOverride) { key in
-            store.updateAPIKey(key.isEmpty ? DeepSeekConfiguration.bundled.apiKey : key)
-        }
-        .onChange(of: settings.speechLanguage) { _ in settings.voiceIdentifier = "" }
+
     }
 
     private var appearanceName: String {
@@ -149,7 +145,7 @@ struct SettingsView: View {
 }
 
 private var appVersion: String {
-    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "10.0"
     let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
     return "\(version) (\(build))"
 }
@@ -219,7 +215,7 @@ private struct ProfileSettingsPage: View {
                 HStack(spacing: 14) {
                     Image(systemName: "person.crop.circle.fill").font(.system(size: 48)).foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(settings.displayName.isEmpty ? "Honor" : settings.displayName).font(.headline)
+                        Text(settings.displayName.isEmpty ? settings.text("Ваш профиль", "Your profile") : settings.displayName).font(.headline)
                         Text(settings.text("Локальный профиль", "Local profile")).font(.subheadline).foregroundStyle(.secondary)
                     }
                 }.padding(.vertical, 7)
@@ -227,6 +223,7 @@ private struct ProfileSettingsPage: View {
             Section(settings.text("Имя", "Name")) {
                 TextField(settings.text("Ваше имя", "Your name"), text: $settings.displayName)
                     .textContentType(.nickname)
+                    .onChange(of: settings.displayName) { if $0.count > 60 { settings.displayName = String($0.prefix(60)) } }
                     .accessibilityIdentifier("profile.name")
             }
             Section {
@@ -277,8 +274,8 @@ private struct DataSettingsPage: View {
                 .accessibilityIdentifier("data.import")
                 .disabled(isTransferring)
             } footer: {
-                Text(settings.text("Резервная копия в JSON содержит переписку, вложения и память Honor. Импорт добавляет сохранённые чаты и факты в историю.",
-                                   "The JSON backup contains conversations, attachments and Honor memory. Import adds saved conversations and memories."))
+                Text(settings.text("Резервная копия в JSON содержит переписку, вложения и память Honer AI. Импорт добавляет сохранённые чаты и факты в историю.",
+                                   "The JSON backup contains conversations, attachments and Honer AI memory. Import adds saved conversations and memories."))
             }
             Section {
                 Button(role: .destructive) { confirmsDeletion = true } label: {
@@ -339,8 +336,8 @@ private struct DataSettingsPage: View {
             }
             .accessibilityIdentifier("data.delete.confirm")
         } message: {
-            Text(settings.text("Все чаты и их вложения будут удалены с этого iPhone. Память Honor останется. Сначала можно сохранить экспорт.",
-                               "All conversations and attachments will be removed from this iPhone. Honor memory will be kept. You can export a backup first."))
+            Text(settings.text("Все чаты и их вложения будут удалены с этого iPhone. Память Honer AI останется. Сначала можно сохранить экспорт.",
+                               "All conversations and attachments will be removed from this iPhone. Honer AI memory will be kept. You can export a backup first."))
         }
         .onDisappear { transferTask?.cancel() }
     }
@@ -391,7 +388,7 @@ private struct FontSettingsPage: View {
             }
             Section(settings.text("Предпросмотр", "Preview")) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Honor PK Agent").font(.system(size: 21 * settings.fontScale, weight: .semibold))
+                    Text("Honer AI").font(.system(size: 21 * settings.fontScale, weight: .semibold))
                     Text(settings.text("Привет! О чём хотите поговорить сегодня?", "Hi! What would you like to talk about today?"))
                         .font(.system(size: 17 * settings.fontScale))
                 }.padding(.vertical, 8)
@@ -405,6 +402,7 @@ private struct FontSettingsPage: View {
 
 private struct PersonalizationSettingsPage: View {
     @EnvironmentObject private var settings: AppSettings
+    @State private var showsTutorial = false
     var body: some View {
         Form {
             Section {
@@ -419,44 +417,45 @@ private struct PersonalizationSettingsPage: View {
                     }
                     .accessibilityIdentifier("personalization.clear")
                 }
-            } header: { Text(settings.text("Как Honor должен отвечать?", "How should Honor respond?")) }
+            } header: { Text(settings.text("Как Honer AI должен отвечать?", "How should Honer AI respond?")) }
               footer: {
                 Text(settings.text("Например: «Обращайся ко мне на ты. Отвечай кратко и по-русски». Изменения сохраняются автоматически и применяются к следующим сообщениям.",
                                    "For example: “Use a friendly tone and keep answers concise.” Changes are saved automatically and apply to your next messages."))
+            }
+            Section {
+                Button { showsTutorial = true } label: {
+                    Label(settings.text("Как это работает · видео", "How it works · video"), systemImage: "play.rectangle")
+                }.accessibilityIdentifier("personalization.video")
+            } footer: {
+                Text(settings.text("Короткая запись: задаём стиль общения и проверяем его в настоящем ответе Honer AI.",
+                                   "A short recording: set a conversation style and see it applied in a real Honer AI reply."))
             }
         }
         .navigationTitle(settings.text("Персонализация", "Personalization"))
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("settings.page.personalization")
+        .sheet(isPresented: $showsTutorial) { PersonalizationVideoPage() }
     }
 }
 
 private struct VoiceSettingsPage: View {
     @EnvironmentObject private var settings: AppSettings
     @StateObject private var speech = SpeechService()
-    private var voices: [AVSpeechSynthesisVoice] {
-        AVSpeechSynthesisVoice.speechVoices()
-            .filter { $0.language.hasPrefix(String(settings.speechLanguage.prefix(2))) }
-            .sorted { $0.name < $1.name }
-    }
+    private var voices: [AVSpeechSynthesisVoice] { SpeechService.availableVoices(language: "ru-RU") }
     var body: some View {
         Form {
-            Section {
-                Toggle(settings.text("Читать ответы автоматически", "Read answers automatically"), isOn: $settings.autoRead)
-                    .accessibilityIdentifier("voice.autoRead")
-            }
             Section(settings.text("Голос для чтения", "Reading voice")) {
-                voiceRow(name: settings.text("Системный голос", "System voice"), identifier: "")
+                voiceRow(name: settings.text("Лучший доступный", "Best available"), identifier: "")
                 ForEach(voices, id: \.identifier) { voice in
-                    voiceRow(name: "\(voice.name) · \(voice.language)", identifier: voice.identifier)
+                    voiceRow(name: "\(voice.name) · \(quality(voice))", identifier: voice.identifier)
                 }
             }
             Section {
                 Button {
                     if speech.isSpeaking { speech.stopSpeaking() }
                     else {
-                        speech.speak(settings.text("Привет! Я Honor, ваш личный помощник.", "Hello! I am Honor, your personal assistant."),
-                                     voiceIdentifier: settings.voiceIdentifier, language: settings.speechLanguage)
+                        speech.speak("Привет! Я Honer AI, твой личный помощник. Давай обсудим твои идеи.",
+                                     voiceIdentifier: settings.voiceIdentifier, language: "ru-RU")
                     }
                 } label: {
                     Label(settings.text(speech.isSpeaking ? "Остановить" : "Послушать голос", speech.isSpeaking ? "Stop" : "Preview voice"),
@@ -464,6 +463,13 @@ private struct VoiceSettingsPage: View {
                 }
                 .accessibilityIdentifier("voice.preview")
                 .accessibilityValue(speech.isSpeaking ? "speaking" : "idle")
+            }
+            Section {
+                Text(settings.text("Автоматическое чтение включается кнопкой динамика вверху чата.",
+                                   "Turn automatic reading on or off with the speaker button at the top of the chat."))
+                Text(settings.text("Для более естественного звучания загрузите русский голос улучшенного качества в настройках iPhone: Универсальный доступ → Устный контент (или Чтение и речь) → Голоса. После загрузки он появится здесь.",
+                                   "For more natural speech, download an enhanced Russian voice in iPhone Settings: Accessibility → Spoken Content (or Read & Speak) → Voices. It will then appear here."))
+                    .font(.footnote).foregroundStyle(.secondary)
             }
             if let error = speech.errorMessage {
                 Section { Text(error).foregroundStyle(.secondary).accessibilityIdentifier("voice.error") }
@@ -474,6 +480,13 @@ private struct VoiceSettingsPage: View {
         .accessibilityIdentifier("settings.page.voice")
         .onDisappear { speech.stopSpeaking() }
         .onChange(of: settings.voiceIdentifier) { _ in speech.stopSpeaking() }
+    }
+    private func quality(_ voice: AVSpeechSynthesisVoice) -> String {
+        switch voice.quality {
+        case .premium: return settings.text("Премиум", "Premium")
+        case .enhanced: return settings.text("Улучшенный", "Enhanced")
+        default: return settings.text("Стандартный", "Standard")
+        }
     }
     private func voiceRow(name: String, identifier: String) -> some View {
         Button { settings.voiceIdentifier = identifier } label: {
@@ -487,83 +500,30 @@ private struct VoiceSettingsPage: View {
     }
 }
 
-@MainActor
-private struct APIKeySettingsPage: View {
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var store: ChatStore
-    @State private var draftKey = ""
-    @State private var savedKey: String?
-    var body: some View {
-        Form {
-            Section {
-                HStack {
-                    Image(systemName: store.hasAPIKey ? "checkmark.circle.fill" : "key")
-                        .foregroundStyle(store.hasAPIKey ? Color.green : Color.secondary)
-                    Text(settings.text(store.hasAPIKey ? "Ключ настроен" : "Добавьте ключ DeepSeek",
-                                       store.hasAPIKey ? "API key configured" : "Add your DeepSeek key"))
-                        .accessibilityIdentifier("api.status")
-                }
-                SecureField("sk-…", text: $draftKey)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.done)
-                    .accessibilityIdentifier("api.key")
-                    .onSubmit { saveKey() }
-                Button(settings.text("Сохранить ключ", "Save key")) { saveKey() }
-                    .accessibilityIdentifier("api.save")
-                Button(settings.text("Использовать встроенный ключ", "Use bundled key")) {
-                    draftKey = ""
-                    saveKey()
-                }
-                .accessibilityIdentifier("api.reset")
-                .disabled(settings.apiKeyOverride.isEmpty && draftKey.isEmpty)
-            } footer: {
-                Text(settings.text("Этот ключ используется для запросов из приложения. Пустое поле восстанавливает встроенный ключ, если он добавлен в сборку.",
-                                   "This key is used for requests from the app. An empty field restores the bundled key, if one was included in the build."))
-            }
-            if let savedKey, savedKey == draftKey {
-                Section {
-                    Text(settings.text("Сохранено", "Saved")).foregroundStyle(.green)
-                        .accessibilityIdentifier("api.saved")
-                }
-            }
-        }
-        .navigationTitle("API DeepSeek")
-        .navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("settings.page.api")
-        .onAppear { draftKey = settings.apiKeyOverride }
-    }
-    private func saveKey() {
-        draftKey = draftKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        settings.apiKeyOverride = draftKey
-        store.updateAPIKey(draftKey.isEmpty ? DeepSeekConfiguration.bundled.apiKey : draftKey)
-        savedKey = draftKey
-    }
-}
-
 private struct AboutSettingsPage: View {
     @EnvironmentObject private var settings: AppSettings
     var body: some View {
         Form {
             Section {
                 VStack(alignment: .leading, spacing: 9) {
-                    Text("Honor PK Agent").font(.title2.bold())
+                    Text("Honer AI").font(.title2.bold())
                     Text(settings.text("Ваш личный ИИ-помощник", "Your personal AI assistant")).foregroundStyle(.secondary)
                     Text(appVersion).font(.footnote).foregroundStyle(.secondary)
                 }.padding(.vertical, 10)
             }
             Section {
-                Text(settings.text("Ответы и рассуждения поступают из DeepSeek API. Фото, документы, голосовой ввод, история и настройки доступны в одном приложении.",
-                                   "Answers and reasoning are provided by the DeepSeek API. Photos, documents, voice input, history and preferences are available in one app."))
+                Text(settings.text("Honer AI — приложение разработчика Владислава. Общение, поиск с источниками, фото и видео, документы, голосовой ввод и личная память — в одном месте.",
+                                   "Honer AI is an app created by developer Vladislav. Conversations, search with sources, photos and videos, documents, voice input and personal memory — in one place."))
                 Text(settings.text("Чаты сохраняются на вашем iPhone. Оценки ответов сохраняются локально.",
                                    "Conversations are saved on your iPhone. Response feedback is stored locally."))
                     .foregroundStyle(.secondary)
             }
-            Section {
-                Link(destination: URL(string: "https://api-docs.deepseek.com")!) {
-                    Label(settings.text("Документация DeepSeek API", "DeepSeek API documentation"), systemImage: "arrow.up.right.square")
-                }
-                .accessibilityIdentifier("about.documentation")
+            Section("Honer AI") {
+                Text(settings.text("Версия для личного использования. Установочный файл предоставляет разработчик.",
+                                   "A private release. The installation file is supplied by the developer."))
+                Text(settings.text("Ассистент общается по-русски при любом языке интерфейса.",
+                                   "The assistant always responds in Russian, regardless of the interface language."))
+                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle(settings.text("О программе", "About"))
@@ -588,8 +548,8 @@ private struct MemorySettingsPage: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(settings.text(store.memoryEnabled ? "Память включена" : "Память выключена", store.memoryEnabled ? "Memory enabled" : "Memory disabled"))
                         .accessibilityIdentifier("memory.status")
-                    Text(settings.text("Honor использует только факты, которые вы сохранили сами. При выключении они остаются в списке, но не добавляются в следующие запросы.",
-                                       "Honor uses only the facts you explicitly save. When turned off, memories stay in this list but are not included in future requests."))
+                    Text(settings.text("Honer AI использует только факты, которые вы сохранили сами. При выключении они остаются в списке, но не добавляются в следующие запросы.",
+                                       "Honer AI uses only the facts you explicitly save. When turned off, memories stay in this list but are not included in future requests."))
                 }
             }
             Section {
@@ -640,13 +600,13 @@ private struct MemorySettingsPage: View {
                 }
             }
         }
-        .navigationTitle(settings.text("Память Honor", "Honor memory"))
+        .navigationTitle(settings.text("Память Honer AI", "Honer AI memory"))
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("settings.page.memory")
         .sheet(item: $editor) { request in
             MemoryEditorSheet(memory: request.memory)
         }
-        .alert(settings.text("Очистить память Honor?", "Clear Honor memory?"), isPresented: $confirmsClear) {
+        .alert(settings.text("Очистить память Honer AI?", "Clear Honer AI memory?"), isPresented: $confirmsClear) {
             Button(settings.text("Отмена", "Cancel"), role: .cancel) {}
                 .accessibilityIdentifier("memory.clear.cancel")
             Button(settings.text("Очистить", "Clear"), role: .destructive) { store.clearMemories() }
@@ -694,7 +654,7 @@ struct MemoryEditorSheet: View {
                         .font(.system(size: 17 * settings.fontScale))
                         .frame(minHeight: 190)
                         .focused($isFocused)
-                        .accessibilityLabel(settings.text("Факт для памяти Honor", "Fact for Honor memory"))
+                        .accessibilityLabel(settings.text("Факт для памяти Honer AI", "Fact for Honer AI memory"))
                         .accessibilityIdentifier("memory.editor.text")
                     Text("\(cleanedDraft.count) / \(ChatStore.maximumMemoryLength)")
                         .font(.caption)
@@ -702,8 +662,8 @@ struct MemoryEditorSheet: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .accessibilityIdentifier("memory.editor.count")
                 } footer: {
-                    Text(settings.text("Оставьте только факт или предпочтение, которое стоит помнить. Honor будет учитывать его в следующих ответах, пока память включена. Сохранение — только по вашей кнопке.",
-                                       "Keep only a fact or preference worth remembering. Honor will use it in future replies while memory is enabled. Nothing is saved until you tap Save."))
+                    Text(settings.text("Оставьте только факт или предпочтение, которое стоит помнить. Honer AI будет учитывать его в следующих ответах, пока память включена. Сохранение — только по вашей кнопке.",
+                                       "Keep only a fact or preference worth remembering. Honer AI will use it in future replies while memory is enabled. Nothing is saved until you tap Save."))
                 }
                 if let validationError {
                     Section {

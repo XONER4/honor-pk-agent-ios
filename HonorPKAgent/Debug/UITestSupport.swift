@@ -17,6 +17,7 @@ enum UITestSupport {
             try? FileManager.default.removeItem(at: storage)
         }
         let settings = AppSettings(defaults: defaults)
+        if !arguments.contains("-UITestOnboarding") { settings.completedOnboarding = true }
         let mode = arguments.contains("-UITestSlow") ? "slow" : arguments.contains("-UITestError") ? "error" : "normal"
         let client: DeepSeekStreaming? = arguments.contains("-UITestFixture") ? UITestStreamingClient(mode: mode) : nil
         let store = ChatStore(client: client, storageURL: storage)
@@ -26,10 +27,19 @@ enum UITestSupport {
     static func seedIfNeeded(store: ChatStore) {
         guard isEnabled else { return }
         if arguments.contains("-UITestDemo") {
-            let user = ChatMessage(id: UUID(uuidString: "11111111-1111-4111-8111-111111111111")!, role: .user, content: "Привет, как твои дела?")
-            let answer = ChatMessage(id: UUID(uuidString: "22222222-2222-4222-8222-222222222222")!, role: .assistant,
+            var user = ChatMessage(id: UUID(uuidString: "11111111-1111-4111-8111-111111111111")!, role: .user, content: "Привет, как твои дела?")
+            var answer = ChatMessage(id: UUID(uuidString: "22222222-2222-4222-8222-222222222222")!, role: .assistant,
                                      content: "Привет! У меня всё отлично, спасибо, что спросил. А как твои дела?",
                                      reasoning: "Это демонстрационный текст для проверки раскрывающейся панели интерфейса.", reasoningSeconds: 1)
+            if arguments.contains("-UITestChatTools") {
+                let file = FileManager.default.temporaryDirectory.appendingPathComponent("Honer-test-notes.txt")
+                try? "Заметка для проверки просмотра вложений.".write(to: file, atomically: true, encoding: .utf8)
+                user.attachments = [MessageAttachment(id: UUID(uuidString: "33333333-3333-4333-8333-333333333333")!,
+                    name: "Honer-test-notes.txt", kind: .text, extractedText: "Заметка для проверки просмотра вложений.", localPath: file.path)]
+                answer.sources = [WebSource(title: "iPhone 13 — Technical Specifications", url: URL(string: "https://support.apple.com/en-us/111872")!,
+                    snippet: "6.1-inch display", content: "Technical specifications. Display: 6.1 inches.", fetchedAt: Date())]
+                answer.content += " Источник [1]."
+            }
             let chat = Conversation(id: UUID(uuidString: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA")!, title: "Приветствие", messages: [user, answer])
             let pinned = Conversation(id: UUID(uuidString: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB")!, title: "Идеи для проекта", pinned: true)
             var yesterday = Conversation(title: "Выбор смартфона")

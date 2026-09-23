@@ -28,7 +28,7 @@ final class SettingsAuditTests: HonorAuditCase {
         XCTAssertEqual(app.textViews["personalization.instructions"].value as? String, "")
     }
 
-    func testAppearanceFontVoiceAPIAndAboutControls() {
+    func testAppearanceFontVoiceAndAboutControls() {
         let app = launch()
         settings(app)
         openSettingsRow("settings.appearance", app: app)
@@ -44,11 +44,7 @@ final class SettingsAuditTests: HonorAuditCase {
         assertDisplayedValue("100%", id: "font.value", app: app)
         back(app)
         openSettingsRow("settings.voice", app: app)
-        let toggle = app.switches["voice.autoRead"]
-        XCTAssertTrue(toggle.exists)
-        let oldValue = toggle.value as? String
-        setSwitch(toggle, to: oldValue != "1")
-        XCTAssertNotEqual(toggle.value as? String, oldValue)
+        XCTAssertFalse(app.switches["voice.autoRead"].exists, "Reading is controlled in the chat header")
         app.buttons["voice.option.system"].tap()
         app.buttons["voice.preview"].tap()
         XCTAssertTrue(app.buttons["voice.preview"].exists)
@@ -59,18 +55,11 @@ final class SettingsAuditTests: HonorAuditCase {
         choose("speechLanguage.en-US", fallback: "English (US)", app: app)
         openSettingsRow("settings.speechLanguage", app: app)
         choose("speechLanguage.ru-RU", fallback: "Русский", app: app)
-        openSettingsRow("settings.api", app: app)
-        XCTAssertTrue(element(app, "api.status").exists)
-        app.secureTextFields["api.key"].tap()
-        app.secureTextFields["api.key"].typeText("sk-ui-audit-only")
-        app.buttons["api.save"].tap()
-        XCTAssertTrue(element(app, "api.saved").exists)
-        app.buttons["api.reset"].tap()
-        XCTAssertFalse(app.buttons["api.reset"].isEnabled)
-        back(app)
+        XCTAssertFalse(element(app, "settings.api").exists, "Connection settings must be hidden")
         openSettingsRow("settings.about", app: app)
-        XCTAssertTrue(app.staticTexts["Honor PK Agent"].exists)
-        XCTAssertTrue(app.links["about.documentation"].exists || element(app, "about.documentation").exists)
+        XCTAssertTrue(app.staticTexts["Honer AI"].firstMatch.exists)
+        XCTAssertFalse(element(app, "about.documentation").exists)
+        XCTAssertTrue(app.staticTexts["10.0 (10)"].exists)
     }
 
     func testDataExportImportPickerAndDeleteConfirmation() {

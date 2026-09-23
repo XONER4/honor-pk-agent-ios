@@ -37,7 +37,28 @@ struct HonorMark: View {
                                      startPoint: .topLeading, endPoint: .bottomTrailing))
         }
         .frame(width: size, height: size)
-        .accessibilityLabel("Honor")
+        .accessibilityLabel("Honer AI")
+    }
+}
+
+/// Round open speech balloon with a lower-left tail, matching the reference control.
+struct NewConversationSymbol: View {
+    var body: some View {
+        ZStack {
+            NewConversationOutline().stroke(style: StrokeStyle(lineWidth: 1.65, lineCap: .round, lineJoin: .round))
+            Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).offset(x: 0.5, y: -1)
+        }
+    }
+}
+
+private struct NewConversationOutline: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.addArc(center: CGPoint(x: r.midX, y: r.height * 0.46), radius: r.width * 0.405,
+                 startAngle: .degrees(139), endAngle: .degrees(112), clockwise: false)
+        p.addQuadCurve(to: CGPoint(x: r.width * 0.12, y: r.height * 0.89),
+                       control: CGPoint(x: r.width * 0.22, y: r.height * 0.77))
+        return p
     }
 }
 

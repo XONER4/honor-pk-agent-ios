@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import QuickLook
 
 struct ChatRootView: View {
     @EnvironmentObject private var store: ChatStore
@@ -17,9 +18,21 @@ struct ChatRootView: View {
     @State private var deviceError: String?
     @State private var toast: String?
     @State private var toastTask: Task<Void, Never>?
-    @State private var speechDraftPrefix = ""
     @State private var speakingContent: String?
+    @State private var attachmentGalleryOpen = false
+    @State private var previewAttachment: MessageAttachment?
+    @State private var sourceSheet: SourceSelection?
+    @State private var deleteChatConfirmation = false
+    @State private var findOpen = false
+    @State private var findQuery = ""
+    @State private var findIndex = 0
+    @State private var voiceMode = false
+    @State private var voiceHolding = false
+    @State private var voiceCancelArmed = false
+    @State private var voiceSessionID: UUID?
+    @State private var voiceOriginalDraft = ""
     @FocusState private var composerFocused: Bool
+    @FocusState private var findFocused: Bool
 
     private func text(_ ru: String, _ en: String) -> String { settings.text(ru, en) }
 
@@ -28,14 +41,15 @@ struct ChatRootView: View {
             let drawerWidth = min(geometry.size.width * 0.79, 360)
             ZStack(alignment: .leading) {
                 HonorTheme.sidebar.ignoresSafeArea()
-                HistoryDrawer(isOpen: drawerOpen, onClose: closeDrawer, onSettings: {
-                    speech.stopRecording(); speech.stopSpeaking()
-                    closeDrawer()
-                    settingsOpen = true
-                })
-                .frame(width: drawerWidth)
-                .opacity(drawerOpen ? 1 : 0)
-                .accessibilityHidden(!drawerOpen)
+                if drawerOpen {
+                    HistoryDrawer(isOpen: drawerOpen, onClose: closeDrawer, onSettings: {
+                        cancelVoice(); speech.stopSpeaking()
+                        closeDrawer()
+                        settingsOpen = true
+                    })
+                    .frame(width: drawerWidth)
+                    .transition(.opacity)
+                }
 
                 mainScreen
                     .frame(width: geometry.size.width)
@@ -63,7 +77,7 @@ struct ChatRootView: View {
                     let top = min(max(12, message.role == .user ? frame.maxY + 16 : frame.minY + 72),
                                   max(12, geometry.size.height - menuHeight - 12))
                     ZStack(alignment: .topLeading) {
-                        Button { menuMessage = nil } label: {
+                        Button { animate { menuMessage = nil } } label: {
                             Color.black.opacity(0.04).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -79,7 +93,7 @@ struct ChatRootView: View {
                         .accessibilitySortPriority(1)
                     }
                     .frame(width: geometry.size.width, height: geometry.size.height)
-                    .transition(.opacity)
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
                     .zIndex(5)
                 }
             }
@@ -90,8 +104,27 @@ struct ChatRootView: View {
                 else if !drawerOpen && value.startLocation.x < 24 && value.translation.width > 60 { openDrawer() }
             })
         }
+        .allowsHitTesting(!store.isLoadingHistory)
         .background(HonorTheme.background.ignoresSafeArea())
         .foregroundStyle(HonorTheme.foreground)
+        .overlay {
+            if store.isLoadingHistory {
+                ZStack {
+                    HonorTheme.background.ignoresSafeArea()
+                    ProgressView(text("Загружаю чаты…", "Loading conversations…"))
+                        .font(.system(size: 14)).tint(HonorTheme.accent)
+                        .accessibilityIdentifier("chat.loading")
+                }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if voiceHolding || speech.isFinalizingRecording {
+                VoiceRecordingOverlay(speech: speech, cancelling: voiceCancelArmed, settings: settings)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                    .ignoresSafeArea(edges: .bottom)
+            }
+        }
         .sheet(isPresented: $settingsOpen) {
             SettingsView().environmentObject(store).environmentObject(settings)
         }
@@ -101,11 +134,26 @@ struct ChatRootView: View {
         }
         .sheet(item: $memoryDraft) { item in
             MemoryEditorSheet(initialText: item.content, onSaved: {
-                showToast(text("Сохранено в память Honor", "Saved to Honor memory"))
+                showToast(text("Сохранено в память Honer AI", "Saved to Honer AI memory"))
             })
             .environmentObject(store).environmentObject(settings)
         }
         .sheet(item: $shareItem) { item in ActivitySheet(items: [item.content]) }
+        .sheet(isPresented: $attachmentGalleryOpen) {
+            ChatAttachmentsSheet(attachments: store.messages.flatMap(\.attachments), settings: settings)
+        }
+        .sheet(item: $previewAttachment) { attachment in AttachmentPreviewSheet(attachment: attachment, settings: settings) }
+        .sheet(item: $sourceSheet) { selection in
+            SourceDetailsSheet(selection: selection, settings: settings)
+                .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        }
+        .confirmationDialog(text("Удалить этот чат?", "Delete this conversation?"), isPresented: $deleteChatConfirmation, titleVisibility: .visible) {
+            Button(text("Удалить", "Delete"), role: .destructive) {
+                composerFocused = false; cancelVoice()
+                if let id = store.selectedConversationID { store.deleteChats(ids: [id]) }
+            }.accessibilityIdentifier("chat.delete.confirm")
+            Button(text("Отмена", "Cancel"), role: .cancel) {}.accessibilityIdentifier("chat.delete.cancel")
+        }
         .alert(text("Не удалось выполнить действие", "Unable to complete action"),
                isPresented: Binding(get: { deviceError != nil }, set: {
                    if !$0 { deviceError = nil; speech.clearError() }
@@ -119,9 +167,6 @@ struct ChatRootView: View {
             Button("OK", role: .cancel) { deviceError = nil; speech.clearError() }
                 .accessibilityIdentifier("device.error.dismiss")
         } message: { Text(deviceError ?? "") }
-        .onChange(of: speech.transcript) { transcript in
-            store.draft = speechDraftPrefix + transcript
-        }
         .onChange(of: speech.errorMessage) { error in
             if let error { deviceError = error }
         }
@@ -129,8 +174,9 @@ struct ChatRootView: View {
             if !speaking { speakingContent = nil }
         }
         .onChange(of: store.selectedConversationID) { _ in
-            speech.stopRecording(); speech.stopSpeaking()
+            cancelVoice(); speech.stopSpeaking()
             menuMessage = nil
+            findOpen = false; findQuery = ""; findIndex = 0
         }
         .onChange(of: store.isGenerating) { generating in
             if !generating, settings.autoRead,
@@ -139,22 +185,28 @@ struct ChatRootView: View {
                 speak(last.content)
             }
         }
-        .onDisappear { speech.stopRecording(); speech.stopSpeaking(); toastTask?.cancel() }
+        .onDisappear { cancelVoice(); speech.stopSpeaking(); toastTask?.cancel() }
     }
 
     private var mainScreen: some View {
-        VStack(spacing: 0) {
+        let messages = store.messages
+        let matches = matchingMessageIDs(messages)
+        let selectedMatch = matches.isEmpty ? nil : matches[min(findIndex, matches.count - 1)]
+        return VStack(spacing: 0) {
             header
             branchLineage
-            if store.messages.isEmpty {
+            if findOpen { findBar(matches: matches) }
+            if messages.isEmpty {
                 welcome
             } else {
                 MessageTimeline(store: store, settings: settings,
+                                findQuery: findOpen ? findQuery : "", selectedMatch: selectedMatch,
                                 onCopy: copy, onSelect: { selectedText = SelectedText(content: $0) },
                                 onShare: { shareItem = SharedText(content: $0) }, onSpeak: speak,
+                                onAttachment: { previewAttachment = $0 }, onSources: { sourceSheet = $0 },
                                 onMenu: { message in
                                     composerFocused = false
-                                    menuMessage = message
+                                    animate { menuMessage = message }
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 })
             }
@@ -208,15 +260,11 @@ struct ChatRootView: View {
                 .accessibilityIdentifier("chat.autoread")
                 .accessibilityValue(text(settings.autoRead ? "Включено" : "Выключено", settings.autoRead ? "On" : "Off"))
                 Button {
-                    speech.stopRecording(); speech.stopSpeaking()
+                    cancelVoice(); speech.stopSpeaking()
                     store.newChat(); attachmentsOpen = false
                 } label: {
-                    Image(systemName: "bubble.left")
-                        .font(.system(size: 23))
-                        .overlay(alignment: .center) {
-                            Image(systemName: "plus").font(.system(size: 11, weight: .semibold))
-                                .offset(y: -1)
-                        }
+                    NewConversationSymbol()
+                        .frame(width: 25, height: 25)
                         .frame(width: 44, height: 42)
                 }
                 .accessibilityLabel(text("Новый чат", "New chat"))
@@ -226,10 +274,109 @@ struct ChatRootView: View {
             .padding(.horizontal, 1)
             .background(HonorTheme.surface.opacity(0.65), in: Capsule())
             .overlay(Capsule().stroke(HonorTheme.divider, lineWidth: 0.7))
+            if store.selectedConversationID != nil {
+                chatToolsMenu
+            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 6)
         .padding(.bottom, 12)
+    }
+
+    private var chatToolsMenu: some View {
+        Menu {
+            Button {
+                guard let chat = store.selectedConversation else { return }
+                let transcript = chat.messages.map { message in
+                    let author = message.role == .user ? text("Вы", "You") : "Honer AI"
+                    var block = author + ":\n" + message.content
+                    if !message.attachments.isEmpty { block += "\n" + message.attachments.map(\.name).joined(separator: ", ") }
+                    if !message.sources.isEmpty {
+                        let citations = message.sources.enumerated().map { "[\($0.offset + 1)] \($0.element.title): \($0.element.url.absoluteString)" }
+                        block += "\n\n" + citations.joined(separator: "\n")
+                    }
+                    return block
+                }
+                shareItem = SharedText(content: ([chat.title, "Honer AI"] + transcript).joined(separator: "\n\n"))
+            } label: { Label(text("Поделиться чатом", "Share conversation"), systemImage: "square.and.arrow.up") }
+                .accessibilityIdentifier("chat.tools.share")
+            Button {
+                if let id = store.selectedConversationID { store.togglePin(ids: [id]) }
+            } label: {
+                Label(store.selectedConversation?.pinned == true ? text("Открепить", "Unpin") : text("Закрепить", "Pin"),
+                      systemImage: store.selectedConversation?.pinned == true ? "pin.slash" : "pin")
+            }.accessibilityIdentifier("chat.tools.pin")
+            Button { composerFocused = false; attachmentGalleryOpen = true } label: {
+                Label(text("Загруженные файлы", "Uploaded files"), systemImage: "paperclip")
+            }.accessibilityIdentifier("chat.tools.attachments")
+            Button {
+                composerFocused = false
+                animate { findOpen = true }
+                findFocused = true
+            } label: { Label(text("Найти в чате", "Find in conversation"), systemImage: "magnifyingglass") }
+                .accessibilityIdentifier("chat.tools.find")
+            Divider()
+            Button {
+                if let id = store.selectedConversationID {
+                    composerFocused = false
+                    cancelVoice(); store.archiveChat(id: id)
+                    showToast(text("Чат перемещён в архив", "Conversation archived"))
+                }
+            } label: { Label(text("В архив", "Archive"), systemImage: "archivebox") }
+                .accessibilityIdentifier("chat.tools.archive")
+            Button(role: .destructive) { deleteChatConfirmation = true } label: {
+                Label(text("Удалить", "Delete"), systemImage: "trash")
+            }.accessibilityIdentifier("chat.tools.delete")
+        } label: {
+            Image(systemName: "ellipsis").font(.system(size: 20, weight: .medium))
+                .frame(width: 30, height: 44).contentShape(Rectangle())
+        }
+        .accessibilityLabel(text("Действия с чатом", "Conversation actions"))
+        .accessibilityIdentifier("chat.tools")
+    }
+
+    private func matchingMessageIDs(_ messages: [ChatMessage]) -> [UUID] {
+        guard findOpen, !findQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+        return messages.filter {
+            $0.content.localizedCaseInsensitiveContains(findQuery) || $0.reasoning.localizedCaseInsensitiveContains(findQuery)
+        }.map(\.id)
+    }
+
+    private func findBar(matches: [UUID]) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass").foregroundStyle(HonorTheme.secondary)
+            TextField(text("Найти в чате", "Find in conversation"), text: $findQuery)
+                .font(.system(size: 15)).focused($findFocused).submitLabel(.search)
+                .onChange(of: findQuery) { _ in findIndex = 0 }
+                .onSubmit { findFocused = false }
+                .accessibilityIdentifier("chat.find.field")
+            Text(matches.isEmpty ? "0 / 0" : "\(min(findIndex + 1, matches.count)) / \(matches.count)")
+                .font(.system(size: 12).monospacedDigit()).foregroundStyle(HonorTheme.secondary)
+                .accessibilityLabel(text("Найденные сообщения", "Matching messages"))
+                .accessibilityValue(matches.isEmpty ? "0 / 0" : "\(min(findIndex + 1, matches.count)) / \(matches.count)")
+                .accessibilityIdentifier("chat.find.count")
+            Button {
+                guard !matches.isEmpty else { return }
+                findFocused = false; findIndex = (findIndex - 1 + matches.count) % matches.count
+            } label: { Image(systemName: "chevron.up").frame(width: 30, height: 44) }
+                .disabled(matches.isEmpty).accessibilityLabel(text("Предыдущее совпадение", "Previous match"))
+                .accessibilityIdentifier("chat.find.previous")
+            Button {
+                guard !matches.isEmpty else { return }
+                findFocused = false; findIndex = (findIndex + 1) % matches.count
+            } label: { Image(systemName: "chevron.down").frame(width: 30, height: 44) }
+                .disabled(matches.isEmpty).accessibilityLabel(text("Следующее совпадение", "Next match"))
+                .accessibilityIdentifier("chat.find.next")
+            Button {
+                findFocused = false; findQuery = ""; animate { findOpen = false }
+            } label: { Image(systemName: "xmark").frame(width: 30, height: 44) }
+                .accessibilityLabel(text("Закрыть поиск", "Close find"))
+                .accessibilityIdentifier("chat.find.close")
+        }
+        .buttonStyle(.plain).padding(.leading, 12).padding(.trailing, 3)
+        .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 14).padding(.bottom, 6)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     @ViewBuilder private var branchLineage: some View {
@@ -308,7 +455,7 @@ struct ChatRootView: View {
                     HStack(spacing: 8) {
                         ForEach(store.attachments) { attachment in
                             HStack(spacing: 5) {
-                                Image(systemName: attachment.kind == .image ? "photo" : "doc.text")
+                                Image(systemName: attachmentSymbol(attachment))
                                 Text(attachment.name).lineLimit(1).frame(maxWidth: 160)
                                 Button { store.attachments.removeAll { $0.id == attachment.id } } label: {
                                     Image(systemName: "xmark.circle.fill").frame(width: 30, height: 32)
@@ -322,8 +469,33 @@ struct ChatRootView: View {
                     }
                 }
             }
-            HStack(alignment: .top, spacing: 2) {
-                TextField(text("Напишите сообщение…", "Message Honor…"), text: $store.draft, axis: .vertical)
+            if voiceMode {
+                Text(text("Удерживайте для голосового ввода", "Hold to speak"))
+                    .font(.system(size: 17, weight: .semibold))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                        .onChanged { value in
+                            if !voiceHolding { beginVoice() }
+                            let cancelled = value.translation.height < -70
+                            if cancelled != voiceCancelArmed {
+                                voiceCancelArmed = cancelled
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }
+                        }
+                        .onEnded { _ in finishVoice() })
+                    .accessibilityIdentifier("chat.voice.hold")
+                    .accessibilityHint(text("Удерживайте и отпустите для отправки. Сдвиньте вверх для отмены.", "Hold and release to send. Slide up to cancel."))
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction {
+                        if voiceHolding { finishVoice() } else { beginVoice() }
+                    }
+                    .accessibilityAction(named: Text(text("Отменить запись", "Cancel recording"))) { cancelVoice() }
+                Rectangle().fill(HonorTheme.divider).frame(height: 0.5)
+            } else {
+              HStack(alignment: .top, spacing: 2) {
+                TextField(text("Напишите сообщение…", "Message Honer AI…"), text: $store.draft, axis: .vertical)
                 .font(.system(size: 17 * settings.fontScale * dynamicScale))
                 .lineLimit(1...6)
                 .focused($composerFocused)
@@ -337,6 +509,7 @@ struct ChatRootView: View {
                     if focused && attachmentsOpen { animate { attachmentsOpen = false } }
                 }
                 if store.canSend { voiceButton }
+              }
             }
             HStack(spacing: 5) {
                 modePill(symbol: "atom", label: text("Рассуждение", "Reason"), selected: store.reasoningEnabled) {
@@ -348,7 +521,7 @@ struct ChatRootView: View {
                 Spacer(minLength: 0)
                 Button {
                     composerFocused = false
-                    speech.stopRecording()
+                    cancelVoice()
                     animate { attachmentsOpen.toggle() }
                 } label: {
                     Image(systemName: attachmentsOpen ? "xmark.circle" : "plus.circle")
@@ -366,7 +539,7 @@ struct ChatRootView: View {
                             .frame(width: 40, height: 44)
                     }.accessibilityLabel(text("Остановить ответ", "Stop response"))
                         .accessibilityIdentifier("chat.stop")
-                } else if store.canSend {
+                } else if store.canSend && !voiceMode {
                     Button(action: send) {
                         Image(systemName: "arrow.up").font(.system(size: 18, weight: .semibold))
                             .frame(width: 32, height: 32)
@@ -381,18 +554,6 @@ struct ChatRootView: View {
                 }
             }
             .buttonStyle(.plain)
-            if speech.isRecording {
-                HStack(spacing: 6) {
-                    Circle().fill(Color.red).frame(width: 6, height: 6)
-                    Text(text("Слушаю… Нажмите, чтобы завершить", "Listening… Tap to finish"))
-                    Spacer()
-                    Button(text("Готово", "Done")) { speech.stopRecording() }
-                        .accessibilityIdentifier("chat.voice.stop")
-                }
-                .font(.system(size: 12))
-                .foregroundStyle(HonorTheme.secondary)
-                .padding(.horizontal, 5).padding(.bottom, 4)
-            }
         }
         .padding(.horizontal, 10).padding(.top, 10).padding(.bottom, 5)
         .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 27, style: .continuous))
@@ -400,15 +561,18 @@ struct ChatRootView: View {
     }
 
     private var voiceButton: some View {
-        Button(action: toggleRecording) {
-            Image(systemName: speech.isRecording ? "stop.circle.fill" : "waveform.circle")
+        Button {
+            cancelVoice()
+            animate { voiceMode.toggle() }
+            composerFocused = !voiceMode
+        } label: {
+            Image(systemName: voiceMode ? "keyboard" : "waveform.circle")
                 .font(.system(size: 26))
-                .foregroundStyle(speech.isRecording ? HonorTheme.accent : HonorTheme.foreground)
+                .foregroundStyle(HonorTheme.foreground)
                 .frame(width: 40, height: 44)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(text(speech.isRecording ? "Остановить запись" : "Голосовой ввод",
-                                 speech.isRecording ? "Stop recording" : "Voice input"))
+        .accessibilityLabel(text(voiceMode ? "Клавиатура" : "Голосовой ввод", voiceMode ? "Keyboard" : "Voice input"))
         .accessibilityIdentifier("chat.voice")
     }
 
@@ -430,7 +594,7 @@ struct ChatRootView: View {
     }
 
     private func send() {
-        speech.stopRecording(); speech.stopSpeaking()
+        cancelVoice(); speech.stopSpeaking()
         store.systemInstruction = settings.customInstructions
         store.send()
         composerFocused = false
@@ -438,7 +602,7 @@ struct ChatRootView: View {
     }
 
     private func performMenuAction(_ action: MessageMenuAction, message: ChatMessage) {
-        menuMessage = nil
+        animate { menuMessage = nil }
         switch action {
         case .copy: copy(message.content)
         case .select: selectedText = SelectedText(content: message.content)
@@ -451,7 +615,7 @@ struct ChatRootView: View {
         case .dislike: store.setFeedback(messageID: message.id, feedback: message.feedback == .dislike ? nil : .dislike)
         case .speak: speak(message.content)
         case .fork:
-            speech.stopRecording(); speech.stopSpeaking()
+            cancelVoice(); speech.stopSpeaking()
             if store.forkConversation(at: message.id) != nil {
                 showToast(text("Новая ветка создана", "New branch created"))
                 composerFocused = true
@@ -460,11 +624,44 @@ struct ChatRootView: View {
         }
     }
 
-    private func toggleRecording() {
-        if speech.isRecording { speech.stopRecording(); return }
+    private func beginVoice() {
+        guard !voiceHolding, !speech.isFinalizingRecording, !store.isGenerating else { return }
+        let session = UUID()
+        voiceSessionID = session
+        voiceOriginalDraft = store.draft
+        voiceCancelArmed = false
+        animate { voiceHolding = true }
         composerFocused = false
-        speechDraftPrefix = store.draft.isEmpty ? "" : store.draft + " "
-        Task { await speech.startRecording(language: settings.speechLanguage) }
+        speech.stopSpeaking()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        Task { @MainActor in
+            await speech.startRecording(language: settings.speechLanguage)
+            guard voiceSessionID == session else { return }
+            if !speech.isRecording { voiceHolding = false; voiceSessionID = nil }
+        }
+    }
+
+    private func finishVoice() {
+        guard let session = voiceSessionID else { return }
+        if voiceCancelArmed || speech.isPreparingRecording { cancelVoice(); return }
+        animate { voiceHolding = false }
+        Task { @MainActor in
+            let transcript = await speech.finishRecording().trimmingCharacters(in: .whitespacesAndNewlines)
+            guard voiceSessionID == session else { return }
+            voiceSessionID = nil
+            voiceCancelArmed = false
+            guard !transcript.isEmpty else { return }
+            store.draft = voiceOriginalDraft.isEmpty ? transcript : voiceOriginalDraft + " " + transcript
+            voiceMode = false
+            send()
+        }
+    }
+
+    private func cancelVoice() {
+        voiceSessionID = nil
+        voiceHolding = false
+        voiceCancelArmed = false
+        speech.cancelRecording()
     }
 
     private func speak(_ content: String) {
@@ -472,7 +669,7 @@ struct ChatRootView: View {
             speech.stopSpeaking()
             speakingContent = nil
         } else {
-            speech.speak(content, voiceIdentifier: settings.voiceIdentifier, language: settings.speechLanguage)
+            speech.speak(content, voiceIdentifier: settings.voiceIdentifier, language: "ru-RU")
             speakingContent = content
         }
     }
@@ -495,7 +692,7 @@ struct ChatRootView: View {
 
     private func openDrawer() {
         composerFocused = false
-        speech.stopRecording()
+        cancelVoice()
         menuMessage = nil
         animate { drawerOpen = true; attachmentsOpen = false }
     }
@@ -508,16 +705,24 @@ struct ChatRootView: View {
 private struct MessageTimeline: View {
     @ObservedObject var store: ChatStore
     @ObservedObject var settings: AppSettings
+    let findQuery: String
+    let selectedMatch: UUID?
     let onCopy: (String) -> Void
     let onSelect: (String) -> Void
     let onShare: (String) -> Void
     let onSpeak: (String) -> Void
+    let onAttachment: (MessageAttachment) -> Void
+    let onSources: (SourceSelection) -> Void
     let onMenu: (ChatMessage) -> Void
     @State private var followLatest = true
+    @State private var pendingScroll: Task<Void, Never>?
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
 
     var body: some View {
-        ScrollViewReader { proxy in
+        let messages = store.messages
+        let tail = messages.last
+        let tailRevision = "\(tail?.content.count ?? 0):\(tail?.reasoning.count ?? 0)"
+        return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 25) {
                     Text(settings.text("Сгенерированный ИИ ответ, только для справки.", "AI-generated answers are for reference."))
@@ -526,17 +731,19 @@ private struct MessageTimeline: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal, 28).padding(.top, 23).padding(.bottom, 3)
-                    ForEach(store.messages) { message in
+                    ForEach(messages) { message in
                         MessageRow(message: message,
-                                   streaming: store.isGenerating && message.id == store.messages.last?.id,
+                                   streaming: store.isGenerating && message.id == tail?.id,
                                    status: store.generationStatus,
                                    settings: settings,
+                                   findQuery: findQuery, selectedMatch: selectedMatch == message.id,
                                    onCopy: onCopy, onSelect: onSelect, onShare: onShare, onSpeak: onSpeak,
+                                   onAttachment: onAttachment, onSources: onSources,
                                    onRetry: { store.regenerate(messageID: message.id) },
                                    onEdit: { store.edit(messageID: message.id) },
                                    onFeedback: { store.setFeedback(messageID: message.id, feedback: $0) },
                                    onMenu: onMenu)
-                            .id(message.id)
+                            .equatable().id(message.id)
                     }
                     Color.clear.frame(height: 8).id("message-bottom")
                 }
@@ -544,7 +751,9 @@ private struct MessageTimeline: View {
                 .padding(.bottom, 8)
             }
             .scrollDismissesKeyboard(.interactively)
-            .simultaneousGesture(DragGesture(minimumDistance: 15).onChanged { _ in followLatest = false })
+            .simultaneousGesture(DragGesture(minimumDistance: 15).onChanged { _ in
+                followLatest = false; pendingScroll?.cancel(); pendingScroll = nil
+            })
             .overlay(alignment: .bottomTrailing) {
                 if !followLatest {
                     Button {
@@ -563,33 +772,47 @@ private struct MessageTimeline: View {
                 }
             }
             .onAppear { proxy.scrollTo("message-bottom", anchor: .bottom) }
-            .onChange(of: store.messages.count) { _ in
-                followLatest = true
-                proxy.scrollTo("message-bottom", anchor: .bottom)
+            .onChange(of: messages.count) { _ in
+                if messages.last?.role == .user || messages.dropLast().last?.role == .user { followLatest = true }
+                if followLatest && findQuery.isEmpty { proxy.scrollTo("message-bottom", anchor: .bottom) }
             }
             .onChange(of: store.selectedConversationID) { _ in
+                pendingScroll?.cancel(); pendingScroll = nil
                 followLatest = true
                 proxy.scrollTo("message-bottom", anchor: .bottom)
             }
-            .onChange(of: store.messages.last?.content) { _ in
-                if followLatest { proxy.scrollTo("message-bottom", anchor: .bottom) }
+            .onChange(of: tailRevision) { _ in
+                guard followLatest, findQuery.isEmpty, pendingScroll == nil else { return }
+                pendingScroll = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 120_000_000)
+                    guard !Task.isCancelled else { return }
+                    if followLatest && findQuery.isEmpty { proxy.scrollTo("message-bottom", anchor: .bottom) }
+                    pendingScroll = nil
+                }
             }
-            .onChange(of: store.messages.last?.reasoning) { _ in
-                if followLatest { proxy.scrollTo("message-bottom", anchor: .bottom) }
+            .onChange(of: selectedMatch) { id in
+                guard let id else { return }
+                followLatest = false
+                withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(id, anchor: .center) }
             }
+            .onDisappear { pendingScroll?.cancel(); pendingScroll = nil }
         }
     }
 }
 
-private struct MessageRow: View {
+private struct MessageRow: View, Equatable {
     let message: ChatMessage
     let streaming: Bool
     let status: String?
     @ObservedObject var settings: AppSettings
+    let findQuery: String
+    let selectedMatch: Bool
     let onCopy: (String) -> Void
     let onSelect: (String) -> Void
     let onShare: (String) -> Void
     let onSpeak: (String) -> Void
+    let onAttachment: (MessageAttachment) -> Void
+    let onSources: (SourceSelection) -> Void
     let onRetry: () -> Void
     let onEdit: () -> Void
     let onFeedback: (MessageFeedback?) -> Void
@@ -599,6 +822,11 @@ private struct MessageRow: View {
 
     private func text(_ ru: String, _ en: String) -> String { settings.text(ru, en) }
 
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.message == rhs.message && lhs.streaming == rhs.streaming && lhs.status == rhs.status &&
+        lhs.findQuery == rhs.findQuery && lhs.selectedMatch == rhs.selectedMatch
+    }
+
     var body: some View {
         Group {
             if message.role == .user { userMessage }
@@ -607,8 +835,12 @@ private struct MessageRow: View {
         .anchorPreference(key: MessageBoundsKey.self, value: .bounds) { [message.id: $0] }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("message." + message.role.rawValue + "." + message.id.uuidString)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(selectedMatch ? HonorTheme.accent.opacity(0.5) : .clear, lineWidth: 1))
         .onLongPressGesture(minimumDuration: 0.45) { onMenu(message) }
         .accessibilityAction(named: Text(text("Действия с сообщением", "Message actions"))) { onMenu(message) }
+        .onChange(of: findQuery) { query in
+            if !query.isEmpty && message.reasoning.localizedCaseInsensitiveContains(query) { reasoningOpen = true }
+        }
     }
 
     private var userMessage: some View {
@@ -617,7 +849,7 @@ private struct MessageRow: View {
             VStack(alignment: .leading, spacing: 7) {
                 attachmentLabels
                 if !message.content.isEmpty {
-                    Text(message.content)
+                    Text(highlighted(AttributedString(message.content), query: findQuery))
                         .font(.system(size: 17 * settings.fontScale * dynamicScale))
                         .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
@@ -627,7 +859,7 @@ private struct MessageRow: View {
             .background(HonorTheme.bubble, in: MessageBubble())
         }
         .padding(.top, 2)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: message.attachments.isEmpty ? .combine : .contain)
         .accessibilityHint(text("Ваше сообщение. Удерживайте для действий.", "Your message. Touch and hold for actions."))
     }
 
@@ -652,7 +884,7 @@ private struct MessageRow: View {
                 .accessibilityIdentifier("message.reasoning." + message.id.uuidString)
                 .accessibilityValue(text(reasoningOpen ? "Развёрнуто" : "Свёрнуто", reasoningOpen ? "Expanded" : "Collapsed"))
                 if reasoningOpen && !message.reasoning.isEmpty {
-                    Text(message.reasoning)
+                    Text(highlighted(AttributedString(message.reasoning), query: findQuery))
                         .font(.system(size: 14 * settings.fontScale * dynamicScale))
                         .foregroundStyle(HonorTheme.secondary)
                         .lineSpacing(5)
@@ -661,9 +893,14 @@ private struct MessageRow: View {
                         .overlay(alignment: .leading) { Rectangle().fill(HonorTheme.divider).frame(width: 2) }
                         .accessibilityIdentifier("message.reasoning.text." + message.id.uuidString)
                 }
+                if reasoningOpen && !message.sources.isEmpty { sourceProgress }
             }
             if !message.content.isEmpty {
-                MarkdownMessage(content: message.content, fontSize: 17 * settings.fontScale * dynamicScale, onCopy: onCopy)
+                MarkdownMessage(content: message.content, fontSize: 17 * settings.fontScale * dynamicScale,
+                                sources: message.sources, findQuery: findQuery, onCopy: onCopy)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(message.content)
+                    .accessibilityIdentifier("message.content." + message.id.uuidString)
             }
             if let error = message.error {
                 Label(error, systemImage: "exclamationmark.circle")
@@ -682,20 +919,15 @@ private struct MessageRow: View {
                     .accessibilityIdentifier("message.stopped." + message.id.uuidString)
             }
             if !message.sources.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(text("Источники", "Sources")).font(.system(size: 12, weight: .semibold)).foregroundStyle(HonorTheme.secondary)
-                    ForEach(Array(message.sources.enumerated()), id: \.element.id) { index, source in
-                        Link(destination: source.url) {
-                            HStack(alignment: .top, spacing: 7) {
-                                Text("\(index + 1)").font(.system(size: 10, weight: .bold))
-                                    .frame(width: 18, height: 18)
-                                    .background(HonorTheme.accent.opacity(0.15), in: Circle())
-                                Text(source.title).font(.system(size: 13)).lineLimit(2)
-                            }
-                        }.tint(HonorTheme.accent)
-                            .accessibilityIdentifier("message.source." + source.id.uuidString)
-                    }
-                }.padding(.vertical, 3)
+                Button { onSources(SourceSelection(sources: message.sources, readOnly: false)) } label: {
+                    HStack(spacing: 8) {
+                        SourceSiteMarks(sources: message.sources)
+                        Text(text("\(message.sources.count) веб-страниц", "\(message.sources.count) web pages"))
+                    }.font(.system(size: 13, weight: .medium))
+                    .padding(.horizontal, 11).frame(minHeight: 34)
+                    .overlay(Capsule().stroke(HonorTheme.divider, lineWidth: 0.7))
+                }.buttonStyle(.plain).foregroundStyle(HonorTheme.secondary)
+                    .accessibilityIdentifier("message.sources." + message.id.uuidString)
             }
             if !streaming && !message.content.isEmpty {
                 HStack(spacing: 0) {
@@ -731,13 +963,34 @@ private struct MessageRow: View {
 
     private var attachmentLabels: some View {
         ForEach(message.attachments) { attachment in
-            Label(attachment.name, systemImage: attachment.kind == .image ? "photo" : "doc.text")
-                .font(.system(size: 12)).foregroundStyle(HonorTheme.secondary).lineLimit(2)
+            Button { onAttachment(attachment) } label: {
+                Label(attachment.name, systemImage: attachmentSymbol(attachment))
+                    .font(.system(size: 12)).foregroundStyle(HonorTheme.accent).lineLimit(2).frame(minHeight: 32)
+            }.buttonStyle(.plain).accessibilityIdentifier("message.attachment." + attachment.id.uuidString)
         }
+    }
+
+    private var sourceProgress: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { onSources(SourceSelection(sources: message.sources, readOnly: false)) } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass")
+                    Text(text("Найдено \(message.sources.count) веб-страниц", "Found \(message.sources.count) web pages"))
+                    SourceSiteMarks(sources: message.sources)
+                }.frame(minHeight: 36)
+            }.accessibilityIdentifier("message.sources.found." + message.id.uuidString)
+            Button { onSources(SourceSelection(sources: message.sources, readOnly: true)) } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "doc.text")
+                    Text(text("Прочитано \(message.sources.filter { $0.content != nil }.count) страниц", "Read \(message.sources.filter { $0.content != nil }.count) pages"))
+                }.frame(minHeight: 36)
+            }.accessibilityIdentifier("message.sources.read." + message.id.uuidString)
+        }.font(.system(size: 14)).foregroundStyle(HonorTheme.secondary).buttonStyle(.plain)
     }
 
     private var reasoningTitle: String {
         if streaming && message.content.isEmpty { return status ?? text("Размышляет…", "Thinking…") }
+        if message.reasoningWasTranslated == true { return text("Описание рассуждения · перевод", "Reasoning description · translation") }
         let seconds = max(message.reasoningSeconds, 1)
         let ending: String
         let last = seconds % 10, lastTwo = seconds % 100
@@ -970,7 +1223,7 @@ private struct HistoryDrawer: View {
                     HStack(spacing: 12) {
                         Image(systemName: "person.crop.circle.fill")
                             .font(.system(size: 29)).foregroundStyle(HonorTheme.secondary)
-                        Text(settings.displayName.isEmpty ? "Honor PK" : settings.displayName)
+                        Text(settings.displayName.isEmpty ? text("Ваш профиль", "Your profile") : settings.displayName)
                             .font(.system(size: 16, weight: .semibold)).lineLimit(1)
                         Spacer(minLength: 0)
                         Image(systemName: "ellipsis").font(.system(size: 20)).foregroundStyle(HonorTheme.secondary)
@@ -1091,12 +1344,12 @@ private struct HistoryDrawer: View {
     private var groups: [HistoryGroup] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         let chats = store.conversations.filter { chat in
-            query.isEmpty || chat.title.localizedCaseInsensitiveContains(query) || chat.messages.contains {
+            chat.archivedAt == nil && (query.isEmpty || chat.title.localizedCaseInsensitiveContains(query) || chat.messages.contains {
                 $0.content.localizedCaseInsensitiveContains(query) || $0.reasoning.localizedCaseInsensitiveContains(query) ||
                 $0.attachments.contains {
                     $0.name.localizedCaseInsensitiveContains(query) || $0.extractedText.localizedCaseInsensitiveContains(query)
                 }
-            }
+            })
         }.sorted { $0.updatedAt > $1.updatedAt }
         let calendar = Calendar.current
         let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) ?? .distantPast
@@ -1175,6 +1428,8 @@ private struct SelectableTextView: UIViewRepresentable {
 private struct MarkdownMessage: View {
     let content: String
     let fontSize: Double
+    let sources: [WebSource]
+    let findQuery: String
     let onCopy: (String) -> Void
 
     var body: some View {
@@ -1194,7 +1449,7 @@ private struct MarkdownMessage: View {
                         .padding(.leading, 12).padding(.trailing, 2)
                         .background(HonorTheme.raised)
                         ScrollView(.horizontal, showsIndicators: false) {
-                            Text(block.text)
+                            Text(highlighted(AttributedString(block.text), query: findQuery))
                                 .font(.system(size: fontSize * 0.82, design: .monospaced))
                                 .textSelection(.enabled)
                                 .padding(12)
@@ -1215,7 +1470,9 @@ private struct MarkdownMessage: View {
     }
 
     private func attributed(_ source: String) -> AttributedString {
-        (try? AttributedString(markdown: source, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(source)
+        let cited = linkedCitations(source, sources: sources)
+        let value = (try? AttributedString(markdown: cited, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(source)
+        return highlighted(value, query: findQuery)
     }
 
     private var blocks: [MarkdownBlock] {
@@ -1237,4 +1494,256 @@ private struct MarkdownBlock {
     let text: String
     let code: Bool
     let language: String
+}
+
+private func attachmentSymbol(_ attachment: MessageAttachment) -> String {
+    switch attachment.kind {
+    case .image: return "photo"
+    case .video: return "play.rectangle"
+    case .document: return "doc"
+    case .text: return "doc.text"
+    }
+}
+
+private func highlighted(_ value: AttributedString, query: String) -> AttributedString {
+    guard !query.isEmpty else { return value }
+    var result = value
+    let plain = String(result.characters)
+    var cursor = plain.startIndex
+    while cursor < plain.endIndex,
+          let match = plain.range(of: query, options: [.caseInsensitive, .diacriticInsensitive], range: cursor..<plain.endIndex),
+          let lower = AttributedString.Index(match.lowerBound, within: result),
+          let upper = AttributedString.Index(match.upperBound, within: result) {
+        result[lower..<upper].backgroundColor = Color.yellow.opacity(0.35)
+        cursor = match.upperBound
+    }
+    return result
+}
+
+private func linkedCitations(_ content: String, sources: [WebSource]) -> String {
+    guard !sources.isEmpty,
+          let expression = try? NSRegularExpression(pattern: #"(?<!!)\[(\d+)\](?!\()"#) else { return content }
+    var result = content
+    let matches = expression.matches(in: content, range: NSRange(content.startIndex..., in: content))
+    for match in matches.reversed() {
+        guard let numberRange = Range(match.range(at: 1), in: content),
+              let number = Int(content[numberRange]), sources.indices.contains(number - 1),
+              let range = Range(match.range, in: result) else { continue }
+        let url = sources[number - 1].url.absoluteString.replacingOccurrences(of: "(", with: "%28").replacingOccurrences(of: ")", with: "%29")
+        result.replaceSubrange(range, with: "[[\(number)]](\(url))")
+    }
+    return result
+}
+
+private struct SourceSelection: Identifiable {
+    let id = UUID()
+    let sources: [WebSource]
+    let readOnly: Bool
+}
+
+private struct SourceSiteMarks: View {
+    let sources: [WebSource]
+    var body: some View {
+        HStack(spacing: -5) {
+            ForEach(Array(sources.prefix(4))) { source in SourceSiteIcon(source: source).frame(width: 19, height: 19) }
+        }.accessibilityHidden(true)
+    }
+}
+
+private struct SourceSiteIcon: View {
+    let source: WebSource
+    private var faviconURL: URL? {
+        guard var parts = URLComponents(url: source.url, resolvingAgainstBaseURL: false) else { return nil }
+        parts.path = "/favicon.ico"; parts.query = nil; parts.fragment = nil
+        return parts.url
+    }
+    var body: some View {
+        AsyncImage(url: faviconURL) { phase in
+            if let image = phase.image { image.resizable().scaledToFit().padding(3) }
+            else {
+                Text(String((source.url.host ?? "W").replacingOccurrences(of: "www.", with: "").prefix(1)).uppercased())
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(HonorTheme.secondary)
+            }
+        }
+        .background(HonorTheme.raised, in: Circle()).clipShape(Circle())
+        .overlay(Circle().stroke(HonorTheme.background, lineWidth: 1))
+    }
+}
+
+private struct SourceDetailsSheet: View {
+    let selection: SourceSelection
+    @ObservedObject var settings: AppSettings
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 27) {
+                    let displayed = selection.sources.enumerated().filter { !selection.readOnly || $0.element.content != nil }
+                    if displayed.isEmpty {
+                        Text(settings.text("Полный текст страниц пока не получен. Доступны поисковые фрагменты.", "Full pages have not been retrieved. Search snippets are available."))
+                            .foregroundStyle(HonorTheme.secondary).padding(.vertical, 25)
+                    }
+                    ForEach(displayed, id: \.element.id) { index, source in
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 8) {
+                                SourceSiteIcon(source: source).frame(width: 24, height: 24)
+                                Text(source.url.host ?? source.url.absoluteString).font(.system(size: 13, weight: .semibold))
+                                Spacer()
+                                Text("[\(index + 1)]").font(.system(size: 12).monospacedDigit()).foregroundStyle(HonorTheme.secondary)
+                            }
+                            Link(destination: source.url) {
+                                Text(source.title).font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(HonorTheme.foreground).multilineTextAlignment(.leading)
+                            }.accessibilityIdentifier("message.source." + source.id.uuidString)
+                            Text(source.snippet).font(.system(size: 14)).foregroundStyle(HonorTheme.secondary)
+                                .lineLimit(4)
+                            if let fetchedAt = source.fetchedAt {
+                                Text(settings.text("Прочитано ", "Read ") + fetchedAt.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
+                            }
+                            if let content = source.content {
+                                DisclosureGroup(settings.text("Прочитанный текст", "Retrieved text")) {
+                                    Text(content).font(.system(size: 13)).textSelection(.enabled)
+                                        .padding(.top, 6).foregroundStyle(HonorTheme.secondary)
+                                }.font(.system(size: 13)).tint(HonorTheme.accent)
+                            }
+                        }.accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("sources.row." + source.id.uuidString)
+                    }
+                }.padding(18)
+            }
+            .background(HonorTheme.surface)
+            .navigationTitle(settings.text(selection.readOnly ? "Прочитанные страницы" : "Источники", selection.readOnly ? "Read pages" : "Sources"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(settings.text("Готово", "Done")) { dismiss() }.accessibilityIdentifier("sources.close")
+                }
+            }
+        }.tint(HonorTheme.accent)
+    }
+}
+
+private struct ChatAttachmentsSheet: View {
+    let attachments: [MessageAttachment]
+    @ObservedObject var settings: AppSettings
+    @Environment(\.dismiss) private var dismiss
+    @State private var selected: MessageAttachment?
+    private var uniqueAttachments: [MessageAttachment] {
+        var seen = Set<UUID>()
+        return attachments.filter { seen.insert($0.id).inserted }
+    }
+    var body: some View {
+        NavigationStack {
+            Group {
+                if uniqueAttachments.isEmpty {
+                    VStack(spacing: 15) {
+                        Image(systemName: "paperclip").font(.system(size: 35)).foregroundStyle(HonorTheme.secondary)
+                        Text(settings.text("В этом чате пока нет файлов", "No files in this conversation yet"))
+                            .multilineTextAlignment(.center)
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity).accessibilityIdentifier("chat.attachments.empty")
+                } else {
+                    List(uniqueAttachments) { attachment in
+                        Button { selected = attachment } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: attachmentSymbol(attachment)).font(.system(size: 23)).frame(width: 28)
+                                Text(attachment.name).font(.system(size: 16)).foregroundStyle(HonorTheme.foreground)
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(HonorTheme.secondary)
+                            }.frame(minHeight: 44)
+                        }.accessibilityIdentifier("chat.attachments.file." + attachment.id.uuidString)
+                    }.scrollContentBackground(.hidden)
+                }
+            }.background(HonorTheme.background)
+                .navigationTitle(settings.text("Загруженные файлы", "Uploaded files"))
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(settings.text("Готово", "Done")) { dismiss() }.accessibilityIdentifier("chat.attachments.close")
+                    }
+                }
+                .sheet(item: $selected) { AttachmentPreviewSheet(attachment: $0, settings: settings) }
+        }.tint(HonorTheme.accent)
+    }
+}
+
+private struct AttachmentPreviewSheet: View {
+    let attachment: MessageAttachment
+    @ObservedObject var settings: AppSettings
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let url = attachment.resolvedURL {
+                    OriginalFilePreview(url: url).accessibilityIdentifier("attachment.preview.original")
+                } else if !attachment.extractedText.isEmpty {
+                    ScrollView { Text(attachment.extractedText).textSelection(.enabled).padding(20) }
+                        .accessibilityIdentifier("attachment.preview.text")
+                } else {
+                    Text(settings.text("Оригинал файла недоступен на этом устройстве.", "The original file is unavailable on this device."))
+                        .foregroundStyle(HonorTheme.secondary).padding(24)
+                }
+            }.navigationTitle(attachment.name).navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(settings.text("Готово", "Done")) { dismiss() }.accessibilityIdentifier("attachment.preview.close")
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        if let url = attachment.resolvedURL {
+                            ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
+                                .accessibilityLabel(settings.text("Поделиться оригиналом", "Share original"))
+                                .accessibilityIdentifier("attachment.preview.share")
+                        }
+                    }
+                }
+        }.tint(HonorTheme.accent)
+    }
+}
+
+private struct OriginalFilePreview: UIViewControllerRepresentable {
+    let url: URL
+    func makeCoordinator() -> Coordinator { Coordinator(url: url) }
+    func makeUIViewController(context: Context) -> QLPreviewController {
+        let controller = QLPreviewController()
+        controller.dataSource = context.coordinator
+        return controller
+    }
+    func updateUIViewController(_ controller: QLPreviewController, context: Context) {}
+    final class Coordinator: NSObject, QLPreviewControllerDataSource {
+        let url: URL
+        init(url: URL) { self.url = url }
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+        func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem { url as NSURL }
+    }
+}
+
+private struct VoiceRecordingOverlay: View {
+    @ObservedObject var speech: SpeechService
+    let cancelling: Bool
+    @ObservedObject var settings: AppSettings
+    private var tint: Color { cancelling ? Color(red: 0.96, green: 0.35, blue: 0.37) : HonorTheme.accent }
+    var body: some View {
+        VStack(spacing: 28) {
+            Spacer(minLength: 55)
+            Text(speech.isPreparingRecording ? settings.text("Подключаю микрофон…", "Starting microphone…") :
+                    speech.isFinalizingRecording ? settings.text("Распознаю…", "Finishing…") :
+                    cancelling ? settings.text("Отпустите для отмены", "Release to cancel") :
+                    settings.text("Отпустите, чтобы отправить, сдвиньте вверх для отмены", "Release to send, slide up to cancel"))
+                .font(.system(size: 14, weight: .medium)).foregroundStyle(HonorTheme.secondary)
+                .multilineTextAlignment(.center).frame(maxWidth: 340).padding(.horizontal, 20)
+            HStack(alignment: .center, spacing: 2.5) {
+                ForEach(0..<48, id: \.self) { index in
+                    let weight = 0.3 + 0.7 * abs(sin(Double(index) * 1.7))
+                    Capsule().fill(tint).frame(width: 2, height: 4 + 42 * speech.audioLevel * weight)
+                }
+            }.frame(height: 55)
+            Spacer(minLength: 35)
+        }
+        .frame(maxWidth: .infinity).frame(height: 260)
+        .background(LinearGradient(colors: [HonorTheme.background.opacity(0), HonorTheme.background.opacity(0.95),
+                                            cancelling ? Color(red: 0.21, green: 0.08, blue: 0.08) : Color(red: 0.15, green: 0.19, blue: 0.27)],
+                                   startPoint: .top, endPoint: .bottom))
+        .animation(.easeOut(duration: 0.14), value: cancelling)
+        .accessibilityIdentifier(cancelling ? "chat.voice.cancel.overlay" : "chat.voice.recording.overlay")
+    }
 }
