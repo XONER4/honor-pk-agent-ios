@@ -91,6 +91,40 @@ final class LiveIntegrationTests: XCTestCase {
         add(evidence)
     }
 
+    /// Проверка расширенных прав: модель должна уметь прочитать другой чат и ответить
+    /// по его содержимому. Это тот путь, который раньше ломался (сервис отвечал 400,
+    /// а на повторе модель снова просила вызов вместо ответа).
+    func testLiveModelReadsAnotherChatThroughTools() async throws {
+        let store = try configuredStore()
+        var other = Conversation(title: "Отпуск в Сочи")
+        var question = ChatMessage(role: .user, content: "Сколько дней мы отдыхали в Сочи?")
+        question.createdAt = Date().addingTimeInterval(-600)
+        var reply = ChatMessage(role: .assistant, content: "Мы отдыхали в Сочи 12 дней, с 3 по 15 августа.")
+        reply.createdAt = Date().addingTimeInterval(-590)
+        other.messages = [question, reply]
+        var current = Conversation(title: "Новый вопрос")
+        current.messages = [ChatMessage(role: .user, content: "Прочитай чат про отпуск и скажи, сколько дней мы отдыхали.")]
+        store.conversations = [current, other]
+        store.selectedConversationID = current.id
+        store.reasoningEnabled = false
+        store.draft = "Прочитай чат про отпуск и скажи, сколько дней мы отдыхали в Сочи."
+        store.send()
+        let start = Date()
+        while store.isGenerating && Date().timeIntervalSince(start) < 150 {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        if store.isGenerating { store.stop(); XCTFail("Ответ не пришёл за 150 секунд") }
+        let result = try XCTUnwrap(store.messages.last)
+        let trace = "HONER_TOOLS answer=[\(result.content.prefix(300))] error=\(result.error ?? "nil")"
+        print(trace)
+        XCTAssertNil(result.error, "Ошибка вместо ответа: \(result.error ?? "")")
+        XCTAssertGreaterThan(result.content.count, 20, "Пустой ответ: \(trace)")
+        let evidence = XCTAttachment(string: trace)
+        evidence.name = "live-tools"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+    }
+
     func testLiveEnglishAndChineseQuestionsStayRussian() async throws {
         let english = try await answer("Explain why the sky is blue in one sentence. Answer in English.", thinking: true)
         let needsTranslation = RussianTextPolicy.needsReasoningNormalization(english.reasoning)
