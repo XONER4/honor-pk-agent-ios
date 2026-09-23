@@ -163,6 +163,8 @@ final class HonorPKAgentTests: XCTestCase {
         store.send()
         for _ in 0..<50 where client.continuations.isEmpty { try await Task.sleep(nanoseconds: 5_000_000) }
         let firstID = try XCTUnwrap(store.selectedConversationID)
+        print("HONER-DIAG stop: continuations=\(client.continuations.count) generating=\(store.isGenerating) "
+            + "messages=\(store.messages.count) canSend=\(store.canSend) error=\(store.errorMessage ?? "nil")")
         let oldStream = try XCTUnwrap(client.continuations.first)
         oldStream.yield(.init(content: "Начало ответа."))
         try await Task.sleep(nanoseconds: 20_000_000)
