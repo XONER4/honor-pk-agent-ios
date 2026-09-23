@@ -89,6 +89,8 @@ final class LiveIntegrationTests: XCTestCase {
 
     func testLiveEnglishAndChineseQuestionsStayRussian() async throws {
         let english = try await answer("Explain why the sky is blue in one sentence. Answer in English.", thinking: true)
+        print("HONER_WHY_LOG \(DeepSeekClient.translationLog)")
+        print("HONER_WHY_TRANSLATED \(english.reasoningWasTranslated ?? false) needs=\(RussianTextPolicy.needsReasoningNormalization(english.reasoning))")
         print("HONER_WHY reasoning=[\(english.reasoning.prefix(400))]")
         print("HONER_WHY needsReasoning=\(RussianTextPolicy.needsNormalization(english.reasoning)) translated=\(english.reasoningWasTranslated ?? false)")
         XCTAssertTrue(english.content.lowercased().contains("свет") || english.content.lowercased().contains("рассе"))

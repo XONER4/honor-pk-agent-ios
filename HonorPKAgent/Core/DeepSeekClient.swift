@@ -52,6 +52,11 @@ extension RussianTextNormalizing {
     }
 }
 
+/// Журнал последних попыток перевода: помогает в тестах понять, какой шаг не прошёл.
+enum TranslationLog {
+    nonisolated(unsafe) static var text = ""
+}
+
 enum HonerIdentity {
     // Сырой строковый литерал (#"""): иначе Swift считает \frac, \sqrt, \sum и \int
     // недопустимыми escape-последовательностями и сборка падает.
@@ -553,26 +558,52 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
     func normalizeBoth(content: String, reasoning: String) async throws -> (content: String, reasoning: String) {
         let needsContent = RussianTextPolicy.needsNormalization(content)
         let needsReasoning = RussianTextPolicy.needsReasoningNormalization(reasoning)
+        TranslationLog.text = "both:content=\(needsContent) reasoning=\(needsReasoning) len=\(reasoning.count)"
         guard needsReasoning else {
             return (needsContent ? try await normalizeRussian(content, reasoning: false) : content, reasoning)
         }
         // Первый заход: перевод ответа и краткий русский пересказ рассуждения вместе.
-        if let combined = try? await combinedRequest(content: content, reasoning: reasoning),
-           !RussianTextPolicy.needsReasoningNormalization(combined.reasoning) {
-            return combined
+        do {
+            let combined = try await combinedRequest(content: content, reasoning: reasoning)
+            if !RussianTextPolicy.needsReasoningNormalization(combined.reasoning) {
+                TranslationLog.text += " | combined=ok(\(combined.reasoning.count))"
+                return combined
+            }
+            TranslationLog.text += " | combined=stillForeign"
+        } catch {
+            TranslationLog.text += " | combined=fail(\(error))"
         }
         // Второй заход: перевод ответа и пересказ рассуждения по отдельности.
-        // Нужен, когда общий ответ обрезался по лимиту длины.
         var answer = content
-        if needsContent, let translated = try? await normalizeRussian(content, reasoning: false) {
-            answer = translated
+        if needsContent {
+            do { answer = try await normalizeRussian(content, reasoning: false) }
+            catch { TranslationLog.text += " | content=fail(\(error))" }
         }
-        if let summary = try? await summarizeReasoning(reasoning),
-           !RussianTextPolicy.needsReasoningNormalization(summary) {
-            return (answer, summary)
+        do {
+            let summary = try await summarizeReasoning(reasoning)
+            if !RussianTextPolicy.needsReasoningNormalization(summary) {
+                TranslationLog.text += " | summary=ok(\(summary.count))"
+                return (answer, summary)
+            }
+            TranslationLog.text += " | summary=stillForeign"
+        } catch {
+            TranslationLog.text += " | summary=fail(\(error))"
+        }
+        // Третий заход: короткий русский пересказ небольшого фрагмента.
+        do {
+            let short = try await summarizeReasoning(String(reasoning.prefix(1200)))
+            if !RussianTextPolicy.needsReasoningNormalization(short) {
+                TranslationLog.text += " | short=ok(\(short.count))"
+                return (answer, short)
+            }
+            TranslationLog.text += " | short=stillForeign"
+        } catch {
+            TranslationLog.text += " | short=fail(\(error))"
         }
         throw HonorError.invalidResponse
     }
+
+
 
     /// Общий запрос: перевод ответа и краткий пересказ рассуждения в одном ответе.
     private func combinedRequest(content: String, reasoning: String) async throws -> (content: String, reasoning: String) {
