@@ -707,43 +707,67 @@ final class ChatStore: ObservableObject {
                         $0.content = rawContent
                         if !normalizeReasoning { $0.reasoning = rawReasoning }
                     }
-                    if normalizeContent {
-                        self.generationStatus = "Перевожу ответ на русский…"
+                    if normalizeContent && normalizeReasoning {
+                        // Ответ и длинное рассуждение переводим одним запросом: иначе
+                        // отдельный перевод рассуждения не проходит по длине и
+                        // пользователь видит английский текст.
+                        self.generationStatus = "Перевожу на русский…"
                         do {
-                            let translated = try await russianNormalizer.normalizeRussian(rawContent, reasoning: false)
+                            let pair = try await russianNormalizer.normalizeBoth(content: rawContent, reasoning: rawReasoning)
                             try Task.checkCancellation()
                             guard self.activeRunID == runID else { return }
-                            self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = translated }
+                            #if DEBUG
+                            print("HONER_WHY combined ok content=\(pair.content.count) reasoning=\(pair.reasoning.count)")
+                            #endif
+                            self.mutateMessage(chatID: chatID, messageID: response.id) {
+                                $0.content = pair.content
+                                $0.reasoning = pair.reasoning
+                                $0.reasoningWasTranslated = true
+                            }
                         } catch {
                             if Task.isCancelled { throw CancellationError() }
-                            // Перевод не удался — оставляем исходный ответ целиком.
-                            // Раньше на этом месте ответ мог подмениться обрывком перевода.
-                            self.mutateMessage(chatID: chatID, messageID: response.id) {
-                                if $0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                    $0.content = rawContent
+                            #if DEBUG
+                            print("HONER_WHY combined failed: \(error)")
+                            #endif
+                            // Не получилось одним запросом — пробуем по отдельности.
+                            await self.normalizeSeparately(normalizer: russianNormalizer, chatID: chatID,
+                                                           messageID: response.id, sourceContent: rawContent,
+                                                           sourceReasoning: rawReasoning,
+                                                           contentNeeded: normalizeContent,
+                                                           reasoningNeeded: normalizeReasoning, runID: runID)
+                        }
+                    } else {
+                        if normalizeContent {
+                            self.generationStatus = "Перевожу ответ на русский…"
+                            do {
+                                let translated = try await russianNormalizer.normalizeRussian(rawContent, reasoning: false)
+                                try Task.checkCancellation()
+                                guard self.activeRunID == runID else { return }
+                                self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = translated }
+                            } catch {
+                                if Task.isCancelled { throw CancellationError() }
+                                // Перевод не удался — оставляем исходный ответ целиком.
+                                self.mutateMessage(chatID: chatID, messageID: response.id) {
+                                    if $0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        $0.content = rawContent
+                                    }
                                 }
                             }
                         }
-                    }
-                    if normalizeReasoning {
-                        do {
-                            let translated = try await russianNormalizer.normalizeRussian(rawReasoning, reasoning: true)
-                            try Task.checkCancellation()
-                            guard self.activeRunID == runID else { return }
-                            #if DEBUG
-                            print("HONER_WHY applied translated len=\(translated.count) of \(rawReasoning.count)")
-                            #endif
-                            self.mutateMessage(chatID: chatID, messageID: response.id) { $0.reasoning = translated; $0.reasoningWasTranslated = true }
-                        } catch {
-                            if Task.isCancelled { throw CancellationError() }
-                            #if DEBUG
-                            print("HONER_WHY failed: \(error) sourceLen=\(rawReasoning.count)")
-                            #endif
-                            // Перевод не удался — оставляем исходный текст рассуждения,
-                            // а не заглушку: пользователь должен видеть, о чём думала модель.
-                            self.mutateMessage(chatID: chatID, messageID: response.id) {
-                                if $0.reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                    $0.reasoning = rawReasoning
+                        if normalizeReasoning {
+                            do {
+                                let translated = try await russianNormalizer.normalizeRussian(rawReasoning, reasoning: true)
+                                try Task.checkCancellation()
+                                guard self.activeRunID == runID else { return }
+                                self.mutateMessage(chatID: chatID, messageID: response.id) { $0.reasoning = translated; $0.reasoningWasTranslated = true }
+                            } catch {
+                                if Task.isCancelled { throw CancellationError() }
+                                // Перевод не удался — оставляем исходный текст рассуждения,
+                                // а не заглушку: пользователь должен видеть, о чём думала модель.
+                                self.mutateMessage(chatID: chatID, messageID: response.id) {
+                                    if $0.reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        $0.reasoning = rawReasoning
+                                    }
                                 }
                             }
                         }
@@ -839,6 +863,35 @@ final class ChatStore: ObservableObject {
     /// требует полного возврата reasoning_content, иначе API отвечает 400, а сам
     /// вызов обрывает поток на finish_reason=tool_calls и оставляет в чате одну букву.
     static let toolsEnabled = false
+
+    /// Запасной путь перевода: по частям, как было раньше. Нужен, если общий запрос
+    /// не прошёл — например, сервис оборвал ответ.
+    private func normalizeSeparately(normalizer: RussianTextNormalizing, chatID: UUID, messageID: UUID,
+                                     sourceContent: String, sourceReasoning: String,
+                                     contentNeeded: Bool, reasoningNeeded: Bool, runID: UUID) async {
+        if contentNeeded {
+            self.generationStatus = "Перевожу ответ на русский…"
+            if let translated = try? await normalizer.normalizeRussian(sourceContent, reasoning: false),
+               !Task.isCancelled, self.activeRunID == runID {
+                self.mutateMessage(chatID: chatID, messageID: messageID) { $0.content = translated }
+            }
+        }
+        if reasoningNeeded, !Task.isCancelled, self.activeRunID == runID {
+            if let translated = try? await normalizer.normalizeRussian(sourceReasoning, reasoning: true),
+               !Task.isCancelled, self.activeRunID == runID {
+                self.mutateMessage(chatID: chatID, messageID: messageID) {
+                    $0.reasoning = translated
+                    $0.reasoningWasTranslated = true
+                }
+            } else {
+                self.mutateMessage(chatID: chatID, messageID: messageID) {
+                    if $0.reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        $0.reasoning = sourceReasoning
+                    }
+                }
+            }
+        }
+    }
 
     /// Склеивает куски одного вызова инструмента. Куски одного вызова опознаются
     /// по index (он есть всегда), затем по id, затем по имени функции.
