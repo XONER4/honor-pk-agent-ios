@@ -311,7 +311,7 @@ enum MarkdownBlockParser {
             // Таблица GFM. Раньше распознавались только строки, начинающиеся с «|»,
             // поэтому таблицы без внешних палочек (`a | b` / `---|---`) и таблицы
             // с разделителем «+» не рисовались вовсе — вместо них был сырой текст.
-            if index + 1 < lines.count, let alignments = alignmentRow(lines[index + 1]),
+            if index + 1 < lines.count, let alignments = alignmentRow(lines[index + 1], header: trimmed),
                isTableHeader(trimmed) {
                 let headers = splitRow(trimmed)
                 var rows: [[String]] = []
@@ -502,14 +502,13 @@ enum MarkdownBlockParser {
         }
     }
 
-    /// Строка-шапка таблицы: содержит разделитель, не является строкой выравнивания
-    /// и несёт хотя бы одну ячейку с настоящим текстом. Строку из одних палочек или
-    /// пустых ячеек («| | |», «|||», «|---|») шапкой не считаем: именно из неё
-    /// получалась «таблица» без заголовков и без строк — пустая панель фильтра.
+    /// Строка-шапка таблицы: содержит разделитель, несёт настоящий текст и не является
+    /// строкой выравнивания. Строку из одних палочек или пустых ячеек («| | |», «|||»,
+    /// «|---|») шапкой не считаем: из неё получалась «таблица» без заголовков и строк.
     private static func isTableHeader(_ line: String) -> Bool {
         guard separator(line) != nil else { return false }
-        guard alignmentRow(line) == nil else { return false }
-        return splitRow(line).contains { hasText($0) }
+        guard splitRow(line).contains(where: { hasText($0) }) else { return false }
+        return alignmentRow(line, header: line) == nil
     }
 
     /// Строка таблицы без единого текста: все ячейки пустые или состоят только из
@@ -543,11 +542,18 @@ enum MarkdownBlockParser {
             .map { $0.replacingOccurrences(of: "\\|", with: "|").trimmingCharacters(in: .whitespaces) }
     }
 
-    private static func alignmentRow(_ line: String) -> [TableAlignment]? {
+    /// Строка выравнивания под шапкой.
+    /// `header` передаётся, чтобы отличить таблицу из одного столбца от обычного
+    /// разделителя `---`: у разделителя сверху нет текста, у таблицы есть.
+    private static func alignmentRow(_ line: String, header: String? = nil) -> [TableAlignment]? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard separator(trimmed) != nil, trimmed.contains("-") else { return nil }
         let cells = splitRow(trimmed)
-        guard !cells.isEmpty, cells.count >= 2 else { return nil }
+        // Один столбец — тоже таблица: «| Модель |» + «|---|» + «| iPhone |» раньше
+        // не распознавалась и выходила сырым текстом с палочками.
+        guard !cells.isEmpty, cells.count >= 2 || (header.map { splitRow($0).contains { hasText($0) } } ?? false) else {
+            return nil
+        }
         var result: [TableAlignment] = []
         for cell in cells {
             let dashes = cell.replacingOccurrences(of: " ", with: "")

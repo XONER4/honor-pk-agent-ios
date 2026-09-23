@@ -273,6 +273,18 @@ final class Honer10CoreTests: XCTestCase {
         // Строка-разделитель не должна попадать в ответ сырым текстом.
         let leaked = headerOnly.map(\.text).joined(separator: " ")
         XCTAssertFalse(leaked.contains("|---"), "Разделитель таблицы попал в текст ответа")
+        // Таблица из одного столбца: тоже должна распознаваться.
+        let single = MarkdownBlockParser.parse("| Модель |\n|---|\n| Motorola DynaTAC 8000X |\n| IBM Simon |")
+        if case .table(let singleHeaders, _, let singleRows)? = single.first?.kind {
+            XCTAssertEqual(singleHeaders, ["Модель"])
+            XCTAssertEqual(singleRows.count, 2)
+        } else { XCTFail("Таблица из одного столбца не распознана") }
+
+        // А обычный разделитель --- таблицей быть не должен.
+        let dividerOnly = MarkdownBlockParser.parse("Текст\n\n---\n\nЕщё текст")
+        XCTAssertFalse(dividerOnly.contains { if case .table = $0.kind { return true } else { return false } },
+                       "Разделитель --- не должен становиться таблицей")
+
         // Настоящая таблица по-прежнему распознаётся.
         let real = MarkdownBlockParser.parse("| Модель | Год |\n|---|---|\n| Motorola DynaTAC 8000X | 1983 |")
         guard case .table(let realHeaders, _, let realRows)? = real.first?.kind else {
