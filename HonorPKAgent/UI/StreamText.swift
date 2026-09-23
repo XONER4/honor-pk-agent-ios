@@ -2179,14 +2179,13 @@ struct MarkdownTableView: View {
             if sortColumn == index { sortAscending.toggle() } else { sortColumn = index; sortAscending = true }
         } label: {
             VStack(alignment: .leading, spacing: 2) {
-                Text(index < headers.count ? headers[index] : "")
+                (Text(index < headers.count ? headers[index] : "")
                     .font(.system(size: fontSize * 0.9, weight: .semibold))
+                 + Text(sortColumn == index ? (sortAscending ? " ↑" : " ↓") : "")
+                    .font(.system(size: fontSize * 0.8, weight: .bold))
+                    .foregroundColor(HonorTheme.accent))
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(textAlignment(alignment(index)))
-                if sortColumn == index {
-                    Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                }
             }
             .frame(maxWidth: .infinity, alignment: frameAlignment(alignment(index)))
             .padding(.horizontal, 5).padding(.vertical, 7)
@@ -2204,11 +2203,15 @@ struct MarkdownTableView: View {
         return Array(rows.prefix(rowLimit))
     }
 
-    /// Текст ячейки с поддержкой **жирного**, `кода` и подсветки поиска.
+    /// Текст ячейки: **жирный**, `код`, ссылки, а также цветной текст, подсветка
+    /// и спойлер из расширенной разметки приложения. Раньше ячейка понимала только
+    /// обычный Markdown, поэтому `{color:red}` и `==маркер==` внутри таблиц
+    /// показывались как есть.
     private func cellText(_ value: String) -> some View {
-        let attributed = (try? AttributedString(markdown: value,
+        var attributed = (try? AttributedString(markdown: value,
                                                 options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(value)
+        attributed = InlineStyleParser.apply(to: attributed)
         return Text(highlighted(attributed, query: findQuery))
             .font(.system(size: fontSize * 0.92))
             .fixedSize(horizontal: false, vertical: true)
@@ -2223,8 +2226,13 @@ struct MarkdownTableView: View {
                     if sortColumn == index { sortAscending.toggle() } else { sortColumn = index; sortAscending = true }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(index < headers.count ? headers[index] : "")
+                        // У столбца без заголовка рисуем «—», как в строках данных:
+                        // иначе шапка и тело выглядели по-разному и сетка «съезжала».
+                        Text(index < headers.count && !headers[index].isEmpty ? headers[index] : "—")
                             .font(.system(size: fontSize * 0.92, weight: .semibold))
+                            .foregroundStyle(index < headers.count && !headers[index].isEmpty
+                                             ? (sortColumn == index ? HonorTheme.accent : HonorTheme.foreground)
+                                             : HonorTheme.secondary)
                             .multilineTextAlignment(textAlignment(alignment(index)))
                             .fixedSize(horizontal: false, vertical: true)
                         if sortColumn == index {

@@ -42,6 +42,14 @@ struct WebSource: Identifiable, Codable, Equatable, Sendable {
     var snippet: String
     var content: String? = nil
     var fetchedAt: Date? = nil
+    /// Разметка прочитанной страницы. Нужна, чтобы достать ссылки на изображения
+    /// и предложить модели показать подходящую картинку в ответе.
+    /// В сохранённую историю не пишется: она слишком объёмная.
+    var rawHTML: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, url, snippet, content, fetchedAt
+    }
 }
 
 struct ChatMessage: Identifiable, Codable, Equatable, Sendable {

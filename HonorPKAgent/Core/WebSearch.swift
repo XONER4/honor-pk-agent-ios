@@ -120,6 +120,9 @@ struct WebSearchClient: WebSearching {
                         let text = WebPageText.extract(html)
                         if text.count >= 100 && !WebPageText.looksLikeChallenge(text) {
                             source.content = String(text.prefix(9000)); source.fetchedAt = Date()
+                            // Разметку держим только до конца этого запроса: из неё берутся
+                            // ссылки на изображения для ответа модели.
+                            source.rawHTML = String(html.prefix(400_000))
                             source.url = document.url
                             if let title = WebPageText.title(html) { source.title = title }
                         }
@@ -154,10 +157,28 @@ struct WebSearchClient: WebSearching {
     }
 
     static func context(_ sources: [WebSource]) -> String {
-        sources.enumerated().map { index, source in
+        // Собираем ссылки на изображения со всех найденных страниц: модель может
+        // показать подходящую картинку в ответе строкой ![подпись](ссылка).
+        var images: [String] = []
+        var seen = Set<String>()
+        for source in sources {
+            guard let html = source.rawHTML else { continue }
+            for url in WebPageText.imageURLs(in: html, base: source.url).prefix(4) where seen.insert(url.absoluteString).inserted {
+                images.append(url.absoluteString)
+            }
+        }
+        let body = sources.enumerated().map { index, source in
             let provenance = source.content == nil ? "Только поисковая выдержка; страница не прочитана." : "Страница/структурированные данные получены: \(source.fetchedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "в этом запросе")."
             return "[\(index + 1)] \(source.title)\nURL: \(source.url.absoluteString)\n\(provenance)\n\(source.content ?? source.snippet)"
         }.joined(separator: "\n\n")
+        guard !images.isEmpty else { return body }
+        let list = images.prefix(12).map { "- \($0)" }.joined(separator: "\n")
+        return body + """
+
+
+        Изображения на прочитанных страницах. Если по теме ответа уместна картинка, вставь её в ответ строкой ![короткая подпись](ссылка) — приложение покажет изображение прямо в чате. Бери только ссылки из списка ниже, не выдумывай адреса. Если ничего не подходит, изображения не добавляй.
+        \(list)
+        """
     }
 }
 
@@ -252,6 +273,48 @@ enum WebPageText {
             let value = String(text[range]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;!?)"))
             guard let url = URL(string: value), isPublicWebURL(url) else { return nil }
             return url
+        }
+    }
+
+    /// Ссылки на изображения со страницы: og:image, twitter:image и обычные <img>.
+    /// Нужны, чтобы модель могла показать подходящую картинку прямо в ответе.
+    static func imageURLs(in html: String, base: URL) -> [URL] {
+        var result: [URL] = []
+        var seen = Set<String>()
+        func append(_ raw: String) {
+            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty, !value.hasPrefix("data:") else { return }
+            guard let url = URL(string: value, relativeTo: base)?.absoluteURL,
+                  ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+                  isPublicWebURL(url),
+                  seen.insert(url.absoluteString).inserted else { return }
+            let lowered = url.absoluteString.lowercased()
+            // Иконки, логотипы и трекеры в ответе не нужны.
+            guard !lowered.contains("logo"), !lowered.contains("icon"), !lowered.contains("sprite"),
+                  !lowered.contains("pixel"), !lowered.contains("avatar") else { return }
+            result.append(url)
+        }
+        for pattern in ["(?i)<meta[^>]+(?:property|name)=[\"'](?:og:image|twitter:image)[\"'][^>]+content=[\"']([^\"']+)[\"']",
+                        "(?i)<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+(?:property|name)=[\"'](?:og:image|twitter:image)[\"']"] {
+            guard let expression = try? NSRegularExpression(pattern: pattern) else { continue }
+            let range = NSRange(html.startIndex..., in: html)
+            for match in expression.matches(in: html, range: range) {
+                guard let valueRange = Range(match.range(at: 1), in: html) else { continue }
+                append(String(html[valueRange]))
+            }
+        }
+        if let expression = try? NSRegularExpression(pattern: "(?i)<img[^>]+src=[\"']([^\"']+)[\"']") {
+            let range = NSRange(html.startIndex..., in: html)
+            for match in expression.matches(in: html, range: range) {
+                guard let valueRange = Range(match.range(at: 1), in: html) else { continue }
+                append(String(html[valueRange]))
+            }
+        }
+        // Только форматы изображений: ссылки на скрипты и стили отбрасываем.
+        return result.filter { url in
+            let path = url.path.lowercased()
+            return path.hasSuffix(".jpg") || path.hasSuffix(".jpeg") || path.hasSuffix(".png")
+                || path.hasSuffix(".webp") || path.hasSuffix(".gif") || path.hasSuffix(".heic")
         }
     }
 
