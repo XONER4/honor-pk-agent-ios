@@ -1014,6 +1014,7 @@ private struct MessageTimeline: View {
             MessageRow(message: message,
                        streaming: store.isGenerating && message.id == tail?.id,
                        status: store.generationStatus,
+                       live: store.live,
                        settings: settings,
                        findQuery: findQuery,
                        selectedMatch: selectedMatch == message.id,
@@ -1147,6 +1148,9 @@ private struct MessageRow: View, Equatable {
     let message: ChatMessage
     let streaming: Bool
     let status: String?
+    /// Живой буфер печатаемого ответа: пока строка печатается, текст берётся отсюда,
+    /// поэтому перерисовывается только она, а не весь список сообщений.
+    @ObservedObject var live: StreamBuffer
     @ObservedObject var settings: AppSettings
     let findQuery: String
     let selectedMatch: Bool
@@ -1170,6 +1174,23 @@ private struct MessageRow: View, Equatable {
     static let reactionEmojis = ["👍", "🔥", "❤️", "😂", "🤔", "👀", "✅", "❌", "💡", "🎯", "🙏", "😮"]
 
     private func text(_ ru: String, _ en: String) -> String { settings.text(ru, en) }
+
+    /// Текст ответа для показа: пока строка печатается, берём его из живого буфера
+    /// (модель чата обновляется редко — так не перерисовывается весь список).
+    private var visibleContent: String {
+        if streaming, message.content.isEmpty { return live.content }
+        return message.content
+    }
+
+    /// Текст рассуждения для показа — по тому же принципу.
+    private var visibleReasoning: String {
+        if streaming, message.reasoning.isEmpty { return live.reasoning }
+        return message.reasoning
+    }
+
+    private var visibleReasoningSeconds: Int {
+        max(message.reasoningSeconds, live.reasoningSeconds)
+    }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.message == rhs.message && lhs.streaming == rhs.streaming && lhs.status == rhs.status &&
@@ -1248,12 +1269,12 @@ private struct MessageRow: View, Equatable {
 
     private var assistantMessage: some View {
         VStack(alignment: .leading, spacing: 13) {
-            if !message.reasoning.isEmpty || (streaming && message.content.isEmpty) {
+            if !visibleReasoning.isEmpty || (streaming && visibleContent.isEmpty) {
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) { reasoningOpen.toggle() }
                 } label: {
                     HStack(spacing: 7) {
-                        if streaming && message.content.isEmpty { ProgressView().scaleEffect(0.7).tint(HonorTheme.secondary) }
+                        if streaming && visibleContent.isEmpty { ProgressView().scaleEffect(0.7).tint(HonorTheme.secondary) }
                         Text(reasoningTitle).font(.system(size: 17 * settings.fontScale * dynamicScale, weight: .medium))
                         Image(systemName: reasoningOpen ? "chevron.down" : "chevron.right").font(.system(size: 12, weight: .medium))
                     }
@@ -1266,7 +1287,7 @@ private struct MessageRow: View, Equatable {
                 .accessibilityHint(text("Открыть или свернуть рассуждение", "Expand or collapse reasoning"))
                 .accessibilityIdentifier("message.reasoning." + message.id.uuidString)
                 .accessibilityValue(text(reasoningOpen ? "Развёрнуто" : "Свёрнуто", reasoningOpen ? "Expanded" : "Collapsed"))
-                if reasoningOpen && !message.reasoning.isEmpty {
+                if reasoningOpen && !visibleReasoning.isEmpty {
                     if message.reasoningWasTranslated == true {
                         Text(text("Переведено на русский", "Translated into Russian"))
                             .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
@@ -1279,7 +1300,7 @@ private struct MessageRow: View, Equatable {
                             .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
                             .accessibilityIdentifier("message.reasoning.foreign." + message.id.uuidString)
                     }
-                    StreamText(target: message.reasoning, streaming: streaming, baseRate: 42) { visible in
+                    StreamText(target: visibleReasoning, streaming: streaming, baseRate: 42) { visible in
                         BlockMarkdownView(content: visible, fontSize: 14 * settings.fontScale * dynamicScale,
                                           sources: [], findQuery: findQuery)
                             .foregroundStyle(HonorTheme.secondary)
@@ -1290,11 +1311,11 @@ private struct MessageRow: View, Equatable {
                 }
                 if reasoningOpen && !message.sources.isEmpty { sourceProgress }
             }
-            if !message.content.isEmpty {
+            if !visibleContent.isEmpty {
                 // Плавный посимвольный вывод: текст растёт по кадрам, а не рывками
                 // на каждом обновлении стрима.
                 // Размер текста увеличен до 19 pt: на 17 pt ответ читался мелко.
-                StreamText(target: message.content, streaming: streaming, baseRate: 30) { visible in
+                StreamText(target: visibleContent, streaming: streaming, baseRate: 30) { visible in
                     BlockMarkdownView(content: visible, fontSize: 19 * settings.fontScale * dynamicScale,
                                       sources: message.sources, findQuery: findQuery,
                                       onAnswer: onAnswer)
@@ -1471,9 +1492,9 @@ private struct MessageRow: View, Equatable {
     }
 
     private var reasoningTitle: String {
-        if streaming && message.content.isEmpty { return status ?? text("Размышляет…", "Thinking…") }
+        if streaming && visibleContent.isEmpty { return status ?? text("Размышляет…", "Thinking…") }
         if message.reasoningWasTranslated == true { return text("Описание рассуждения · перевод", "Reasoning description · translation") }
-        let seconds = max(message.reasoningSeconds, 1)
+        let seconds = max(visibleReasoningSeconds, 1)
         let ending: String
         let last = seconds % 10, lastTwo = seconds % 100
         if last == 1 && lastTwo != 11 { ending = "секунду" }
@@ -1535,7 +1556,7 @@ struct ChatInfoSheet: View {
                 Section("Устройство и приложение") {
                     LabeledContent("Модель iPhone", value: DeviceModel.name)
                     LabeledContent("Система", value: DeviceModel.systemDescription)
-                    LabeledContent("Приложение", value: "Honer AI 10.14")
+                    LabeledContent("Приложение", value: "Honer AI 10.15")
                     LabeledContent("Язык интерфейса", value: settings.language == .russian ? "Русский" : "English")
                     LabeledContent("Оформление", value: appearanceName)
                 }

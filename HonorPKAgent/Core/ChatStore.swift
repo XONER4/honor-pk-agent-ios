@@ -3,6 +3,18 @@ import Combine
 import UIKit
 
 @MainActor
+/// Живой буфер печатаемого ответа.
+///
+/// Зачем отдельный объект: если писать текст в модель чата на каждом куске потока,
+/// SwiftUI перерисовывает весь список сообщений — на длинных ответах и больших
+/// переписках это выглядит как зависание. Здесь обновляется только последняя строка.
+@MainActor
+final class StreamBuffer: ObservableObject {
+    @Published var content = ""
+    @Published var reasoning = ""
+    @Published var reasoningSeconds = 0
+}
+
 final class ChatStore: ObservableObject {
     @Published var conversations: [Conversation] = []
     @Published var selectedConversationID: UUID?
@@ -80,6 +92,12 @@ final class ChatStore: ObservableObject {
     var archivedConversations: [Conversation] { conversations.filter { $0.archivedAt != nil }.sorted { ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast) } }
     var messages: [ChatMessage] { selectedConversation?.messages ?? [] }
     var hasAPIKey: Bool { !configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// Живой буфер печатаемого ответа. Обновляется отдельно от модели чата, поэтому
+    /// при каждом куске текста перерисовывается только последняя строка, а не весь
+    /// список сообщений. Раньше обновлялась модель и перерисовывался весь чат — это и
+    /// давало «зависания» на длинных ответах и в больших переписках.
+    let live = StreamBuffer()
 
     /// Клиент для самопроверки связи. Есть только у настоящего клиента:
     /// у тестовых заглушек его нет, и проверка просто не запускается.
@@ -323,6 +341,15 @@ final class ChatStore: ObservableObject {
     func stop() {
         guard isGenerating else { return }
         flushStreamingBuffer?()
+        // Переносим напечатанное в модель чата: пользователь нажал «остановить»,
+        // ответ должен остаться в переписке и сохраниться в истории.
+        if let chatID = activeConversationID, let messageID = activeMessageID,
+           !live.content.isEmpty || !live.reasoning.isEmpty {
+            mutateMessage(chatID: chatID, messageID: messageID) {
+                if !self.live.content.isEmpty { $0.content = self.live.content }
+                if !self.live.reasoning.isEmpty { $0.reasoning = self.live.reasoning }
+            }
+        }
         flushStreamingBuffer = nil
         generationTask?.cancel()
         generationTask = nil
@@ -611,12 +638,20 @@ final class ChatStore: ObservableObject {
                     let reasoningChanged = !pendingReasoning.isEmpty
                     rawContent += pendingContent
                     rawReasoning += pendingReasoning
-                    self.mutateMessage(chatID: chatID, messageID: response.id) {
-                        if contentChanged { $0.content = rawContent }
-                        if reasoningChanged { $0.reasoning = rawReasoning }
-                        $0.reasoningSeconds = seconds
-                    }
+                    // Печатаемый текст идёт в отдельный буфер: перерисовывается только
+                    // последняя строка. Модель чата обновляем редко — по таймеру ниже.
+                    if contentChanged { self.live.content = rawContent }
+                    if reasoningChanged { self.live.reasoning = rawReasoning }
+                    self.live.reasoningSeconds = seconds
                     pendingContent = ""; pendingReasoning = ""; lastPublished = Date()
+                }
+                /// Переносит накопленный текст в модель чата: нужно для сохранения
+                /// истории, но делать это на каждом куске нельзя — перерисовывается
+                /// весь список сообщений.
+                @MainActor func publishToModel() {
+                    self.mutateMessage(chatID: chatID, messageID: response.id) {
+                        $0.reasoningSeconds = self.live.reasoningSeconds
+                    }
                 }
                 self.flushStreamingBuffer = { [weak self] in
                     guard self?.activeRunID == runID else { return }
@@ -718,6 +753,13 @@ final class ChatStore: ObservableObject {
                     }
                 }
                 guard self.activeRunID == runID else { return }
+                // Поток закончился: переносим напечатанный текст в модель чата —
+                // дальше с ним работают перевод, сохранение и проверки.
+                self.mutateMessage(chatID: chatID, messageID: response.id) {
+                    $0.content = rawContent
+                    $0.reasoning = rawReasoning
+                    $0.reasoningSeconds = self.live.reasoningSeconds
+                }
                 if let russianNormalizer {
                     let normalizeContent = RussianTextPolicy.needsNormalization(rawContent)
                     let normalizeReasoning = RussianTextPolicy.needsReasoningNormalization(rawReasoning)
@@ -893,6 +935,10 @@ final class ChatStore: ObservableObject {
             self.isGenerating = false
             self.generationStatus = nil
             self.generationTask = nil
+            // Живой буфер больше не нужен: текст уже перенесён в модель чата.
+            self.live.content = ""
+            self.live.reasoning = ""
+            self.live.reasoningSeconds = 0
             let delivered = self.conversations.first(where: { $0.id == chatID })?
                 .messages.first(where: { $0.id == response.id })
             if !(delivered?.content.isEmpty ?? true) {
@@ -938,7 +984,7 @@ final class ChatStore: ObservableObject {
         return ToolExecutionContext(
             deviceModel: DeviceModel.name,
             systemVersion: UIDevice.current.systemVersion,
-            appVersion: "10.14",
+            appVersion: "10.15",
             messageCount: messages.count,
             voiceMessageCount: messages.filter { $0.inputKind == .voice }.count,
             chatStartedAt: selectedConversation?.createdAt,
