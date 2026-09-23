@@ -1,3 +1,4 @@
+import AVKit
 import SwiftUI
 import UIKit
 import QuickLook
@@ -865,6 +866,9 @@ private struct MessageTimeline: View {
                        onFeedback: { (value: MessageFeedback?) in
                            store.setFeedback(messageID: message.id, feedback: value)
                        },
+                       onReaction: { (emoji: String?) in
+                           store.setReaction(messageID: message.id, emoji: emoji)
+                       },
                        onMenu: onMenu)
                 .equatable()
                 .id(message.id.uuidString)
@@ -930,9 +934,14 @@ private struct MessageRow: View, Equatable {
     let onRetry: () -> Void
     let onEdit: () -> Void
     let onFeedback: (MessageFeedback?) -> Void
+    let onReaction: (String?) -> Void
+    let onReaction: (String?) -> Void
     let onMenu: (ChatMessage) -> Void
     @State private var reasoningOpen = false
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
+
+    /// Набор эмодзи для реакции на сообщение.
+    static let reactionEmojis = ["👍", "🔥", "❤️", "😂", "🤔", "👀", "✅", "❌", "💡", "🎯", "🙏", "😮"]
 
     private func text(_ ru: String, _ en: String) -> String { settings.text(ru, en) }
 
@@ -1028,7 +1037,12 @@ private struct MessageRow: View, Equatable {
                 // на каждом обновлении стрима.
                 StreamText(target: message.content, streaming: streaming, baseRate: 58) { visible in
                     BlockMarkdownView(content: visible, fontSize: 17 * settings.fontScale * dynamicScale,
-                                      sources: message.sources, findQuery: findQuery)
+                                      sources: message.sources, findQuery: findQuery,
+                                      onAnswer: { answer in
+                                          // Ответ на вопрос агента уходит как обычное сообщение (пункт 33).
+                                          store.draft = answer
+                                          store.send(inputKind: .suggestion)
+                                      })
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(message.content)
@@ -1063,6 +1077,23 @@ private struct MessageRow: View, Equatable {
             }
             if !streaming && !message.content.isEmpty {
                 HStack(spacing: 0) {
+                    // Реакция-эмодзи: пользователь ставит её на ответ агента,
+                    // агент видит её в контексте следующего запроса (пункт 38 ТЗ).
+                    Menu {
+                        ForEach(Self.reactionEmojis, id: \.self) { emoji in
+                            Button(emoji) { onReaction(message.reaction == emoji ? nil : emoji) }
+                        }
+                        if message.reaction != nil {
+                            Button(text("Убрать реакцию", "Remove reaction"), role: .destructive) { onReaction(nil) }
+                        }
+                    } label: {
+                        Text(message.reaction ?? "☺︎")
+                            .font(.system(size: message.reaction == nil ? 15 : 17))
+                            .frame(width: 40, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(text("Реакция", "Reaction"))
+                    .accessibilityIdentifier("message.reaction." + message.id.uuidString)
                     HonorActionButton(symbol: "square.on.square", label: text("Копировать", "Copy")) { onCopy(message.content) }
                         .accessibilityIdentifier("message.action.copy." + message.id.uuidString)
                     HonorActionButton(symbol: message.feedback == .like ? "hand.thumbsup.fill" : "hand.thumbsup",
@@ -1653,7 +1684,7 @@ private struct SelectableTextSheet: View {
                 .navigationTitle(settings.text("Выбрать текст", "Select text"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
+                    ToolbarItem(placement: .navigationBarLeading) {
                         Button {
                             UIPasteboard.general.string = content
                         } label: {
@@ -1885,7 +1916,22 @@ private struct AttachmentPreviewSheet: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let url = attachment.resolvedURL {
+                if attachment.kind == .video, let url = attachment.resolvedURL {
+                    // Видео со звуком: свой плеер вместо простого просмотра файла (пункт 31).
+                    VideoPlayer(player: AVPlayer(url: url))
+                        .ignoresSafeArea(edges: .bottom)
+                        .accessibilityIdentifier("attachment.preview.video")
+                } else if let url = attachment.resolvedURL, attachment.kind == .image,
+                          let image = UIImage(contentsOfFile: url.path) {
+                    ScrollView([.horizontal, .vertical]) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity)
+                            .padding(16)
+                    }
+                    .accessibilityIdentifier("attachment.preview.image")
+                } else if let url = attachment.resolvedURL {
                     OriginalFilePreview(url: url).accessibilityIdentifier("attachment.preview.original")
                 } else if !attachment.extractedText.isEmpty {
                     ScrollView { Text(attachment.extractedText).textSelection(.enabled).padding(20) }
@@ -1896,10 +1942,10 @@ private struct AttachmentPreviewSheet: View {
                 }
             }.navigationTitle(attachment.name).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
+                    ToolbarItem(placement: .navigationBarLeading) {
                         Button(settings.text("Готово", "Done")) { dismiss() }.accessibilityIdentifier("attachment.preview.close")
                     }
-                    ToolbarItem(placement: .confirmationAction) {
+                    ToolbarItem(placement: .navigationBarTrailing) {
                         if let url = attachment.resolvedURL {
                             ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
                                 .accessibilityLabel(settings.text("Поделиться оригиналом", "Share original"))

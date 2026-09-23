@@ -379,6 +379,21 @@ final class ChatStore: ObservableObject {
         saveSnapshot()
     }
 
+    /// Реакция-эмодзи на сообщение (пункт 38 ТЗ). Агент видит реакцию
+    /// пользователя на свой прошлый ответ и учитывает её.
+    func setReaction(messageID: UUID, emoji: String?) {
+        guard let chatID = selectedConversationID else { return }
+        mutateMessage(chatID: chatID, messageID: messageID) { $0.reaction = emoji }
+        saveSnapshot()
+    }
+
+    /// Реакция агента на сообщение пользователя.
+    func setAssistantReaction(messageID: UUID, emoji: String?) {
+        guard let chatID = selectedConversationID else { return }
+        mutateMessage(chatID: chatID, messageID: messageID) { $0.assistantReaction = emoji }
+        saveSnapshot()
+    }
+
     /// Инструкция для конкретного чата (пункт «Промт чата» в меню трёх точек).
     func setChatPrompt(id: UUID, prompt: String) {
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }

@@ -98,8 +98,22 @@ enum MarkdownBlockKind: Equatable {
     case code(language: String)
     case copyBlock
     case card(style: String, title: String)
+    case ask([QuickQuestion])
     case table(headers: [String], alignments: [TableAlignment], rows: [[String]])
     case divider
+}
+
+/// Вопрос с вариантами ответов, который агент задаёт пользователю (пункт 33).
+struct QuickQuestion: Identifiable, Equatable {
+    let id = UUID()
+    let text: String
+    let options: [String]
+    /// Разрешить свой вариант ответа.
+    let allowsCustom: Bool
+
+    static func == (lhs: QuickQuestion, rhs: QuickQuestion) -> Bool {
+        lhs.text == rhs.text && lhs.options == rhs.options && lhs.allowsCustom == rhs.allowsCustom
+    }
 }
 
 struct ChecklistItem: Equatable {
@@ -151,6 +165,10 @@ enum MarkdownBlockParser {
                 let marker = language.lowercased()
                 if marker == "copy" {
                     blocks.append(MarkdownBlockModel(id: blocks.count, kind: .copyBlock, text: blockBody))
+                } else if marker == "ask" || marker == "questions" {
+                    blocks.append(MarkdownBlockModel(id: blocks.count,
+                                                     kind: .ask(Self.parseQuestions(blockBody)),
+                                                     text: blockBody))
                 } else if marker.hasPrefix("card") {
                     let style = marker.contains(":")
                         ? String(marker.split(separator: ":").last ?? "info")
@@ -257,8 +275,37 @@ enum MarkdownBlockParser {
         return blocks
     }
 
-    private static func isDivider(_ line: String) -> Bool {
-        let stripped = line.replacingOccurrences(of: " ", with: "")
+    /// Разбор блока ```ask — до 30 вопросов с вариантами.
+    /// Формат: `? Вопрос` и ниже строки вариантов, начиная с `- `.
+    /// `+` вместо `?` означает «разрешить свой вариант ответа».
+    static func parseQuestions(_ body: String) -> [QuickQuestion] {
+        var result: [QuickQuestion] = []
+        var current: (text: String, options: [String], custom: Bool)?
+        for rawLine in body.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { continue }
+            if line.hasPrefix("?") || line.hasPrefix("+") {
+                if let current { result.append(QuickQuestion(text: current.text, options: current.options,
+                                                             allowsCustom: current.custom)) }
+                let custom = line.hasPrefix("+")
+                let text = String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
+                current = (text, [], custom)
+            } else if line.hasPrefix("-") || line.hasPrefix("*") {
+                guard current != nil else { continue }
+                let option = String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
+                if !option.isEmpty { current?.options.append(option) }
+            } else if current != nil && current?.options.isEmpty == true {
+                // продолжение текста вопроса
+                current?.text += " " + line
+            }
+            if result.count >= 30 { break }
+        }
+        if let current { result.append(QuickQuestion(text: current.text, options: current.options,
+                                                     allowsCustom: current.custom)) }
+        return Array(result.prefix(30))
+    }
+
+    private static func isDivider(_ line: String) -> Bool {        let stripped = line.replacingOccurrences(of: " ", with: "")
         guard stripped.count >= 3 else { return false }
         return stripped.allSatisfy { $0 == "-" } || stripped.allSatisfy { $0 == "*" } || stripped.allSatisfy { $0 == "_" }
     }
@@ -398,12 +445,14 @@ struct BlockMarkdownView: View {
     let fontSize: Double
     let sources: [WebSource]
     let findQuery: String
+    /// Нажатие варианта ответа в блоке ```ask (пункт 33).
+    var onAnswer: ((String) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(MarkdownBlockParser.parse(content)) { block in
                 MarkdownBlockView(block: block, fontSize: fontSize,
-                                  sources: sources, findQuery: findQuery)
+                                  sources: sources, findQuery: findQuery, onAnswer: onAnswer)
             }
         }
     }
@@ -416,6 +465,7 @@ private struct MarkdownBlockView: View {
     let fontSize: Double
     let sources: [WebSource]
     let findQuery: String
+    var onAnswer: ((String) -> Void)? = nil
 
     var body: some View {
         Group {
@@ -439,6 +489,10 @@ private struct MarkdownBlockView: View {
             case .card(let style, _):
                 CardBlockView(style: style, cardText: block.text, fontSize: fontSize,
                               sources: sources, findQuery: findQuery)
+            case .ask(let questions):
+                QuestionsCardView(questions: questions, fontSize: fontSize) { answer in
+                    onAnswer?(answer)
+                }
             case .table(let headers, let alignments, let rows):
                 MarkdownTableView(headers: headers, alignments: alignments, rows: rows,
                                   fontSize: fontSize, findQuery: findQuery)
@@ -622,6 +676,82 @@ enum InlineStyleParser {
             replacement.foregroundColor = color
         }
         value.replaceSubrange(lower..<upper, with: replacement)
+    }
+}
+
+/// Карточка с вопросами и вариантами ответов (пункт 33): до 30 вопросов за раз.
+/// Нажатие варианта отправляет ответ в чат; при `+` можно написать свой вариант.
+struct QuestionsCardView: View {
+    let questions: [QuickQuestion]
+    let fontSize: Double
+    let onAnswer: (String) -> Void
+
+    @State private var customDrafts: [UUID: String] = [:]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(questions.enumerated()), id: \.element.id) { index, question in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("\(index + 1). \(question.text)")
+                        .font(.system(size: fontSize, weight: .semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    ForEach(question.options, id: \.self) { option in
+                        Button {
+                            onAnswer(option)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "circle")
+                                    .font(.system(size: 12))
+                                Text(option)
+                                    .font(.system(size: fontSize * 0.95))
+                                    .multilineTextAlignment(.leading)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: 38)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(HonorTheme.raised, in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(HonorTheme.foreground)
+                        .accessibilityIdentifier("question.option." + option)
+                    }
+                    if question.allowsCustom {
+                        HStack(spacing: 8) {
+                            TextField("Свой вариант", text: Binding(
+                                get: { customDrafts[question.id] ?? "" },
+                                set: { customDrafts[question.id] = $0 }))
+                                .font(.system(size: fontSize * 0.95))
+                                .textFieldStyle(.plain)
+                                .padding(.horizontal, 12)
+                                .frame(minHeight: 38)
+                                .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.7))
+                            Button {
+                                let value = (customDrafts[question.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard !value.isEmpty else { return }
+                                onAnswer(value)
+                                customDrafts[question.id] = ""
+                            } label: {
+                                Image(systemName: "arrow.up")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .frame(width: 34, height: 34)
+                                    .background(HonorTheme.accent, in: Circle())
+                                    .foregroundStyle(.white)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("question.custom.send")
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(HonorTheme.accent.opacity(0.35), lineWidth: 0.8))
+        .accessibilityIdentifier("message.questions")
     }
 }
 

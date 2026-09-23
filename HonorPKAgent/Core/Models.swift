@@ -59,8 +59,10 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     var reasoningWasTranslated: Bool? = nil
     /// Как сообщение попало в чат: набрано текстом, наговорено голосом или выбрано из подсказки.
     var inputKind: MessageInputKind = .text
-    /// Реакция пользователя или агента эмодзи.
+    /// Реакция пользователя на это сообщение (эмодзи).
     var reaction: String? = nil
+    /// Реакция агента на сообщение пользователя (эмодзи).
+    var assistantReaction: String? = nil
 
     /// Устойчивый идентификатор для прокрутки к сообщению.
     var anchorID: String { "message-anchor-" + id.uuidString }
