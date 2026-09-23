@@ -6,6 +6,8 @@ struct HonorPKAgentApp: App {
     @StateObject private var settings: AppSettings
     @StateObject private var store: ChatStore
     @State private var didConfigure = false
+    /// Начало текущей сессии — для статистики времени в приложении.
+    @State private var sessionStartedAt: Date?
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -48,14 +50,37 @@ struct HonorPKAgentApp: App {
                 didConfigure = true
                 store.systemInstruction = settings.customInstructions
                 store.profileName = settings.displayName
+                // Автоудаление старых чатов по настройке (пункт 40).
+                if settings.autoDeleteDays > 0 {
+                    store.purgeOldChats(olderThan: settings.autoDeleteDays)
+                }
+                sessionStartedAt = Date()
+                if settings.notificationsEnabled {
+                    NotificationCenterService.shared.configure()
+                }
                 #if DEBUG
                 UITestSupport.seedIfNeeded(store: store)
                 #endif
             }
             .onChange(of: settings.customInstructions) { store.systemInstruction = $0 }
             .onChange(of: settings.displayName) { store.profileName = $0 }
+            .onChange(of: settings.notificationsEnabled) { (enabled: Bool) in
+                if enabled { NotificationCenterService.shared.configure() }
+            }
+            .onChange(of: settings.autoDeleteDays) { (days: Int) in
+                if days > 0 { store.purgeOldChats(olderThan: days) }
+            }
             .onChange(of: scenePhase) { phase in
-                if phase != .active { store.persistNow() }
+                // Считаем время, проведённое в приложении (пункт 30 «Статистика»).
+                if phase == .active {
+                    sessionStartedAt = Date()
+                } else {
+                    if let started = sessionStartedAt {
+                        store.addSessionTime(Date().timeIntervalSince(started))
+                        sessionStartedAt = nil
+                    }
+                    store.persistNow()
+                }
             }
         }
     }

@@ -125,6 +125,12 @@ struct ChatRootView: View {
             })
         }
         .allowsHitTesting(!store.isLoadingHistory)
+        .onChange(of: voiceMode) { (enabled: Bool) in
+            // Голосовой ввод обязан полностью выключаться вместе с режимом:
+            // запись, оверлей и таймер распознавания не должны оставаться висеть.
+            if !enabled { cancelVoice() }
+        }
+        .onDisappear { cancelVoice() }
         .background(HonorTheme.background.ignoresSafeArea())
         .foregroundStyle(HonorTheme.foreground)
         .overlay {
@@ -583,9 +589,13 @@ struct ChatRootView: View {
 
     private var voiceButton: some View {
         Button {
+            let wasVoice = voiceMode
             cancelVoice()
             animate { voiceMode.toggle() }
             composerFocused = !voiceMode
+            // Возврат к клавиатуре обязан полностью убрать голосовой ввод:
+            // раньше запись и оверлей оставались висеть до ручного отключения.
+            if wasVoice { cancelVoice() }
         } label: {
             Group {
                 if voiceMode {
@@ -619,10 +629,10 @@ struct ChatRootView: View {
         .accessibilityValue(text(selected ? "Включено" : "Выключено", selected ? "On" : "Off"))
     }
 
-    private func send() {
+    private func send(inputKind: MessageInputKind = .text) {
         cancelVoice(); speech.stopSpeaking()
         store.systemInstruction = settings.customInstructions
-        store.send()
+        store.send(inputKind: inputKind)
         composerFocused = false
         animate { attachmentsOpen = false }
     }
@@ -679,7 +689,7 @@ struct ChatRootView: View {
             guard !transcript.isEmpty else { return }
             store.draft = voiceOriginalDraft.isEmpty ? transcript : voiceOriginalDraft + " " + transcript
             voiceMode = false
-            send()
+            send(inputKind: .voice)
         }
     }
 
@@ -695,7 +705,8 @@ struct ChatRootView: View {
             speech.stopSpeaking()
             speakingContent = nil
         } else {
-            speech.speak(content, voiceIdentifier: settings.voiceIdentifier, language: "ru-RU")
+            speech.speak(content, voiceIdentifier: settings.voiceIdentifier, language: "ru-RU",
+                         rate: settings.voiceRate)
             speakingContent = content
         }
     }
@@ -952,6 +963,14 @@ private struct MessageRow: View, Equatable {
             }
             .padding(.horizontal, 15).padding(.vertical, 11)
             .background(HonorTheme.bubble, in: MessageBubble())
+            if message.inputKind == .voice {
+                // Пометка, что сообщение наговорено голосом, а не набрано (пункт 38).
+                Label(text("Голосом", "By voice"), systemImage: "mic.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(HonorTheme.secondary)
+                    .padding(.trailing, 4)
+                    .accessibilityIdentifier("message.voice." + message.id.uuidString)
+            }
         }
         .padding(.top, 2)
         .accessibilityElement(children: message.attachments.isEmpty ? .combine : .contain)
@@ -1230,14 +1249,64 @@ private struct HistoryDrawer: View {
     @State private var renameTitle = ""
     @State private var deleteTargets: Set<UUID> = []
     @State private var deleteConfirmation = false
+    /// Промт (инструкция) конкретного чата — пункт меню «три точки».
+    @State private var chatPromptPresented = false
+    @State private var chatPromptTarget: UUID?
+    @State private var chatPromptDraft = ""
     @FocusState private var searchFocused: Bool
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
 
     private func text(_ ru: String, _ en: String) -> String { settings.text(ru, en) }
 
+    /// Шапка панели чатов: логотип приложения и кнопка нового чата.
+    private var drawerHeader: some View {
+        HStack(spacing: 10) {
+            // Логотип приложения — та же иконка, что и на самом приложении.
+            Group {
+                if let icon = UIImage(named: "AppIcon") {
+                    Image(uiImage: icon).resizable().scaledToFit()
+                } else {
+                    HonorMark(size: 30)
+                }
+            }
+            .frame(width: 32, height: 32)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(HonorTheme.divider, lineWidth: 0.6))
+            .accessibilityHidden(true)
+
+            Text("Honer AI")
+                .font(.system(size: 19, weight: .bold))
+                .foregroundStyle(HonorTheme.foreground)
+
+            Spacer(minLength: 0)
+
+            Button {
+                searchFocused = false
+                store.newChat()
+                selectedIDs.removeAll()
+                selecting = false
+                onClose()
+            } label: {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 18, weight: .medium))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(HonorTheme.foreground)
+            .accessibilityLabel(text("Новый чат", "New chat"))
+            .accessibilityIdentifier("history.new.chat")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
+    }
+
     var body: some View {
         let grouped = groups
         return VStack(spacing: 0) {
+            if !selecting { drawerHeader }
             if selecting {
                 HStack {
                     Text(text("Выберите чаты", "Select chats")).font(.system(size: 18, weight: .semibold))
@@ -1371,6 +1440,46 @@ private struct HistoryDrawer: View {
             Button(text("Отмена", "Cancel"), role: .cancel) { deleteTargets.removeAll() }
                 .accessibilityIdentifier("history.delete.cancel")
         }
+        .sheet(isPresented: $chatPromptPresented) { chatPromptSheet }
+    }
+
+    /// Инструкция только для выбранного чата.
+    private var chatPromptSheet: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(text("Инструкция действует только в этом чате и применяется к каждому ответу.",
+                         "This instruction applies only to this chat."))
+                    .font(.system(size: 13))
+                    .foregroundStyle(HonorTheme.secondary)
+                TextEditor(text: $chatPromptDraft)
+                    .font(.system(size: 15))
+                    .frame(minHeight: 200)
+                    .padding(8)
+                    .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(HonorTheme.divider, lineWidth: 0.7))
+                    .accessibilityIdentifier("chat.prompt.editor")
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .background(HonorTheme.background.ignoresSafeArea())
+            .navigationTitle(text("Промт чата", "Chat prompt"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(text("Отмена", "Cancel")) { chatPromptPresented = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(text("Сохранить", "Save")) {
+                        if let id = chatPromptTarget {
+                            store.setChatPrompt(id: id, prompt: chatPromptDraft)
+                        }
+                        chatPromptPresented = false
+                    }
+                    .fontWeight(.semibold)
+                    .accessibilityIdentifier("chat.prompt.save")
+                }
+            }
+        }
     }
 
     private func historyRow(_ chat: Conversation) -> some View {
@@ -1393,7 +1502,18 @@ private struct HistoryDrawer: View {
                     }
                     Text(chat.title).font(.system(size: 16 * settings.fontScale * dynamicScale, weight: .medium))
                         .lineLimit(1)
-                    Spacer(minLength: 0)
+                    Spacer(minLength: 6)
+                    // Время последнего сообщения: «2 минуты назад», «1 час 34 минуты назад», «12 дней назад».
+                    Text(chat.relativeTimestamp)
+                        .font(.system(size: 11 * dynamicScale))
+                        .foregroundStyle(HonorTheme.secondary)
+                        .lineLimit(1)
+                        .layoutPriority(-1)
+                    if chat.pinned && !selecting {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(HonorTheme.accent.opacity(0.8))
+                    }
                 }
                 .foregroundStyle(store.selectedConversationID == chat.id && !selecting ? HonorTheme.accent : HonorTheme.foreground)
                 .padding(.leading, 13).frame(minHeight: 44)
@@ -1403,6 +1523,25 @@ private struct HistoryDrawer: View {
             .accessibilityIdentifier("history.row." + chat.id.uuidString)
             .accessibilityAddTraits((selecting ? selectedIDs.contains(chat.id) : store.selectedConversationID == chat.id) ? .isSelected : [])
             if !selecting {
+                // Закреплённые чаты можно менять местами между собой.
+                if chat.pinned {
+                    VStack(spacing: 0) {
+                        Button { store.movePinned(id: chat.id, offset: -1) } label: {
+                            Image(systemName: "chevron.up").font(.system(size: 11, weight: .semibold))
+                                .frame(width: 30, height: 22).contentShape(Rectangle())
+                        }
+                        .accessibilityLabel(text("Выше среди закреплённых", "Move pinned up"))
+                        .accessibilityIdentifier("history.pin.up." + chat.id.uuidString)
+                        Button { store.movePinned(id: chat.id, offset: 1) } label: {
+                            Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
+                                .frame(width: 30, height: 22).contentShape(Rectangle())
+                        }
+                        .accessibilityLabel(text("Ниже среди закреплённых", "Move pinned down"))
+                        .accessibilityIdentifier("history.pin.down." + chat.id.uuidString)
+                    }
+                    .foregroundStyle(HonorTheme.secondary)
+                    .buttonStyle(.plain)
+                }
                 Menu { historyActions(chat) } label: {
                     Image(systemName: "ellipsis").font(.system(size: 16))
                         .foregroundStyle(HonorTheme.secondary)
@@ -1423,6 +1562,10 @@ private struct HistoryDrawer: View {
                 Label(chat.pinned ? text("Открепить", "Unpin") : text("Закрепить", "Pin"), systemImage: chat.pinned ? "pin.slash" : "pin")
             }
             .accessibilityIdentifier("history.menu.pin")
+            Button { chatPromptTarget = chat.id; chatPromptDraft = chat.systemPrompt; chatPromptPresented = true } label: {
+                Label(text("Промт чата", "Chat prompt"), systemImage: "text.badge.star")
+            }
+            .accessibilityIdentifier("history.menu.prompt")
             Button { renameTitle = chat.title; renameTarget = chat.id; renamePresented = true } label: {
                 Label(text("Переименовать", "Rename"), systemImage: "pencil")
             }
@@ -1448,25 +1591,27 @@ private struct HistoryDrawer: View {
 
     private var groups: [HistoryGroup] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        let chats = store.conversations.filter { chat in
-            chat.archivedAt == nil && (query.isEmpty || chat.title.localizedCaseInsensitiveContains(query) || chat.messages.contains {
+        // Сортировка — по времени последнего сообщения, закреплённые всегда сверху
+        // и в своём порядке (их можно менять местами).
+        let chats = store.sortedConversations.filter { chat in
+            query.isEmpty || chat.title.localizedCaseInsensitiveContains(query) || chat.messages.contains {
                 $0.content.localizedCaseInsensitiveContains(query) || $0.reasoning.localizedCaseInsensitiveContains(query) ||
                 $0.attachments.contains {
                     $0.name.localizedCaseInsensitiveContains(query) || $0.extractedText.localizedCaseInsensitiveContains(query)
                 }
-            })
-        }.sorted { $0.updatedAt > $1.updatedAt }
+            }
+        }
         let calendar = Calendar.current
         let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) ?? .distantPast
         let unpinned = chats.filter { !$0.pinned }
         return [
             HistoryGroup(id: "pinned", title: text("Закреплено", "Pinned"), chats: chats.filter(\.pinned)),
-            HistoryGroup(id: "today", title: text("Сегодня", "Today"), chats: unpinned.filter { calendar.isDateInToday($0.updatedAt) }),
-            HistoryGroup(id: "yesterday", title: text("Вчера", "Yesterday"), chats: unpinned.filter { calendar.isDateInYesterday($0.updatedAt) }),
+            HistoryGroup(id: "today", title: text("Сегодня", "Today"), chats: unpinned.filter { calendar.isDateInToday($0.lastMessageAt) }),
+            HistoryGroup(id: "yesterday", title: text("Вчера", "Yesterday"), chats: unpinned.filter { calendar.isDateInYesterday($0.lastMessageAt) }),
             HistoryGroup(id: "week", title: text("7 дней", "Previous 7 days"), chats: unpinned.filter {
-                !calendar.isDateInToday($0.updatedAt) && !calendar.isDateInYesterday($0.updatedAt) && $0.updatedAt >= weekAgo
+                !calendar.isDateInToday($0.lastMessageAt) && !calendar.isDateInYesterday($0.lastMessageAt) && $0.lastMessageAt >= weekAgo
             }),
-            HistoryGroup(id: "older", title: text("Ранее", "Older"), chats: unpinned.filter { $0.updatedAt < weekAgo })
+            HistoryGroup(id: "older", title: text("Ранее", "Older"), chats: unpinned.filter { $0.lastMessageAt < weekAgo })
         ].filter { !$0.chats.isEmpty }
     }
 }
@@ -1684,7 +1829,18 @@ private struct ChatAttachmentsSheet: View {
                     List(uniqueAttachments) { attachment in
                         Button { selected = attachment } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: attachmentSymbol(attachment)).font(.system(size: 23)).frame(width: 28)
+                                // Превью картинки: раньше фото было не видно, только иконка и имя.
+                                if let url = attachment.resolvedURL, attachment.kind == .image,
+                                   let image = UIImage(contentsOfFile: url.path) {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 44, height: 44)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                } else {
+                                    Image(systemName: attachmentSymbol(attachment))
+                                        .font(.system(size: 23)).frame(width: 28)
+                                }
                                 Text(attachment.name).font(.system(size: 16)).foregroundStyle(HonorTheme.foreground)
                                 Spacer()
                                 Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(HonorTheme.secondary)

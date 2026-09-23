@@ -23,6 +23,10 @@ final class ChatStore: ObservableObject {
     @Published private(set) var generationStatus: String?
     @Published private(set) var editingMessageID: UUID?
     @Published private(set) var memories: [HonorMemory] = []
+    /// Статистика использования приложения (раздел «Статистика» в настройках).
+    @Published private(set) var statistics = UsageStatistics() {
+        didSet { persistStatistics() }
+    }
     @Published var memoryEnabled = true { didSet { scheduleSave() } }
     @Published private var configuration: DeepSeekConfiguration
 
@@ -64,6 +68,10 @@ final class ChatStore: ObservableObject {
         // теперь запоминаются между запусками.
         self.reasoningEnabled = UserDefaults.standard.object(forKey: "honor.reasoningEnabled") as? Bool ?? true
         self.searchEnabled = UserDefaults.standard.object(forKey: "honor.searchEnabled") as? Bool ?? false
+        if let data = UserDefaults.standard.data(forKey: "honor.statistics"),
+           let saved = try? JSONDecoder().decode(UsageStatistics.self, from: data) {
+            self.statistics = saved
+        }
         if loadHistoryAsynchronously {
             isLoadingHistory = true
             Task { [weak self] in
@@ -100,7 +108,7 @@ final class ChatStore: ObservableObject {
             errorMessage = "В памяти уже \(Self.maximumMemoryCount) записей. Удалите ненужную запись, чтобы добавить новую."
             return false
         }
-        memories.append(HonorMemory(text: text))
+        memories.append(HonorMemory(text: text, keywords: Self.keywords(in: text)))
         errorMessage = nil
         saveSnapshot()
         return true
@@ -144,8 +152,46 @@ final class ChatStore: ObservableObject {
         let name = String(profileName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
         if !name.isEmpty { instruction += "\nИмя пользователя в локальном профиле (данные): \(String(reflecting: name)). Обращайся по имени естественно, без повторения в каждом ответе." }
         guard memoryEnabled, !memories.isEmpty else { return instruction }
-        let entries = memories.map { "• \($0.text)" }.joined(separator: "\n")
-        return instruction + "\n\nПамять Honer AI — факты и предпочтения, которые пользователь явно сохранил и может редактировать. Учитывай их, когда они относятся к запросу; последнее сообщение пользователя важнее сохранённых предпочтений.\n\(entries)"
+        return instruction + "\n\n" + Self.memoryBlock(for: memories, query: nil)
+    }
+
+    /// Отбирает факты памяти, относящиеся к текущему вопросу.
+    /// При выключенной «памяти между чатами» каждый факт всё равно доступен —
+    /// просто передаются только самые релевантные, а не весь список целиком.
+    static func relevantMemories(_ memories: [HonorMemory], for query: String, limit: Int = 40) -> [HonorMemory] {
+        let words = Set(keywords(in: query))
+        guard !words.isEmpty else { return Array(memories.suffix(limit)) }
+        let scored = memories.map { memory -> (HonorMemory, Int) in
+            let own = Set(memory.keywords.isEmpty ? keywords(in: memory.text) : memory.keywords)
+            return (memory, own.intersection(words).count)
+        }
+        let matched = scored.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }.map(\.0)
+        let rest = memories.filter { memory in !matched.contains(where: { $0.id == memory.id }) }
+        return Array((matched + rest).prefix(limit))
+    }
+
+    private static func memoryBlock(for memories: [HonorMemory], query: String?) -> String {
+        let selected = query.map { relevantMemories(memories, for: $0) } ?? memories
+        let entries = selected.map { "• \($0.text)" }.joined(separator: "\n")
+        return """
+        Память Honer AI — факты и предпочтения, которые пользователь сохранил. Учитывай их, когда они относятся к запросу; последнее сообщение пользователя важнее сохранённых предпочтений.
+        \(entries)
+        """
+    }
+
+    /// Ключевые слова факта или запроса — для отбора релевантной памяти без embeddings.
+    static func keywords(in text: String) -> [String] {
+        let stop: Set<String> = ["и", "в", "во", "не", "что", "он", "на", "я", "с", "со", "как", "а", "то", "все",
+                                 "она", "так", "его", "но", "да", "ты", "к", "у", "же", "вы", "за", "бы", "по",
+                                 "только", "ее", "мне", "было", "вот", "от", "меня", "еще", "нет", "о", "из", "ему",
+                                 "the", "a", "an", "and", "or", "of", "to", "in", "is", "are", "for", "on", "with"]
+        let parts = text.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted)
+        var result: [String] = []
+        for part in parts where part.count >= 3 && !stop.contains(part) {
+            if !result.contains(part) { result.append(part) }
+            if result.count >= 24 { break }
+        }
+        return result
     }
 
     @discardableResult
@@ -178,7 +224,8 @@ final class ChatStore: ObservableObject {
         return branch.id
     }
 
-    func send() {
+    /// - Parameter inputKind: как набрано сообщение (текст, голос, подсказка) — для статистики и меток в чате.
+    func send(inputKind: MessageInputKind = .text) {
         guard canSend else { return }
         guard hasAPIKey else { errorMessage = HonorError.missingAPIKey.localizedDescription; return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -196,8 +243,10 @@ final class ChatStore: ObservableObject {
             discardedAttachments = conversations[index].messages[messageIndex...].flatMap(\.attachments)
             conversations[index].messages = Array(conversations[index].messages.prefix(messageIndex))
         }
-        let user = ChatMessage(role: .user, content: text, attachments: outgoingAttachments)
+        var user = ChatMessage(role: .user, content: text, attachments: outgoingAttachments)
+        user.inputKind = inputKind
         conversations[index].messages.append(user)
+        recordSentMessage(voice: inputKind == .voice)
         if conversations[index].messages.filter({ $0.role == .user }).count == 1 {
             let title = text.isEmpty ? (outgoingAttachments.first?.name ?? "Новый чат") : text
             conversations[index].title = String(title.replacingOccurrences(of: "\n", with: " ").prefix(48))
@@ -365,11 +414,39 @@ final class ChatStore: ObservableObject {
         saveSnapshot()
     }
 
-    /// Автоудаление чатов по сроку хранения (настройка в разделе «Данные»).
-    func purgeOldChats(olderThan days: Int) {
+    // MARK: - Статистика использования
+
+    private func persistStatistics() {
+        if let data = try? JSONEncoder().encode(statistics) {
+            UserDefaults.standard.set(data, forKey: "honor.statistics")
+        }
+    }
+
+    func recordSentMessage(voice: Bool = false) {
+        statistics.sentMessages += 1
+        if voice { statistics.voiceMessages += 1 }
+    }
+
+    func recordReceivedMessage() {
+        statistics.receivedMessages += 1
+    }
+
+    /// Добавляет время, проведённое в приложении (вызывается по таймеру и при уходе в фон).
+    func addSessionTime(_ seconds: Double) {
+        guard seconds > 0, seconds < 3600 else { return }
+        statistics.totalSessionSeconds += seconds
+    }
+
+    func resetStatistics() {
+        let firstLaunch = statistics.firstLaunch
+        statistics = UsageStatistics(firstLaunch: firstLaunch)
+    }
+
+    /// Автоудаление чатов по сроку хранения (настройка в разделе «Данные»).    func purgeOldChats(olderThan days: Int) {
         guard days > 0 else { return }
         let threshold = Date().addingTimeInterval(-Double(days) * 86_400)
-        let doomed = conversations.filter { $0.archivedAt == nil && $0.lastMessageAt < threshold }
+        // Закреплённые чаты автоудаление не трогает.
+        let doomed = conversations.filter { $0.archivedAt == nil && !$0.pinned && $0.lastMessageAt < threshold }
         guard !doomed.isEmpty else { return }
         let ids = Set(doomed.map(\.id))
         let removedAttachments = doomed.flatMap(\.messages).flatMap(\.attachments)
@@ -415,7 +492,18 @@ final class ChatStore: ObservableObject {
         let searching = SearchIntent.needsSearch(query: query, searchToggleOn: searchEnabled)
         let recentContext = input.suffix(4).map { String($0.content.prefix(1500)) }.joined(separator: "\n")
         // Инструкция конкретного чата (меню «три точки») применяется поверх общей памяти.
-        var instruction = effectiveSystemInstruction
+        // Память подбирается под текущий вопрос — так факт, сохранённый в другом чате,
+        // реально применяется и в этом (пункт 24).
+        var instruction = systemInstruction
+        let name = String(profileName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
+        if !name.isEmpty {
+            instruction += "\nИмя пользователя в локальном профиле (данные): \(String(reflecting: name)). Обращайся по имени естественно, без повторения в каждом ответе."
+        }
+        if memoryEnabled, !memories.isEmpty {
+            let scoped = Self.relevantMemories(memories, for: query)
+            let entries = scoped.map { "• \($0.text)" }.joined(separator: "\n")
+            instruction += "\n\nПамять Honer AI — факты и предпочтения, которые пользователь сохранил. Учитывай их, когда они относятся к запросу; последнее сообщение пользователя важнее сохранённых предпочтений.\n\(entries)"
+        }
         let chatPrompt = conversations[index].systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         if !chatPrompt.isEmpty {
             instruction += "\n\nИнструкция этого чата (задана пользователем, действует только здесь):\n\(chatPrompt)"
@@ -548,7 +636,14 @@ final class ChatStore: ObservableObject {
             self.isGenerating = false
             self.generationStatus = nil
             self.generationTask = nil
+            let delivered = self.conversations.first(where: { $0.id == chatID })?
+                .messages.first(where: { $0.id == response.id })
+            if !(delivered?.content.isEmpty ?? true) { self.recordReceivedMessage() }
             self.saveSnapshot()
+            // Уведомление о готовом ответе, если пользователь вышел из приложения (пункт 36).
+            if !(delivered?.content.isEmpty ?? true) {
+                NotificationCenterService.shared.notifyAnswerReady(delivered?.content ?? "")
+            }
         }
     }
 

@@ -93,6 +93,11 @@ struct SettingsView: View {
                         SettingsRow(symbol: "info.circle", title: settings.text("Версия", "Version"), value: appVersion, chevron: nil)
                             .accessibilityIdentifier("settings.version")
                         SettingsDivider()
+                        NavigationLink { StatisticsSettingsPage() } label: {
+                            SettingsRow(symbol: "chart.bar", title: settings.text("Статистика", "Statistics"))
+                        }
+                        .accessibilityIdentifier("settings.statistics")
+                        SettingsDivider()
                         NavigationLink { AboutSettingsPage() } label: {
                             SettingsRow(symbol: "doc.text", title: "Honer AI")
                         }
@@ -284,6 +289,25 @@ private struct DataSettingsPage: View {
                 .accessibilityIdentifier("data.delete")
                 .disabled(isTransferring)
             }
+            Section {
+                Picker(settings.text("Автоудаление чатов", "Auto-delete chats"),
+                       selection: $settings.autoDeleteDays) {
+                    Text(settings.text("Никогда", "Never")).tag(0)
+                    Text(settings.text("Через 1 день", "After 1 day")).tag(1)
+                    Text(settings.text("Через 7 дней", "After 7 days")).tag(7)
+                    Text(settings.text("Через 30 дней", "After 30 days")).tag(30)
+                    Text(settings.text("Через 90 дней", "After 90 days")).tag(90)
+                }
+                .accessibilityIdentifier("data.autodelete")
+                Toggle(settings.text("Уведомлять о готовом ответе", "Notify when an answer is ready"),
+                       isOn: $settings.notificationsEnabled)
+                    .accessibilityIdentifier("data.notifications")
+            } header: {
+                Text(settings.text("Автоматизация", "Automation"))
+            } footer: {
+                Text(settings.text("Автоудаление убирает чаты, в которых не было сообщений дольше выбранного срока. Закреплённые чаты сохраняются.",
+                                   "Auto-delete removes chats with no messages for longer than the selected period. Pinned chats are kept."))
+            }
             if isTransferring {
                 Section {
                     HStack(spacing: 10) {
@@ -450,12 +474,24 @@ private struct VoiceSettingsPage: View {
                     voiceRow(name: "\(voice.name) · \(quality(voice))", identifier: voice.identifier)
                 }
             }
+            Section(settings.text("Скорость чтения", "Reading speed")) {
+                HStack {
+                    Text(settings.text("Скорость", "Speed"))
+                    Slider(value: $settings.voiceRate, in: 0.5...1.6, step: 0.05)
+                        .accessibilityIdentifier("voice.rate")
+                    Text(String(format: "%.2f×", settings.voiceRate))
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 52, alignment: .trailing)
+                }
+            }
             Section {
                 Button {
                     if speech.isSpeaking { speech.stopSpeaking() }
                     else {
                         speech.speak("Привет! Я Honer AI, твой личный помощник. Давай обсудим твои идеи.",
-                                     voiceIdentifier: settings.voiceIdentifier, language: "ru-RU")
+                                     voiceIdentifier: settings.voiceIdentifier, language: "ru-RU",
+                                     rate: settings.voiceRate)
                     }
                 } label: {
                     Label(settings.text(speech.isSpeaking ? "Остановить" : "Послушать голос", speech.isSpeaking ? "Stop" : "Preview voice"),
@@ -504,8 +540,58 @@ private struct VoiceSettingsPage: View {
     }
 }
 
-private struct AboutSettingsPage: View {
+/// Статистика использования: сообщения, голосовые, время в приложении (пункт 30).
+private struct StatisticsSettingsPage: View {
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var store: ChatStore
+    @State private var confirmsReset = false
+
+    private var stats: UsageStatistics { store.statistics }
+
+    var body: some View {
+        Form {
+            Section(settings.text("Сообщения", "Messages")) {
+                LabeledContent(settings.text("Отправлено", "Sent"), value: "\(stats.sentMessages)")
+                    .accessibilityIdentifier("stats.sent")
+                LabeledContent(settings.text("Получено", "Received"), value: "\(stats.receivedMessages)")
+                    .accessibilityIdentifier("stats.received")
+                LabeledContent(settings.text("Из них голосом", "Of them by voice"), value: "\(stats.voiceMessages)")
+                    .accessibilityIdentifier("stats.voice")
+                LabeledContent(settings.text("Всего сообщений", "Total messages"),
+                               value: "\(stats.sentMessages + stats.receivedMessages)")
+                    .accessibilityIdentifier("stats.total")
+            }
+            Section(settings.text("Использование", "Usage")) {
+                LabeledContent(settings.text("Время в приложении", "Time in app"), value: stats.formattedTime)
+                    .accessibilityIdentifier("stats.time")
+                LabeledContent(settings.text("Чатов", "Conversations"), value: "\(store.conversations.count)")
+                    .accessibilityIdentifier("stats.chats")
+                LabeledContent(settings.text("Записей в памяти", "Memory entries"), value: "\(store.memories.count)")
+                    .accessibilityIdentifier("stats.memory")
+                if let first = Optional(stats.firstLaunch) {
+                    LabeledContent(settings.text("Первое вхождение", "First launch"),
+                                   value: first.formatted(date: .abbreviated, time: .shortened))
+                }
+            }
+            Section {
+                Button(role: .destructive) { confirmsReset = true } label: {
+                    Label(settings.text("Сбросить статистику", "Reset statistics"), systemImage: "arrow.counterclockwise")
+                }
+                .accessibilityIdentifier("stats.reset")
+            }
+        }
+        .navigationTitle(settings.text("Статистика", "Statistics"))
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("settings.page.statistics")
+        .confirmationDialog(settings.text("Сбросить статистику?", "Reset statistics?"),
+                            isPresented: $confirmsReset, titleVisibility: .visible) {
+            Button(settings.text("Сбросить", "Reset"), role: .destructive) { store.resetStatistics() }
+            Button(settings.text("Отмена", "Cancel"), role: .cancel) {}
+        }
+    }
+}
+
+private struct AboutSettingsPage: View {    @EnvironmentObject private var settings: AppSettings
     var body: some View {
         Form {
             Section {

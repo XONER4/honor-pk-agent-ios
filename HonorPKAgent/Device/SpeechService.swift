@@ -214,7 +214,8 @@ final class SpeechService: NSObject, ObservableObject {
            voice.language.lowercased().hasPrefix(String(language.prefix(2)).lowercased()) { return voice }
         return availableVoices(language: language).first ?? AVSpeechSynthesisVoice(language: language)
     }
-    func speak(_ text: String, voiceIdentifier: String = "", language: String = "ru-RU") {
+    /// - Parameter rate: множитель скорости чтения (1.0 — обычная). Настраивается в разделе «Голос».
+    func speak(_ text: String, voiceIdentifier: String = "", language: String = "ru-RU", rate: Double = 0.94) {
         let spokenText = Self.sanitizedSpeechText(text)
         guard !spokenText.isEmpty else { return }
         clearError(); cancelRecording()
@@ -225,7 +226,10 @@ final class SpeechService: NSObject, ObservableObject {
             try session.setActive(true)
             let utterance = AVSpeechUtterance(string: spokenText)
             utterance.voice = Self.preferredVoice(identifier: voiceIdentifier, language: language)
-            utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.94
+            let clamped = min(max(rate, 0.35), 1.8)
+            utterance.rate = min(AVSpeechUtteranceMaximumSpeechRate,
+                                 max(AVSpeechUtteranceMinimumSpeechRate,
+                                     AVSpeechUtteranceDefaultSpeechRate * clamped))
             utterance.preUtteranceDelay = 0.04
             activeUtterance = utterance; isSpeaking = true
             synthesizer.speak(utterance)
