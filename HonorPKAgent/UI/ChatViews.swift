@@ -566,10 +566,15 @@ struct ChatRootView: View {
             animate { voiceMode.toggle() }
             composerFocused = !voiceMode
         } label: {
-            Image(systemName: voiceMode ? "keyboard" : "waveform.circle")
-                .font(.system(size: 26))
-                .foregroundStyle(HonorTheme.foreground)
-                .frame(width: 40, height: 44)
+            Group {
+                if voiceMode {
+                    Image(systemName: "keyboard").font(.system(size: 13, weight: .medium))
+                        .frame(width: 25, height: 25)
+                        .overlay(Circle().stroke(lineWidth: 1.6))
+                } else {
+                    Image(systemName: "waveform.circle").font(.system(size: 26))
+                }
+            }.foregroundStyle(HonorTheme.foreground).frame(width: 40, height: 44)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(text(voiceMode ? "Клавиатура" : "Голосовой ввод", voiceMode ? "Keyboard" : "Voice input"))
@@ -884,6 +889,11 @@ private struct MessageRow: View, Equatable {
                 .accessibilityIdentifier("message.reasoning." + message.id.uuidString)
                 .accessibilityValue(text(reasoningOpen ? "Развёрнуто" : "Свёрнуто", reasoningOpen ? "Expanded" : "Collapsed"))
                 if reasoningOpen && !message.reasoning.isEmpty {
+                    if message.reasoningWasTranslated == true {
+                        Text(text("Переведено на русский", "Translated into Russian"))
+                            .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
+                            .accessibilityIdentifier("message.reasoning.translated." + message.id.uuidString)
+                    }
                     Text(highlighted(AttributedString(message.reasoning), query: findQuery))
                         .font(.system(size: 14 * settings.fontScale * dynamicScale))
                         .foregroundStyle(HonorTheme.secondary)
@@ -1132,7 +1142,8 @@ private struct HistoryDrawer: View {
     private func text(_ ru: String, _ en: String) -> String { settings.text(ru, en) }
 
     var body: some View {
-        VStack(spacing: 0) {
+        let grouped = groups
+        return VStack(spacing: 0) {
             if selecting {
                 HStack {
                     Text(text("Выберите чаты", "Select chats")).font(.system(size: 18, weight: .semibold))
@@ -1162,7 +1173,7 @@ private struct HistoryDrawer: View {
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 17) {
-                    if groups.isEmpty {
+                    if grouped.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: search.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass")
                                 .font(.system(size: 28))
@@ -1172,12 +1183,12 @@ private struct HistoryDrawer: View {
                         .foregroundStyle(HonorTheme.secondary)
                         .frame(maxWidth: .infinity).padding(.top, 90)
                     }
-                    ForEach(groups) { group in
+                    ForEach(grouped) { group in
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
                                 Text(group.title).font(.system(size: 14, weight: .semibold))
                                 Spacer()
-                                if group.id == groups.first?.id && !selecting {
+                                if group.id == grouped.first?.id && !selecting {
                                     Button { searchFocused = false; selecting = true } label: {
                                         Image(systemName: "checklist").frame(width: 40, height: 32)
                                     }.accessibilityLabel(text("Выбрать чаты", "Select chats"))

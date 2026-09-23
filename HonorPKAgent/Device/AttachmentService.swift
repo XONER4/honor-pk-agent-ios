@@ -240,6 +240,8 @@ struct AttachmentTray: View {
     @State private var showsFiles = false
     @State private var isLoading = false
     @State private var processingTask: Task<Void, Never>?
+    @State private var permissionTask: Task<Void, Never>?
+    @State private var trayVisible = false
     @State private var showsCameraPermissionAlert = false
     @State private var permissionIsPhotos = false
     @State private var libraryStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -247,6 +249,7 @@ struct AttachmentTray: View {
     @State private var thumbnailImages: [String: UIImage] = [:]
     @State private var thumbnailRequests: [PHImageRequestID] = []
     @State private var importedAssetIDs: [String: UUID] = [:]
+    @State private var thumbnailSession = UUID()
 
     var body: some View {
         let photoLabel = tile("photo", settings.text("Альбом", "Photos"))
@@ -281,8 +284,8 @@ struct AttachmentTray: View {
         .padding(.vertical, 16)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isLoading)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: recentAssets.count)
-        .task { refreshRecents() }
-        .onChange(of: scenePhase) { if $0 == .active { refreshRecents() } }
+        .task { trayVisible = true; refreshRecents() }
+        .onChange(of: scenePhase) { if $0 == .active && trayVisible { refreshRecents() } }
         .onChange(of: selectedPhoto) { photo in
             guard let photo else { return }
             processingTask = Task { @MainActor in
@@ -304,8 +307,7 @@ struct AttachmentTray: View {
                         attachment = try await AttachmentService.importImage(data: data,
                             name: settings.text("Фото.jpg", "Photo.jpg"))
                     }
-                    try Task.checkCancellation()
-                    onAttachment(attachment)
+                    try deliverNewAttachment(attachment)
                 } catch {
                     if !(error is CancellationError) { onError(error.localizedDescription) }
                 }
@@ -324,8 +326,7 @@ struct AttachmentTray: View {
                     do {
                         let attachment = try await AttachmentService.importImage(data: data,
                             name: settings.text("Камера.jpg", "Camera.jpg"))
-                        try Task.checkCancellation()
-                        onAttachment(attachment)
+                        try deliverNewAttachment(attachment)
                     } catch {
                         if !(error is CancellationError) { onError(error.localizedDescription) }
                     }
@@ -346,8 +347,7 @@ struct AttachmentTray: View {
                     defer { isLoading = false }
                     do {
                         let attachment = try await AttachmentService.importFile(url: url)
-                        try Task.checkCancellation()
-                        onAttachment(attachment)
+                        try deliverNewAttachment(attachment)
                     } catch {
                         if !(error is CancellationError) { onError(error.localizedDescription) }
                     }
@@ -368,9 +368,13 @@ struct AttachmentTray: View {
                                permissionIsPhotos ? "Allow Honer AI to show photos and videos in iPhone Settings. You can still choose individual items using Photos." : "Allow camera access for Honer AI in iPhone Settings."))
         }
         .onDisappear {
+            trayVisible = false
+            thumbnailSession = UUID()
             processingTask?.cancel()
+            permissionTask?.cancel()
             for request in thumbnailRequests { PHImageManager.default().cancelImageRequest(request) }
             thumbnailRequests.removeAll()
+            thumbnailImages.removeAll()
         }
     }
 
@@ -465,8 +469,9 @@ struct AttachmentTray: View {
     }
 
     private func requestRecentPhotos() {
-        Task { @MainActor in
+        permissionTask = Task { @MainActor in
             let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+            guard !Task.isCancelled, trayVisible else { return }
             libraryStatus = status
             if status == .authorized || status == .limited { refreshRecents() }
             else { permissionIsPhotos = true; showsCameraPermissionAlert = true }
@@ -474,6 +479,9 @@ struct AttachmentTray: View {
     }
 
     private func refreshRecents() {
+        guard trayVisible else { return }
+        let session = UUID()
+        thumbnailSession = session
         libraryStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard libraryStatus == .authorized || libraryStatus == .limited else { recentAssets = []; return }
         for request in thumbnailRequests { PHImageManager.default().cancelImageRequest(request) }
@@ -492,7 +500,12 @@ struct AttachmentTray: View {
         for asset in assets {
             let key = asset.localIdentifier
             let request = PHImageManager.default().requestImage(for: asset, targetSize: CGSize(width: 180, height: 180), contentMode: .aspectFill, options: imageOptions) { image, _ in
-                if let image { Task { @MainActor in thumbnailImages[key] = image } }
+                if let image {
+                    Task { @MainActor in
+                        guard trayVisible, thumbnailSession == session else { return }
+                        thumbnailImages[key] = image
+                    }
+                }
             }
             thumbnailRequests.append(request)
         }
@@ -525,11 +538,31 @@ struct AttachmentTray: View {
                 try Task.checkCancellation()
                 var attachment = try await AttachmentService.importFile(url: temporary)
                 attachment.name = resource.originalFilename
-                try Task.checkCancellation()
+                try deliverNewAttachment(attachment)
                 importedAssetIDs[asset.localIdentifier] = attachment.id
-                onAttachment(attachment)
             } catch { if !(error is CancellationError) { onError(error.localizedDescription) } }
         }
+    }
+
+    /// Called only for fresh imports, before they become part of a draft or conversation.
+    private func deliverNewAttachment(_ attachment: MessageAttachment) throws {
+        guard !Task.isCancelled, trayVisible else {
+            let referenced = store.attachments + store.conversations.flatMap { $0.messages.flatMap(\.attachments) }
+            let protected = Set(referenced.flatMap(\.allLocalURLs).map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
+            if let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                let root = support.appendingPathComponent("HonorPKAgent/Attachments", isDirectory: true)
+                    .resolvingSymlinksInPath().standardizedFileURL
+                for file in attachment.allLocalURLs {
+                    let resolved = file.resolvingSymlinksInPath().standardizedFileURL
+                    // Flat, app-owned import files only. Never remove a shared or external file.
+                    if resolved.deletingLastPathComponent().path == root.path, !protected.contains(resolved.path) {
+                        try? FileManager.default.removeItem(at: file)
+                    }
+                }
+            }
+            throw CancellationError()
+        }
+        onAttachment(attachment)
     }
 }
 

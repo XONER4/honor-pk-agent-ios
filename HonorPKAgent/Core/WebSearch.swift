@@ -4,8 +4,13 @@ protocol WebSearching {
     func search(_ query: String) async throws -> [WebSource]
 }
 
+protocol SearchURLDiscovering {
+    func candidates(for query: String) async throws -> [URL]
+}
+
 struct WebSearchClient: WebSearching {
     var session: URLSession = .shared
+    var urlDiscovery: SearchURLDiscovering? = DeepSeekURLDiscovery(configuration: .bundled)
 
     func search(_ query: String) async throws -> [WebSource] {
         if let location = WeatherIntent.location(in: query) {
@@ -19,15 +24,25 @@ struct WebSearchClient: WebSearching {
             guard fetched.contains(where: { $0.content != nil }) else { throw HonorError.searchUnavailable }
             return fetched
         }
-        async let bing = bingResults(query)
-        async let duck = duckDuckGoResults(query)
+        let searchQuery = SearchRelevance.compactQuery(query)
+        async let bing = bingResults(searchQuery)
+        async let duck = duckDuckGoResults(searchQuery)
         let candidates = await (bing, duck)
         try Task.checkCancellation()
         var seen = Set<String>()
         let ranked = (candidates.0 + candidates.1).filter {
-            SearchRelevance.score(source: $0, query: query) > 0 && seen.insert($0.url.absoluteString).inserted
-        }.sorted { SearchRelevance.score(source: $0, query: query) > SearchRelevance.score(source: $1, query: query) }
-        guard !ranked.isEmpty else { throw HonorError.searchUnavailable }
+            SearchRelevance.score(source: $0, query: searchQuery) > 0 && seen.insert($0.url.absoluteString).inserted
+        }.sorted { SearchRelevance.score(source: $0, query: searchQuery) > SearchRelevance.score(source: $1, query: searchQuery) }
+        if ranked.isEmpty {
+            guard let urlDiscovery else { throw HonorError.searchUnavailable }
+            let suggested = try await urlDiscovery.candidates(for: query)
+            try Task.checkCancellation()
+            let candidates = Array(suggested.prefix(3)).map { WebSource(title: $0.host ?? "Страница", url: $0, snippet: "Проверенная по прямой ссылке страница; не поисковая выдержка") }
+            let fetched = (await readPages(candidates, limit: 3, timeout: 8)).filter { $0.content != nil }
+            try Task.checkCancellation()
+            guard !fetched.isEmpty else { throw HonorError.searchUnavailable }
+            return fetched
+        }
         let fetched = await readPages(Array(ranked.prefix(12)), limit: 5)
         try Task.checkCancellation()
         return fetched
@@ -48,17 +63,17 @@ struct WebSearchClient: WebSearching {
         return WebPageText.searchResults(html)
     }
 
-    private func readPages(_ sources: [WebSource], limit: Int) async -> [WebSource] {
+    private func readPages(_ sources: [WebSource], limit: Int, timeout: TimeInterval = 10) async -> [WebSource] {
         await withTaskGroup(of: (Int, WebSource).self) { group in
             for (index, source) in sources.prefix(limit).enumerated() {
                 group.addTask {
                     var source = source
-                    if let data = try? await fetch(source.url, maximumBytes: 1_500_000),
+                    if let data = try? await fetch(source.url, maximumBytes: 1_500_000, timeout: timeout),
                        let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .windowsCP1251) {
                         let text = WebPageText.extract(html)
                         if text.count >= 100 && !WebPageText.looksLikeChallenge(text) {
                             source.content = String(text.prefix(9000)); source.fetchedAt = Date()
-                            if source.snippet == "Ссылка пользователя", let title = WebPageText.title(html) { source.title = title }
+                            if let title = WebPageText.title(html) { source.title = title }
                         }
                     }
                     return (index, source)
@@ -70,10 +85,10 @@ struct WebSearchClient: WebSearching {
         }
     }
 
-    private func fetch(_ url: URL, maximumBytes: Int) async throws -> Data {
+    private func fetch(_ url: URL, maximumBytes: Int, timeout: TimeInterval = 10) async throws -> Data {
         guard WebPageText.isPublicWebURL(url) else { throw HonorError.searchUnavailable }
         var request = URLRequest(url: url)
-        request.timeoutInterval = 10
+        request.timeoutInterval = timeout
         request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
         request.setValue("ru-RU,ru;q=0.9,en;q=0.5", forHTTPHeaderField: "Accept-Language")
         let (bytes, response) = try await session.bytes(for: request)
@@ -97,10 +112,50 @@ struct WebSearchClient: WebSearching {
     }
 }
 
+/// Model suggestions are URL candidates only. A source exists only after the page was fetched.
+struct DeepSeekURLDiscovery: SearchURLDiscovering {
+    let configuration: DeepSeekConfiguration
+    var session: URLSession = .shared
+
+    func candidates(for query: String) async throws -> [URL] {
+        guard !configuration.apiKey.isEmpty else { throw HonorError.searchUnavailable }
+        try Task.checkCancellation()
+        let instruction = """
+        Нужно найти первичные источники для запроса пользователя, когда поисковые сайты недоступны. Верни JSON вида {"urls":["https://..."]} — не больше трёх конкретных, уверенно известных тебе URL официальных страниц документации, технических характеристик или первичных справочных источников. Не выдумывай неизвестные адреса и не отвечай на вопрос. Если точных известных URL нет, верни пустой массив. Предложенные адреса будут проверены реальным HTTP-запросом, поэтому они не считаются уже найденными источниками. Не включай поисковые выдачи, ссылки с API-ключами, локальные адреса или личные данные.
+        """
+        let payload: [String: Any] = ["model": configuration.model, "thinking": ["type": "disabled"], "stream": false,
+                                    "max_tokens": 600, "response_format": ["type": "json_object"],
+                                    "messages": [["role": "system", "content": instruction], ["role": "user", "content": String(query.prefix(1600))]]]
+        var request = URLRequest(url: configuration.baseURL.appendingPathComponent("chat/completions"))
+        request.httpMethod = "POST"; request.timeoutInterval = 6
+        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        let (data, response) = try await session.data(for: request)
+        try Task.checkCancellation()
+        guard (response as? HTTPURLResponse)?.statusCode == 200, data.count < 32_000,
+              let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = envelope["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any],
+              let content = message["content"] as? String,
+              let planData = content.data(using: .utf8),
+              let plan = try JSONSerialization.jsonObject(with: planData) as? [String: Any],
+              let urls = plan["urls"] as? [String] else { throw HonorError.searchUnavailable }
+        var seen = Set<String>()
+        return urls.compactMap(URL.init(string:)).filter { WebPageText.isPublicWebURL($0) && seen.insert($0.absoluteString).inserted }.prefix(3).map { $0 }
+    }
+}
+
 enum SearchRelevance {
+    static func compactQuery(_ query: String) -> String {
+        let firstSentence = query.components(separatedBy: ". ").first ?? query
+        let stripped = firstSentence.replacingOccurrences(of: "(?i)^(?:please\\s+)?(?:find|search for|look up|найди|найдите|поищи|покажи|пожалуйста)[,: ]+", with: "", options: .regularExpression)
+        return String(stripped.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
+    }
+
     static func score(source: WebSource, query: String) -> Int {
         let query = query.lowercased()
-        let text = (source.title + " " + source.snippet + " " + source.url.path).lowercased()
+        let text = (source.title + " " + source.snippet + " " + (source.url.host ?? "") + " " + source.url.path).lowercased()
         if !query.contains("bing"), ["bing quiz", "bingquiz", "bing rewards", "bing homepage quiz", "microsoft rewards"].contains(where: text.contains) { return 0 }
         let stops: Set<String> = ["какая", "какой", "какие", "найди", "найти", "пожалуйста", "расскажи", "сейчас", "сегодня", "нужно", "можешь", "сделай", "покажи", "информацию", "интернет", "поиск", "узнай", "what", "which", "tell", "please", "search", "about", "latest", "the", "for", "and"]
         let words = query.components(separatedBy: CharacterSet.letters.inverted).filter { $0.count >= 3 && !stops.contains($0) }

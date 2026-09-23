@@ -441,7 +441,7 @@ private struct PersonalizationSettingsPage: View {
 private struct VoiceSettingsPage: View {
     @EnvironmentObject private var settings: AppSettings
     @StateObject private var speech = SpeechService()
-    private var voices: [AVSpeechSynthesisVoice] { SpeechService.availableVoices(language: "ru-RU") }
+    @State private var voices: [AVSpeechSynthesisVoice] = []
     var body: some View {
         Form {
             Section(settings.text("Голос для чтения", "Reading voice")) {
@@ -478,6 +478,10 @@ private struct VoiceSettingsPage: View {
         .navigationTitle(settings.text("Голос", "Voice"))
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("settings.page.voice")
+        .onAppear { voices = SpeechService.availableVoices(language: "ru-RU") }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            voices = SpeechService.availableVoices(language: "ru-RU")
+        }
         .onDisappear { speech.stopSpeaking() }
         .onChange(of: settings.voiceIdentifier) { _ in speech.stopSpeaking() }
     }

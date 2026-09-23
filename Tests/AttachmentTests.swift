@@ -1,4 +1,5 @@
 import ImageIO
+import AVFoundation
 import UIKit
 import XCTest
 @testable import HonorPKAgent
@@ -149,6 +150,116 @@ final class AttachmentTests: XCTestCase {
         } catch is CancellationError {}
     }
 
+    func testVideoImportPreservesPlayableOriginalAndSamplesRealFrames() async throws {
+        let folder = try temporaryFolder()
+        let source = folder.appendingPathComponent("short.mp4")
+        try await writeVideo(to: source, duration: 2, frameCount: 30)
+        let original = try Data(contentsOf: source)
+        let attachment = try await AttachmentService.importFile(url: source)
+        let saved = try retainedURL(attachment)
+        XCTAssertEqual(attachment.kind, .video)
+        XCTAssertEqual(try Data(contentsOf: saved), original)
+        let frames = try XCTUnwrap(attachment.videoFramePaths)
+        XCTAssertGreaterThanOrEqual(frames.count, 1)
+        XCTAssertLessThanOrEqual(frames.count, 6)
+        XCTAssertEqual(Set(frames).count, frames.count)
+        for path in frames {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            let source = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+            let frame = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+            XCTAssertGreaterThan(frame.width, 0)
+            XCTAssertLessThanOrEqual(max(frame.width, frame.height), 1280)
+        }
+        XCTAssertTrue(attachment.extractedText.contains("frame timestamps"))
+        XCTAssertTrue(attachment.extractedText.contains("audio track has not been transcribed"))
+        let retainedAsset = AVURLAsset(url: saved)
+        let duration = try await retainedAsset.load(.duration)
+        XCTAssertGreaterThan(duration.seconds, 0)
+        let tracks = try await retainedAsset.loadTracks(withMediaType: .video)
+        XCTAssertFalse(tracks.isEmpty)
+    }
+
+    func testVideoSizeLimitRejectsSparseFileBeforeDecoding() async throws {
+        let source = try temporaryFolder().appendingPathComponent("too-large.mov")
+        XCTAssertTrue(FileManager.default.createFile(atPath: source.path, contents: Data()))
+        let handle = try FileHandle(forWritingTo: source)
+        try handle.truncate(atOffset: UInt64(AttachmentService.maximumVideoBytes + 1))
+        try handle.close()
+        do {
+            _ = try await AttachmentService.importVideo(url: source)
+            XCTFail("Oversized video was accepted.")
+        } catch AttachmentService.AttachmentError.videoTooLarge {}
+    }
+
+    func testVideoDurationLimitRejectsLongPlayableAsset() async throws {
+        let source = try temporaryFolder().appendingPathComponent("long.mp4")
+        try await writeVideo(to: source, duration: 122, frameCount: 2)
+        do {
+            _ = try await AttachmentService.importVideo(url: source)
+            XCTFail("A video longer than two minutes was accepted.")
+        } catch AttachmentService.AttachmentError.videoTooLong {}
+    }
+
+    func testCancelledVideoImportDoesNotProduceAttachment() async throws {
+        let source = try temporaryFolder().appendingPathComponent("cancelled.mp4")
+        try await writeVideo(to: source, duration: 1, frameCount: 15)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await AttachmentService.importVideo(url: source)
+        }
+        do {
+            _ = try await task.value
+            XCTFail("A cancelled video import returned an attachment.")
+        } catch is CancellationError {}
+    }
+
+    private func writeVideo(to url: URL, duration: Double, frameCount: Int) async throws {
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 96, AVVideoHeightKey: 64
+        ])
+        input.expectsMediaDataInRealTime = false
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
+            kCVPixelBufferWidthKey as String: 96, kCVPixelBufferHeightKey as String: 64
+        ])
+        guard writer.canAdd(input) else { throw fixtureError("Cannot add video input") }
+        writer.add(input)
+        guard writer.startWriting() else { throw writer.error ?? fixtureError("Cannot start video writer") }
+        writer.startSession(atSourceTime: .zero)
+        let deadline = Date().addingTimeInterval(15)
+        for index in 0..<frameCount {
+            while !input.isReadyForMoreMediaData {
+                guard Date() < deadline, writer.status == .writing else {
+                    throw writer.error ?? fixtureError("Video encoder timed out")
+                }
+                try await Task.sleep(nanoseconds: 2_000_000)
+            }
+            var buffer: CVPixelBuffer?
+            let status = CVPixelBufferCreate(kCFAllocatorDefault, 96, 64, kCVPixelFormatType_32ARGB, nil, &buffer)
+            guard status == kCVReturnSuccess, let buffer else { throw fixtureError("Cannot create video frame") }
+            CVPixelBufferLockBaseAddress(buffer, [])
+            if let base = CVPixelBufferGetBaseAddress(buffer) {
+                memset(base, Int32((index * 9) % 255), CVPixelBufferGetDataSize(buffer))
+            }
+            CVPixelBufferUnlockBaseAddress(buffer, [])
+            let time = CMTime(seconds: Double(index) * duration / Double(frameCount), preferredTimescale: 600)
+            guard adaptor.append(buffer, withPresentationTime: time) else {
+                throw writer.error ?? fixtureError("Cannot encode video frame")
+            }
+        }
+        writer.endSession(atSourceTime: CMTime(seconds: duration, preferredTimescale: 600))
+        input.markAsFinished()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            writer.finishWriting { continuation.resume() }
+        }
+        guard writer.status == .completed else { throw writer.error ?? fixtureError("Cannot finish video") }
+    }
+
+    private func fixtureError(_ message: String) -> NSError {
+        NSError(domain: "AttachmentTests.VideoFixture", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
     private func temporaryFolder() throws -> URL {
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("HonorAttachmentTests-\(UUID().uuidString)", isDirectory: true)
@@ -161,6 +272,9 @@ final class AttachmentTests: XCTestCase {
         let url = URL(fileURLWithPath: try XCTUnwrap(attachment.localPath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        for path in attachment.videoFramePaths ?? [] {
+            addTeardownBlock { try? FileManager.default.removeItem(at: URL(fileURLWithPath: path)) }
+        }
         return url
     }
 }

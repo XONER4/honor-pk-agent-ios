@@ -4,6 +4,12 @@ final class ChatToolsTests: HonorAuditCase {
     func testConversationMenuPinAndFindNavigateActualMessages() {
         let app = launch(["-UITestDemo"])
         openTools(app)
+        choose("chat.tools.share", title: "Поделиться чатом", app: app)
+        let closeShare = app.buttons["header.closeButton"].firstMatch
+        XCTAssertTrue(closeShare.waitForExistence(timeout: 15))
+        closeShare.tap()
+        waitAbsent(closeShare)
+        openTools(app)
         choose("chat.tools.pin", title: "Закрепить", app: app)
         openTools(app)
         XCTAssertTrue(app.buttons.matching(identifier: "chat.tools.pin").firstMatch.label.contains("Открепить"))
@@ -102,6 +108,29 @@ final class ChatToolsTests: HonorAuditCase {
         XCTAssertTrue(element(app, "welcomeMessage").waitForExistence(timeout: 5))
         app.buttons["chat.sidebar"].tap()
         XCTAssertFalse(app.buttons["history.row." + chatID].exists)
+    }
+
+    func testHoldVoiceSwipeCancelDiscardsAndReleaseSendsFinalTranscript() {
+        let app = launch(["-UITestDemo", "-UITestVoice"])
+        typeMessage("Не отправлять", app: app)
+        app.buttons["chat.voice"].tap()
+        let hold = element(app, "chat.voice.hold")
+        XCTAssertTrue(hold.waitForExistence(timeout: 5))
+        let start = hold.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let cancel = start.withOffset(CGVector(dx: 0, dy: -150))
+        start.press(forDuration: 0.7, thenDragTo: cancel)
+        waitAbsent(element(app, "chat.voice.cancel.overlay"))
+        app.buttons["chat.voice"].tap()
+        XCTAssertEqual(composer(app).value as? String, "Не отправлять")
+        XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "message.content.")).count, 1)
+        replaceText("", in: composer(app))
+        app.buttons["chat.voice"].tap()
+        XCTAssertTrue(hold.waitForExistence(timeout: 5))
+        hold.press(forDuration: 0.7)
+        XCTAssertTrue(app.staticTexts["Проверка голосового ввода"].waitForExistence(timeout: 8),
+                      "Release must submit the finalized transcript exactly once")
+        XCTAssertEqual(app.staticTexts.matching(identifier: "Проверка голосового ввода").count, 1)
+        waitAbsent(element(app, "chat.voice.recording.overlay"))
     }
 
     private func openTools(_ app: XCUIApplication) {

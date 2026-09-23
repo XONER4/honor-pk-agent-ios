@@ -38,7 +38,7 @@ final class ChatStore: ObservableObject {
     var canSend: Bool { !isLoadingHistory && !isGenerating && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty) }
 
     private let injectedClient: DeepSeekStreaming?
-    private let searchClient: WebSearching
+    private var searchClient: WebSearching
     private let storageURL: URL
     private let persistence: HistoryPersistence
     private var generationTask: Task<Void, Never>?
@@ -82,6 +82,10 @@ final class ChatStore: ObservableObject {
 
     func updateAPIKey(_ key: String) {
         configuration.apiKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        if var web = searchClient as? WebSearchClient {
+            web.urlDiscovery = DeepSeekURLDiscovery(configuration: configuration)
+            searchClient = web
+        }
         errorMessage = nil
     }
 
@@ -354,7 +358,8 @@ final class ChatStore: ObservableObject {
         let thinking = reasoningEnabled
         let query = input.last(where: { $0.role == .user })?.content ?? ""
         let searching = searchEnabled || WeatherIntent.location(in: query) != nil
-        let instruction = effectiveSystemInstruction + HonerIdentity.context(for: query)
+        let recentContext = input.suffix(4).map { String($0.content.prefix(1500)) }.joined(separator: "\n")
+        let instruction = effectiveSystemInstruction + HonerIdentity.context(for: query, recentContext: recentContext)
         let client = injectedClient ?? DeepSeekClient(configuration: configuration)
         let russianNormalizer = client as? RussianTextNormalizing
         generationStatus = searching ? "Ищу в интернете…" : (thinking ? "Размышляю…" : "Отвечаю…")

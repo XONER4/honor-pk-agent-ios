@@ -52,6 +52,7 @@ struct PersonalizationVideoPage: View {
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
+    @State private var loadFailed = false
 
     var body: some View {
         NavigationStack {
@@ -59,6 +60,9 @@ struct PersonalizationVideoPage: View {
                 if let player {
                     VideoPlayer(player: player).background(.black)
                         .accessibilityIdentifier("personalization.video.player")
+                } else if loadFailed {
+                    Label(settings.text("Не удалось открыть видео в этой сборке.", "The video could not be opened in this build."), systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.secondary).padding()
                 } else {
                     ProgressView().accessibilityIdentifier("personalization.video.loading")
                 }
@@ -76,7 +80,7 @@ struct PersonalizationVideoPage: View {
             if let url = Bundle.main.url(forResource: "PersonalizationDemo", withExtension: "mp4") {
                 player = AVPlayer(url: url)
                 player?.play()
-            }
+            } else { loadFailed = true }
         }
         .onDisappear { player?.pause(); player = nil }
     }

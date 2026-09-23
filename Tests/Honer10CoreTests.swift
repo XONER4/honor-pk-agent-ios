@@ -142,6 +142,32 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertEqual(results.first?.snippet, "Текст & данные.")
     }
 
+    func testUnavailableSearchUsesOnlyActuallyReadDiscoveredPages() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ResearchURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = WebSearchClient(session: session, urlDiscovery: ResearchDiscoveryFixture())
+        let sources = try await client.search("Find telescope specifications")
+        XCTAssertEqual(sources.map(\.url.absoluteString), ["https://research.example/specifications"])
+        XCTAssertEqual(sources.first?.title, "Telescope specifications")
+        XCTAssertTrue(sources.first?.content?.contains("Aperture is 120 mm") == true)
+        XCTAssertNotNil(sources.first?.fetchedAt)
+        XCTAssertTrue(sources.first?.snippet.contains("не поисковая выдержка") == true)
+        XCTAssertFalse(WebSearchClient.context(sources).contains("missing"))
+    }
+
+    func testBriefPersonalizationAddsConcreteAnswerLengthRule() throws {
+        let client = DeepSeekClient(configuration: .init(apiKey: "test"))
+        let request = try client.makeRequest(messages: [ChatMessage(role: .user, content: "Почему небо голубое?")], thinking: true,
+                                             systemInstruction: "Обращайся ко мне на ты, отвечай кратко по-русски.", searchContext: "")
+        let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+        let system = try XCTUnwrap((body["messages"] as? [[String: Any]])?.first?["content"] as? String)
+        XCTAssertTrue(system.contains("1–3 коротких предложения"))
+        XCTAssertTrue(system.contains("когда в текущем вопросе прямо просят подробности"))
+        XCTAssertFalse(PersonalizationPolicy.prefersBriefAnswers("Отвечай подробно, не кратко."))
+    }
+
     @MainActor
     func testVideoUsesFramesOnlyAndBackupRestoresFramesAndSharedCleanup() throws {
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("HonorPKAgent/Attachments")
@@ -211,4 +237,34 @@ private final class WeatherSearchFixture: WebSearching {
         queries.append(query)
         return [WebSource(title: "Клин", url: URL(string: "https://api.open-meteo.com/v1/forecast")!, snippet: "14 °C", content: "Клин: 14 °C", fetchedAt: Date())]
     }
+}
+
+private struct ResearchDiscoveryFixture: SearchURLDiscovering {
+    func candidates(for query: String) async throws -> [URL] {
+        [URL(string: "https://research.example/specifications")!, URL(string: "https://research.example/missing")!]
+    }
+}
+
+private final class ResearchURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        guard let url = request.url else { return }
+        let status: Int
+        let body: String
+        switch url.host {
+        case "www.bing.com":
+            status = 200
+            body = "<rss><channel><item><title>Bing homepage quiz answers</title><link>https://reddit.com/bing</link><description>Bing rewards quiz.</description></item></channel></rss>"
+        case "html.duckduckgo.com": status = 200; body = "<html><p>Verify you are human</p></html>"
+        case "research.example" where url.path == "/specifications":
+            status = 200
+            body = "<html><title>Telescope specifications</title><article><h1>Technical specifications</h1><p>Aperture is 120 mm. Focal length is 900 mm. This technical document describes the optical equipment and the supplied mounting assembly in detail.</p></article></html>"
+        default: status = 404; body = "Page not found"
+        }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "text/html; charset=utf-8"])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }
