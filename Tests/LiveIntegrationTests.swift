@@ -115,10 +115,13 @@ final class LiveIntegrationTests: XCTestCase {
         }
         if store.isGenerating { store.stop(); XCTFail("Ответ не пришёл за 150 секунд") }
         let result = try XCTUnwrap(store.messages.last)
-        let trace = "HONER_TOOLS answer=[\(result.content.prefix(300))] error=\(result.error ?? "nil")"
+        let trace = "HONER_TOOLS answer=[\(result.content)] error=\(result.error ?? "nil")"
         print(trace)
         XCTAssertNil(result.error, "Ошибка вместо ответа: \(result.error ?? "")")
         XCTAssertGreaterThan(result.content.count, 20, "Пустой ответ: \(trace)")
+        // Ответ должен опираться на данные из другого чата: там 12 дней.
+        XCTAssertTrue(result.content.contains("12"),
+                      "Ответ не использует данные другого чата: \(trace)")
         let evidence = XCTAttachment(string: trace)
         evidence.name = "live-tools"
         evidence.lifetime = .keepAlways
