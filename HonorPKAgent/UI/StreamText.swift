@@ -1286,32 +1286,104 @@ struct CodeBlockView: View {
     let fontSize: Double
     let findQuery: String
 
+    @State private var copied = false
+    @State private var showLineNumbers = false
+    @State private var useLightTheme = false
+
+    /// Длинный код сворачивается, чтобы не занимать весь экран.
+    private var isLong: Bool { text.components(separatedBy: "\n").count > 24 }
+    @State private var expanded = false
+
+    private var lines: [String] { text.components(separatedBy: "\n") }
+
+    private var visibleText: String {
+        if isLong && !expanded {
+            return lines.prefix(18).joined(separator: "\n")
+        }
+        return text
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: 6) {
                 Text(language.isEmpty ? "код" : language)
                     .font(.system(size: 11, weight: .medium))
-                Spacer()
-                Button { UIPasteboard.general.string = text } label: {
-                    Image(systemName: "square.on.square").frame(width: 44, height: 32)
+                Spacer(minLength: 0)
+                Button { showLineNumbers.toggle() } label: {
+                    Image(systemName: "list.number").frame(width: 38, height: 32)
+                }
+                .accessibilityLabel("Номера строк")
+                Button { useLightTheme.toggle() } label: {
+                    Image(systemName: useLightTheme ? "sun.max" : "moon").frame(width: 38, height: 32)
+                }
+                .accessibilityLabel("Тема подсветки")
+                Button {
+                    UIPasteboard.general.string = text
+                    copied = true
+                    Task {
+                        try? await Task.sleep(nanoseconds: 1_600_000_000)
+                        copied = false
+                    }
+                } label: {
+                    Image(systemName: copied ? "checkmark" : "square.on.square").frame(width: 38, height: 32)
                 }
                 .accessibilityLabel("Копировать код")
                 .accessibilityIdentifier("message.code.copy")
+                ShareLink(item: text) {
+                    Image(systemName: "square.and.arrow.up").frame(width: 38, height: 32)
+                }
+                .accessibilityLabel("Поделиться кодом")
             }
             .foregroundStyle(HonorTheme.secondary)
             .padding(.leading, 12).padding(.trailing, 2)
             .background(HonorTheme.raised)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(highlighted(AttributedString(text), query: findQuery))
-                    .font(.system(size: fontSize * 0.82, design: .monospaced))
-                    .textSelection(.enabled)
-                    .padding(12)
+                VStack(alignment: .leading, spacing: 0) {
+                    if showLineNumbers {
+                        HStack(alignment: .top, spacing: 10) {
+                            VStack(alignment: .trailing, spacing: 0) {
+                                ForEach(Array(visibleText.components(separatedBy: "\n").enumerated()), id: \.offset) { index, _ in
+                                    Text("\(index + 1)")
+                                        .font(.system(size: fontSize * 0.75, design: .monospaced))
+                                        .foregroundStyle(HonorTheme.secondary)
+                                }
+                            }
+                            codeText
+                        }
+                        .padding(12)
+                    } else {
+                        codeText.padding(12)
+                    }
+                    if isLong && !expanded {
+                        Button {
+                            expanded = true
+                        } label: {
+                            Label("Показать весь код (\(lines.count) строк)", systemImage: "chevron.down")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(HonorTheme.accent)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 10)
+                        .accessibilityIdentifier("message.code.expand")
+                    }
+                }
             }
         }
-        .background(HonorTheme.surface)
+        .background(useLightTheme ? Color.white : HonorTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(HonorTheme.divider, lineWidth: 0.6))
+    }
+
+    /// Подсветка синтаксиса своим разбором по языку (пункт 6 ТЗ).
+    private var codeText: some View {
+        SyntaxHighlighter.highlight(visibleText,
+                                    language: language,
+                                    theme: SyntaxHighlighter.Theme.named(useLightTheme ? "light" : "dark"),
+                                    fontSize: fontSize)
+            .font(.system(size: fontSize * 0.82, design: .monospaced))
+            .textSelection(.enabled)
     }
 }
 
