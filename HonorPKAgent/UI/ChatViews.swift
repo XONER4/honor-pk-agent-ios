@@ -45,6 +45,19 @@ struct ChatRootView: View {
     @FocusState private var composerFocused: Bool
     @FocusState private var findFocused: Bool
 
+    /// Самопроверка связи при запуске: если сервис недоступен или ключ неверный,
+    /// пользователь видит причину сразу, а не пустой ответ в чате.
+    private func runStartupCheck() {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !store.isGenerating else { return }
+            guard let client = store.connectionChecker else { return }
+            if let problem = await client.checkConnection(), store.errorMessage == nil {
+                store.errorMessage = problem
+            }
+        }
+    }
+
     private func text(_ ru: String, _ en: String) -> String { settings.text(ru, en) }
 
     var body: some View {
@@ -216,6 +229,7 @@ struct ChatRootView: View {
         .onChange(of: speech.errorMessage) { error in
             if let error { deviceError = error }
         }
+        .task { runStartupCheck() }
         .onChange(of: speech.isSpeaking) { speaking in
             if !speaking { speakingContent = nil }
         }

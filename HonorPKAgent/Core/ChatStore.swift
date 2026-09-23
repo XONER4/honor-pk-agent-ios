@@ -61,6 +61,10 @@ final class ChatStore: ObservableObject {
     var archivedConversations: [Conversation] { conversations.filter { $0.archivedAt != nil }.sorted { ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast) } }
     var messages: [ChatMessage] { selectedConversation?.messages ?? [] }
     var hasAPIKey: Bool { !configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// Клиент для самопроверки связи. Есть только у настоящего клиента:
+    /// у тестовых заглушек его нет, и проверка просто не запускается.
+    var connectionChecker: DeepSeekClient? { injectedClient as? DeepSeekClient }
     var canSend: Bool { !isLoadingHistory && !isGenerating && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty) }
 
     private let injectedClient: DeepSeekStreaming?

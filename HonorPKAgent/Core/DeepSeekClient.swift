@@ -465,6 +465,37 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
         }
     }
 
+    /// Короткая проверка связи с сервисом. Поломка (нет сети, неверный ключ, сервис
+    /// недоступен) должна быть видна сразу, а не превращаться в молчание в чате.
+    /// Возвращает текст проблемы или nil, если связь есть.
+    func checkConnection() async -> String? {
+        do {
+            var request = try makeRequest(messages: [ChatMessage(role: .user, content: "ответь одним словом: связь")],
+                                          thinking: false, systemInstruction: "", searchContext: "", tools: nil)
+            guard var body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any] else {
+                return "Проверка связи: приложение собрало некорректный запрос."
+            }
+            body["stream"] = false
+            body["max_tokens"] = 16
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.timeoutInterval = 30
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return "Проверка связи: сервис не ответил." }
+            guard (200..<300).contains(http.statusCode) else {
+                let envelope = try? JSONDecoder().decode(StreamEnvelope.self, from: data)
+                let detail = envelope?.error?.message ?? String(data: data.prefix(200), encoding: .utf8) ?? ""
+                return "Сервис ответил ошибкой \(http.statusCode). \(detail)"
+            }
+            return nil
+        } catch {
+            if (error as? URLError)?.code == .notConnectedToInternet {
+                return "Нет подключения к интернету. Проверьте сеть."
+            }
+            return "Нет связи с сервисом: \(error.localizedDescription)"
+        }
+    }
+
     /// Обычный запрос без потока. Ответ приходит целиком: обрываться на середине
     /// ему нечем, поэтому это надёжный запасной путь, когда поток не дал текста.
     func complete(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
