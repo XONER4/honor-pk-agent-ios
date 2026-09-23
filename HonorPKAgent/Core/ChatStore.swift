@@ -363,6 +363,11 @@ final class ChatStore: ObservableObject {
         activeMessageID = nil
         isGenerating = false
         generationStatus = nil
+        // Живой буфер обязательно очищаем: иначе напечатанный текст остался бы в нём
+        // и «переехал» в другой чат, когда пользователь переключится.
+        live.content = ""
+        live.reasoning = ""
+        live.reasoningSeconds = 0
         saveSnapshot()
     }
 
@@ -987,7 +992,7 @@ final class ChatStore: ObservableObject {
         return ToolExecutionContext(
             deviceModel: DeviceModel.name,
             systemVersion: UIDevice.current.systemVersion,
-            appVersion: "10.15",
+            appVersion: "10.16",
             messageCount: messages.count,
             voiceMessageCount: messages.filter { $0.inputKind == .voice }.count,
             chatStartedAt: selectedConversation?.createdAt,

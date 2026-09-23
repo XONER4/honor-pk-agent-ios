@@ -497,6 +497,31 @@ final class HonorPKAgentTests: XCTestCase {
     }
 
     @MainActor
+    func testStoppingGenerationClearsLiveBufferSoTextDoesNotMoveToAnotherChat() async throws {
+        let client = ControlledClient()
+        let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"), client: client,
+                              storageURL: temporaryHistory())
+        store.draft = "Первый чат"
+        store.send()
+        try await waitForContinuation(client)
+        let stream = try XCTUnwrap(client.continuations.first)
+        stream.yield(.init(content: "Начало ответа."))
+        try await Task.sleep(nanoseconds: 60_000_000)
+        XCTAssertFalse(store.live.content.isEmpty)
+        store.stop()
+        // После остановки буфер обязан быть пустым: иначе текст «переехал» бы
+        // в другой чат, когда пользователь переключится.
+        XCTAssertEqual(store.live.content, "", "Живой буфер не очищен после остановки")
+        store.newChat()
+        store.draft = "Другой чат"
+        store.send()
+        try await waitForContinuation(client, count: 2)
+        let fresh = try XCTUnwrap(store.messages.last)
+        XCTAssertFalse(fresh.content.contains("Начало ответа"),
+                       "Текст прошлого чата попал в новый: [\(fresh.content)]")
+    }
+
+    @MainActor
     private func waitUntilIdle(_ store: ChatStore) async throws {
         // Раннер в CI медленный: генерация может занять секунды, поэтому ждём до 30 с.
         for _ in 0..<600 {
