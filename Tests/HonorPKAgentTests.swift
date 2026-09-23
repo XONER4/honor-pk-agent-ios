@@ -422,7 +422,10 @@ final class HonorPKAgentTests: XCTestCase {
         XCTAssertEqual(store.messages.last?.content, "Первая часть. вторая часть.")
         store.deleteChats(ids: [firstID])
         firstStream.yield(.init(content: "STALE")); firstStream.finish()
+        print("HONER_STOP after delete: generating=\(store.isGenerating) canSend=\(store.canSend) "
+            + "conversations=\(store.conversations.count) conts=\(client.continuations.count) error=\(store.errorMessage ?? "nil")")
         store.draft = "Keep this conversation"; store.send()
+        print("HONER_STOP after send: generating=\(store.isGenerating) conversations=\(store.conversations.count) conts=\(client.continuations.count)")
         try await waitForContinuation(client, count: 2)
         XCTAssertEqual(client.continuations.count, 2)
         client.continuations.last?.yield(.init(content: "Свежий ответ."))

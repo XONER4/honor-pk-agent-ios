@@ -728,9 +728,15 @@ final class ChatStore: ObservableObject {
                             let translated = try await russianNormalizer.normalizeRussian(rawReasoning, reasoning: true)
                             try Task.checkCancellation()
                             guard self.activeRunID == runID else { return }
+                            #if DEBUG
+                            print("HONER_WHY applied translated len=\(translated.count) of \(rawReasoning.count)")
+                            #endif
                             self.mutateMessage(chatID: chatID, messageID: response.id) { $0.reasoning = translated; $0.reasoningWasTranslated = true }
                         } catch {
                             if Task.isCancelled { throw CancellationError() }
+                            #if DEBUG
+                            print("HONER_WHY failed: \(error) sourceLen=\(rawReasoning.count)")
+                            #endif
                             // Перевод не удался — оставляем исходный текст рассуждения,
                             // а не заглушку: пользователь должен видеть, о чём думала модель.
                             self.mutateMessage(chatID: chatID, messageID: response.id) {
