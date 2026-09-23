@@ -35,10 +35,11 @@ struct ScrollRequest: Equatable {
 struct StreamText<Content: View>: View {
     let target: String
     let streaming: Bool
-    /// Скорость показа, символов в секунду.
-    var baseRate: Double = 55
-    /// Отставание, после которого начинаем догонять буфер.
-    var comfortableLag: Int = 240
+    /// Скорость показа, символов в секунду. Заказчик отдельно просил плавность,
+    /// поэтому значения низкие: текст должен именно печататься, а не появляться.
+    var baseRate: Double = 30
+    /// Отставание, после которого начинаем мягко догонять буфер.
+    var comfortableLag: Int = 320
     @ViewBuilder let content: (String) -> Content
 
     @State private var revealed: String = ""
@@ -60,19 +61,13 @@ struct StreamText<Content: View>: View {
         .onChange(of: streaming) { _ in syncTarget() }
     }
 
-    /// Что реально показывается. Если аниматор по любой причине отстал от цели
-    /// (представление пересоздали, поток завершился, состояние потерялось),
-    /// показываем полный текст — ответ не может не появиться на экране.
+    /// Что реально показывается.
+    /// Пока идёт поток или текст ещё не дописан, показываем ровно то, что успел
+    /// напечатать аниматор: ответ не должен «вываливаться» целиком. Полный текст
+    /// показываем только если аниматор вообще не смог начать (пустое состояние).
     private var displayed: String {
-        if !streaming {
-            return target
-        }
-        if revealed.isEmpty, !target.isEmpty {
-            return target
-        }
-        if revealedCount > target.count {
-            return target
-        }
+        if revealedCount > target.count { return target }
+        if revealed.isEmpty { return target }
         return revealed
     }
 
@@ -83,7 +78,10 @@ struct StreamText<Content: View>: View {
         // Поток завершился: мгновенно показываем финальный текст без «дописывания».
         // Раньше при этом оставался огрызок, если аниматор не успел доиграть.
         if !streaming {
-            if revealedCount != target.count || revealed != target {
+            // Поток закончился, но печать продолжается: пользователь просил плавность,
+            // а не мгновенный показ. Полный текст дописывается аниматором, поэтому
+            // здесь только выравниваем счётчики, если они ушли вперёд цели.
+            if revealedCount > target.count {
                 revealed = target
                 revealedCount = target.count
             }
@@ -99,16 +97,17 @@ struct StreamText<Content: View>: View {
     private func advance(to now: Date) {
         guard streaming || revealedCount < target.count else { return }
         if lastTick == .distantPast { lastTick = now; return }
-        let elapsed = min(now.timeIntervalSince(lastTick), 0.25)
+        let elapsed = min(now.timeIntervalSince(lastTick), 0.12)
         lastTick = now
         guard elapsed > 0 else { return }
 
         let total = target.count
         var remaining = total - revealedCount
 
-        // Буфер не растёт дольше 0,35 с (сеть «молчит») — догоняем всё, что есть,
-        // чтобы не оставлять на экране один символ.
-        let stalled = now.timeIntervalSince(lastGrowth) > 0.35
+        // Буфер не растёт дольше 2 секунд — догоняем всё, что есть, чтобы не оставлять
+        // текст недописанным. Раньше порог был 0,35 с: из-за него при обычных паузах
+        // сети в конце вываливался целый абзац — это и выглядело как «резкий» ответ.
+        let stalled = now.timeIntervalSince(lastGrowth) > 2.0
         if remaining <= 0 {
             if revealedCount != total, stalled {
                 revealed = target
@@ -117,16 +116,20 @@ struct StreamText<Content: View>: View {
             return
         }
 
-        // Адаптивная скорость: догоняем буфер, но текст не «прыгает».
+        // Адаптивная скорость. Главное требование заказчика — плавность, поэтому
+        // базовую скорость держим низкой, а догон делаем мягким: при большом
+        // отставании текст идёт быстрее, но никогда не «вываливается» мгновенно.
         var rate = baseRate
-        if remaining > comfortableLag * 3 {
-            rate = max(baseRate * 12, 900)
+        if remaining > comfortableLag * 4 {
+            rate = baseRate * 6
+        } else if remaining > comfortableLag * 2 {
+            rate = baseRate * 3
         } else if remaining > comfortableLag {
-            rate = baseRate * 4
+            rate = baseRate * 1.8
         }
 
         var step = max(1, Int((rate * elapsed).rounded()))
-        if stalled { step = remaining }
+        if stalled { step = max(step, remaining / 8) }
         let take = min(step, remaining)
         let end = target.index(target.startIndex, offsetBy: take)
         // Не разрываем графемы (эмодзи, составные символы).
@@ -138,7 +141,9 @@ struct StreamText<Content: View>: View {
         revealedCount = revealed.count
         if revealedCount > 0 { lastGrowth = now }
         remaining = total - revealedCount
-        if remaining <= 0 { revealed = target; revealedCount = total }
+        // Полный текст появляется только когда он весь показан посимвольно;
+        // мгновенный показ допускаем лишь при завершённом потоке.
+        if remaining <= 0, !streaming { revealed = target; revealedCount = total }
     }
 
     private func isCombining(_ scalar: Unicode.Scalar) -> Bool {
@@ -1113,6 +1118,11 @@ struct QuestionsCardView: View {
     let onAnswer: (String) -> Void
 
     @State private var customDrafts: [UUID: String] = [:]
+    /// Какой вариант уже выбран. Нужен как видимый отклик на нажатие и как защита
+    /// от повторной отправки: раньше нажатие не давало никакой реакции, и казалось,
+    /// что вариант «не выбирается».
+    @State private var selected: String?
+    @State private var sent = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -1122,26 +1132,7 @@ struct QuestionsCardView: View {
                         .font(.system(size: fontSize, weight: .semibold))
                         .fixedSize(horizontal: false, vertical: true)
                     ForEach(question.options, id: \.self) { option in
-                        Button {
-                            onAnswer(option)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "circle")
-                                    .font(.system(size: 12))
-                                Text(option)
-                                    .font(.system(size: fontSize * 0.95))
-                                    .multilineTextAlignment(.leading)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 12)
-                            .frame(minHeight: 38)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(HonorTheme.raised, in: RoundedRectangle(cornerRadius: 10))
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(HonorTheme.foreground)
-                        .accessibilityIdentifier("question.option." + option)
+                        optionButton(option)
                     }
                     if question.allowsCustom {
                         HStack(spacing: 8) {
@@ -1151,18 +1142,18 @@ struct QuestionsCardView: View {
                                 .font(.system(size: fontSize * 0.95))
                                 .textFieldStyle(.plain)
                                 .padding(.horizontal, 12)
-                                .frame(minHeight: 38)
+                                .frame(minHeight: 40)
                                 .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 10))
                                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.7))
                             Button {
                                 let value = (customDrafts[question.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                                guard !value.isEmpty else { return }
-                                onAnswer(value)
+                                guard !value.isEmpty, !sent else { return }
+                                send(value)
                                 customDrafts[question.id] = ""
                             } label: {
                                 Image(systemName: "arrow.up")
                                     .font(.system(size: 13, weight: .semibold))
-                                    .frame(width: 34, height: 34)
+                                    .frame(width: 36, height: 36)
                                     .background(HonorTheme.accent, in: Circle())
                                     .foregroundStyle(.white)
                             }
@@ -1178,6 +1169,50 @@ struct QuestionsCardView: View {
         .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(HonorTheme.accent.opacity(0.35), lineWidth: 0.8))
         .accessibilityIdentifier("message.questions")
+    }
+
+    /// Вариант ответа: явная зона нажатия, видимая галочка и защита от повторной отправки.
+    private func optionButton(_ option: String) -> some View {
+        let isSelected = selected == option
+        return Button {
+            guard !sent else { return }
+            send(option)
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+                    .font(.system(size: 15))
+                    .foregroundStyle(isSelected ? HonorTheme.accent : HonorTheme.secondary)
+                Text(option)
+                    .font(.system(size: fontSize * 0.96))
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(HonorTheme.accent)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(minHeight: 42)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? HonorTheme.accent.opacity(0.16) : HonorTheme.raised,
+                        in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10)
+                .stroke(isSelected ? HonorTheme.accent.opacity(0.6) : Color.clear, lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(HonorTheme.foreground)
+        .accessibilityIdentifier("question.option." + option)
+    }
+
+    private func send(_ value: String) {
+        sent = true
+        selected = value
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        onAnswer(value)
     }
 }
 

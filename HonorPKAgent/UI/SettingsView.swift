@@ -55,9 +55,9 @@ struct SettingsView: View {
                         .accessibilityIdentifier("settings.font")
                         SettingsDivider()
                         NavigationLink { PersonalizationSettingsPage() } label: {
-                            SettingsRow(symbol: "sparkles", title: settings.text("Персонализация", "Personalization"))
+                            SettingsRow(symbol: "text.bubble", title: settings.text("Инструкции для Honer AI", "Honer AI instructions"))
                         }
-                        .accessibilityIdentifier("settings.personalization")
+                        .accessibilityIdentifier("settings.instructions")
                         SettingsDivider()
                         NavigationLink { MemorySettingsPage() } label: {
                             SettingsRow(symbol: "brain", title: settings.text("Память Honer AI", "Honer AI memory"),
@@ -217,9 +217,14 @@ private struct ProfileSettingsPage: View {
     @EnvironmentObject private var settings: AppSettings
     @State private var pickerItem: PhotosPickerItem?
     @State private var photoError: String?
+    /// Только что выбранное фото держим в памяти: так аватар появляется сразу,
+    /// не дожидаясь повторного чтения файла с диска.
+    @State private var justPicked: UIImage?
 
     private var avatar: UIImage? {
+        if let justPicked { return justPicked }
         guard !settings.profilePhotoPath.isEmpty else { return nil }
+        guard FileManager.default.fileExists(atPath: settings.profilePhotoPath) else { return nil }
         return UIImage(contentsOfFile: settings.profilePhotoPath)
     }
 
@@ -308,6 +313,11 @@ private struct ProfileSettingsPage: View {
                     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                     let url = directory.appendingPathComponent("profile-photo.jpg")
                     try jpeg.write(to: url, options: .atomic)
+                    guard FileManager.default.fileExists(atPath: url.path) else {
+                        photoError = settings.text("Не удалось сохранить фото на устройство.", "Could not save the photo on the device.")
+                        return
+                    }
+                    justPicked = resized
                     settings.profilePhotoPath = url.path
                     photoError = nil
                 } catch {
@@ -502,13 +512,12 @@ private struct FontSettingsPage: View {
 
 private struct PersonalizationSettingsPage: View {
     @EnvironmentObject private var settings: AppSettings
-    @State private var showsTutorial = false
     var body: some View {
         Form {
             Section {
                 TextEditor(text: $settings.customInstructions)
                     .frame(minHeight: 200)
-                    .font(.system(size: 17 * settings.fontScale))
+                    .font(.system(size: 19 * settings.fontScale))
                     .accessibilityLabel(settings.text("Пользовательские инструкции", "Custom instructions"))
                     .accessibilityIdentifier("personalization.instructions")
                 if !settings.customInstructions.isEmpty {
@@ -522,19 +531,10 @@ private struct PersonalizationSettingsPage: View {
                 Text(settings.text("Например: «Обращайся ко мне на ты. Отвечай кратко и по-русски». Изменения сохраняются автоматически и применяются к следующим сообщениям.",
                                    "For example: “Use a friendly tone and keep answers concise.” Changes are saved automatically and apply to your next messages."))
             }
-            Section {
-                Button { showsTutorial = true } label: {
-                    Label(settings.text("Как это работает · видео", "How it works · video"), systemImage: "play.rectangle")
-                }.accessibilityIdentifier("personalization.video")
-            } footer: {
-                Text(settings.text("Короткая запись: задаём стиль общения и проверяем его в настоящем ответе Honer AI.",
-                                   "A short recording: set a conversation style and see it applied in a real Honer AI reply."))
-            }
         }
-        .navigationTitle(settings.text("Персонализация", "Personalization"))
+        .navigationTitle(settings.text("Инструкции для Honer AI", "Honer AI instructions"))
         .navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("settings.page.personalization")
-        .sheet(isPresented: $showsTutorial) { PersonalizationVideoPage() }
+        .accessibilityIdentifier("settings.page.instructions")
     }
 }
 

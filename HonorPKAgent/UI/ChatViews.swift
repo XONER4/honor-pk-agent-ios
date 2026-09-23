@@ -548,33 +548,30 @@ struct ChatRootView: View {
                 }
             }
             if voiceMode {
-                Text(text("Удерживайте для голосового ввода", "Hold to speak"))
-                    .font(.system(size: 17, weight: .semibold))
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .contentShape(Rectangle())
-                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                        .onChanged { value in
-                            if !voiceHolding { beginVoice() }
-                            let cancelled = value.translation.height < -70
-                            if cancelled != voiceCancelArmed {
-                                voiceCancelArmed = cancelled
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            }
-                        }
-                        .onEnded { _ in finishVoice() })
-                    .accessibilityIdentifier("chat.voice.hold")
-                    .accessibilityHint(text("Удерживайте и отпустите для отправки. Сдвиньте вверх для отмены.", "Hold and release to send. Slide up to cancel."))
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityAction {
-                        if voiceHolding { finishVoice() } else { beginVoice() }
+                // Голосовой ввод — ОДНА кнопка в нижнем ряду (микрофон).
+                // Раньше здесь была вторая зона удержания, и в панели оказывались
+                // две кнопки голоса одновременно: пользователь не понимал, какая работает.
+                HStack(spacing: 10) {
+                    Image(systemName: voiceHolding ? "waveform" : "mic")
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(voiceHolding ? HonorTheme.accent : HonorTheme.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(text(voiceHolding ? "Говорите…" : "Голосовой ввод", voiceHolding ? "Listening…" : "Voice input"))
+                            .font(.system(size: 16, weight: .semibold))
+                        Text(text("Удерживайте микрофон внизу, отпустите — отправка. Сдвиньте вверх — отмена.",
+                                  "Hold the mic below, release to send. Slide up to cancel."))
+                            .font(.system(size: 12))
+                            .foregroundStyle(HonorTheme.secondary)
                     }
-                    .accessibilityAction(named: Text(text("Отменить запись", "Cancel recording"))) { cancelVoice() }
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .accessibilityIdentifier("chat.voice.hint")
                 Rectangle().fill(HonorTheme.divider).frame(height: 0.5)
-            } else {
-              HStack(alignment: .top, spacing: 2) {
+            }
+            HStack(alignment: .top, spacing: 2) {
                 TextField(text("Напишите сообщение…", "Message Honer AI…"), text: $store.draft, axis: .vertical)
-                .font(.system(size: 17 * settings.fontScale * dynamicScale))
+                .font(.system(size: 19 * settings.fontScale * dynamicScale))
                 .lineLimit(1...6)
                 .focused($composerFocused)
                 .tint(HonorTheme.accent)
@@ -586,7 +583,6 @@ struct ChatRootView: View {
                 .onChange(of: composerFocused) { focused in
                     if focused && attachmentsOpen { animate { attachmentsOpen = false } }
                 }
-                if store.canSend { voiceButton }
                 Button {
                     composerFocused = false
                     cancelVoice()
@@ -597,7 +593,6 @@ struct ChatRootView: View {
                 }
                 .accessibilityLabel(text("Стикеры", "Stickers"))
                 .accessibilityIdentifier("composer.stickers")
-              }
             }
             HStack(spacing: 5) {
                 modePill(symbol: "atom", label: text("Рассуждение", "Reason"), selected: store.reasoningEnabled) {
@@ -650,35 +645,58 @@ struct ChatRootView: View {
         .overlay(RoundedRectangle(cornerRadius: 27, style: .continuous).stroke(HonorTheme.divider, lineWidth: 0.7))
     }
 
+    /// Единственная кнопка голосового ввода. Удержание — запись, отпускание — отправка,
+    /// сдвиг вверх во время удержания — отмена. Раньше рядом с ней была вторая зона
+    /// удержания над полем ввода, и в панели оказывались две кнопки голоса.
     private var voiceButton: some View {
-        Button {
-            let wasVoice = voiceMode
-            cancelVoice()
-            animate { voiceMode.toggle() }
-            composerFocused = !voiceMode
-            // Возврат к клавиатуре обязан полностью убрать голосовой ввод:
-            // раньше запись и оверлей оставались висеть до ручного отключения.
-            if wasVoice { cancelVoice() }
-        } label: {
-            Group {
-                if voiceMode {
-                    Image(systemName: "keyboard").font(.system(size: 13, weight: .medium))
-                        .frame(width: 25, height: 25)
-                        .overlay(Circle().stroke(lineWidth: 1.6))
-                } else {
-                    Image(systemName: "waveform.circle").font(.system(size: 26))
+        Image(systemName: voiceMode ? (voiceHolding ? "waveform.circle.fill" : "mic.circle.fill") : "waveform.circle")
+            .font(.system(size: 26))
+            .foregroundStyle(voiceMode ? HonorTheme.accent : HonorTheme.foreground)
+            .frame(width: 40, height: 44)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                    .onChanged { value in
+                        if !voiceMode { return }
+                        if !voiceHolding { beginVoice() }
+                        let cancelled = value.translation.height < -70
+                        if cancelled != voiceCancelArmed {
+                            voiceCancelArmed = cancelled
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        }
+                    }
+                    .onEnded { _ in
+                        if voiceMode, voiceHolding { finishVoice() }
+                    }
+            )
+            .onTapGesture {
+                if !voiceMode {
+                    // Включение голосового режима: дальше работает удержание.
+                    cancelVoice()
+                    animate { voiceMode = true }
+                    composerFocused = false
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                } else if !voiceHolding {
+                    // Короткое касание в голосовом режиме — вернуться к клавиатуре.
+                    cancelVoice()
+                    animate { voiceMode = false }
+                    composerFocused = true
                 }
-            }.foregroundStyle(HonorTheme.foreground).frame(width: 40, height: 44)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(text(voiceMode ? "Клавиатура" : "Голосовой ввод", voiceMode ? "Keyboard" : "Voice input"))
-        .accessibilityIdentifier("chat.voice")
-        .onChange(of: voiceMode) { active in
-            // Любое выключение голосового режима обязано остановить запись.
-            if !active, voiceHolding || speech.isRecording || speech.isPreparingRecording {
-                cancelVoice()
             }
-        }
+            .accessibilityLabel(text(voiceMode ? "Удерживайте для записи, касание — клавиатура" : "Голосовой ввод",
+                                     voiceMode ? "Hold to record, tap for keyboard" : "Voice input"))
+            .accessibilityIdentifier("chat.voice")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction {
+                if voiceMode { cancelVoice(); voiceMode = false; composerFocused = true }
+                else { voiceMode = true; composerFocused = false }
+            }
+            .onChange(of: voiceMode) { active in
+                // Любое выключение голосового режима обязано остановить запись.
+                if !active, voiceHolding || speech.isRecording || speech.isPreparingRecording {
+                    cancelVoice()
+                }
+            }
     }
 
     private func modePill(symbol: String, label: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -701,6 +719,8 @@ struct ChatRootView: View {
     private func send(inputKind: MessageInputKind = .text) {
         cancelVoice(); speech.stopSpeaking()
         store.systemInstruction = settings.customInstructions
+        // Мост к настройкам: через него модель может менять их инструментом.
+        store.settingsBridge = settings
         store.send(inputKind: inputKind)
         composerFocused = false
         animate { attachmentsOpen = false }
@@ -906,8 +926,17 @@ private struct MessageTimeline: View {
             handleGenerationChange(generating, messages: messages, proxy: proxy)
         }
         .onChange(of: tail?.content.count ?? 0) { (_: Int) in
-            guard store.isGenerating, followLatest, findQuery.isEmpty else { return }
+            guard followLatest, findQuery.isEmpty else { return }
+            // Прокрутка идёт и во время печати, и после неё: аниматор дописывает текст
+            // уже после конца потока, и без этого конец ответа уходил под клавиатуру.
             scheduleStreamFollow(proxy: proxy)
+        }
+        .onChange(of: composerFocused) { focused in
+            // Клавиатура поднимается — сразу подтягиваем низ переписки, чтобы конец
+            // ответа не оказался за клавиатурой.
+            guard focused else { return }
+            followLatest = true
+            scheduleStreamFollow(proxy: proxy, timeout: 3.0)
         }
         .onChange(of: selectedMatch) { (id: UUID?) in
             guard let id else { return }
@@ -933,15 +962,17 @@ private struct MessageTimeline: View {
     }
 
     /// Прокрутка «за ответом» кадрами по 0,2 с, без анимации: так текст едет
-    /// вместе с набором, а не прыгает.
-    private func scheduleStreamFollow(proxy: ScrollViewProxy) {
+    /// вместе с набором, а не прыгает. Работает и после конца потока, пока аниматор
+    /// дописывает текст, и ограничена по времени, чтобы не крутиться вечно.
+    private func scheduleStreamFollow(proxy: ScrollViewProxy, timeout: Double = 120) {
         guard followTask == nil else { return }
+        let deadline = Date().addingTimeInterval(timeout)
         followTask = Task { @MainActor in
             defer { followTask = nil }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 if Task.isCancelled { return }
-                guard followLatest, store.isGenerating else { return }
+                guard followLatest, Date() < deadline else { return }
                 proxy.scrollTo("message-bottom", anchor: .bottom)
             }
         }
@@ -1059,6 +1090,47 @@ private struct MessageTimeline: View {
     }
 }
 
+/// Миниатюра вложения в чате: фото или кадр видео.
+/// Файл читается с диска один раз и кэшируется, чтобы прокрутка не тормозила.
+struct AttachmentThumbnail: View {
+    let attachment: MessageAttachment
+    var height: CGFloat = 190
+    var frameOverride: URL? = nil
+
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                ZStack {
+                    HonorTheme.raised
+                    VStack(spacing: 6) {
+                        Image(systemName: "photo").font(.system(size: 22))
+                        Text(attachment.name).font(.system(size: 11)).lineLimit(1)
+                    }
+                    .foregroundStyle(HonorTheme.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: 280)
+        .frame(height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(HonorTheme.divider, lineWidth: 0.6))
+        .task(id: attachment.id) { load() }
+    }
+
+    private func load() {
+        guard image == nil else { return }
+        let url = frameOverride ?? attachment.resolvedURL
+        guard let url, let data = try? Data(contentsOf: url), let loaded = UIImage(data: data) else { return }
+        image = loaded
+    }
+}
+
 private struct MessageRow: View, Equatable {
     let message: ChatMessage
     let streaming: Bool
@@ -1116,7 +1188,7 @@ private struct MessageRow: View, Equatable {
                 if !message.content.isEmpty {
                     // Цветной текст работает и в сообщениях пользователя (пункт 8 ТЗ).
                     Text(InlineStyleParser.apply(to: highlighted(AttributedString(message.content), query: findQuery)))
-                        .font(.system(size: 17 * settings.fontScale * dynamicScale))
+                        .font(.system(size: 19 * settings.fontScale * dynamicScale))
                         .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1149,6 +1221,19 @@ private struct MessageRow: View, Equatable {
         .accessibilityHint(text("Ваше сообщение. Удерживайте для действий.", "Your message. Touch and hold for actions."))
     }
 
+    /// Короткая подпись к списку источников: сколько страниц и что именно прочитано.
+    private var sourceSummary: String {
+        let pages = message.sources.filter { !($0.content ?? "").isEmpty }.count
+        let count = message.sources.count
+        if pages == 0 {
+            return text("\(count) результат(ов) поиска", "\(count) search result(s)")
+        }
+        if pages == count {
+            return text("\(count) прочитанных страниц(ы)", "\(count) pages read")
+        }
+        return text("прочитано \(pages) из \(count) страниц", "\(pages) of \(count) pages read")
+    }
+
     private var assistantMessage: some View {
         VStack(alignment: .leading, spacing: 13) {
             if !message.reasoning.isEmpty || (streaming && message.content.isEmpty) {
@@ -1157,7 +1242,7 @@ private struct MessageRow: View, Equatable {
                 } label: {
                     HStack(spacing: 7) {
                         if streaming && message.content.isEmpty { ProgressView().scaleEffect(0.7).tint(HonorTheme.secondary) }
-                        Text(reasoningTitle).font(.system(size: 16 * settings.fontScale * dynamicScale, weight: .medium))
+                        Text(reasoningTitle).font(.system(size: 17 * settings.fontScale * dynamicScale, weight: .medium))
                         Image(systemName: reasoningOpen ? "chevron.down" : "chevron.right").font(.system(size: 12, weight: .medium))
                     }
                     .foregroundStyle(HonorTheme.secondary)
@@ -1182,7 +1267,7 @@ private struct MessageRow: View, Equatable {
                             .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
                             .accessibilityIdentifier("message.reasoning.foreign." + message.id.uuidString)
                     }
-                    StreamText(target: message.reasoning, streaming: streaming, baseRate: 80) { visible in
+                    StreamText(target: message.reasoning, streaming: streaming, baseRate: 42) { visible in
                         BlockMarkdownView(content: visible, fontSize: 14 * settings.fontScale * dynamicScale,
                                           sources: [], findQuery: findQuery)
                             .foregroundStyle(HonorTheme.secondary)
@@ -1196,8 +1281,9 @@ private struct MessageRow: View, Equatable {
             if !message.content.isEmpty {
                 // Плавный посимвольный вывод: текст растёт по кадрам, а не рывками
                 // на каждом обновлении стрима.
-                StreamText(target: message.content, streaming: streaming, baseRate: 58) { visible in
-                    BlockMarkdownView(content: visible, fontSize: 17 * settings.fontScale * dynamicScale,
+                // Размер текста увеличен до 19 pt: на 17 pt ответ читался мелко.
+                StreamText(target: message.content, streaming: streaming, baseRate: 30) { visible in
+                    BlockMarkdownView(content: visible, fontSize: 19 * settings.fontScale * dynamicScale,
                                       sources: message.sources, findQuery: findQuery,
                                       onAnswer: onAnswer)
                 }
@@ -1207,7 +1293,7 @@ private struct MessageRow: View, Equatable {
                 // Карточки-превью ссылок из ответа (OG-теги).
                 if !streaming {
                     LinkPreviewListView(content: message.content,
-                                        fontSize: 17 * settings.fontScale * dynamicScale)
+                                        fontSize: 19 * settings.fontScale * dynamicScale)
                 }
             }
             if let error = message.error {
@@ -1227,15 +1313,39 @@ private struct MessageRow: View, Equatable {
                     .accessibilityIdentifier("message.stopped." + message.id.uuidString)
             }
             if !message.sources.isEmpty {
-                Button { onSources(SourceSelection(sources: message.sources, readOnly: false)) } label: {
-                    HStack(spacing: 8) {
-                        SourceSiteMarks(sources: message.sources)
-                        Text(text("\(message.sources.count) веб-страниц", "\(message.sources.count) web pages"))
-                    }.font(.system(size: 13, weight: .medium))
-                    .padding(.horizontal, 11).frame(minHeight: 34)
-                    .overlay(Capsule().stroke(HonorTheme.divider, lineWidth: 0.7))
-                }.buttonStyle(.plain).foregroundStyle(HonorTheme.secondary)
+                // Раньше здесь были просто значки сайтов и число — непонятно, что это.
+                // Теперь блок подписан словами, показаны названия страниц и есть
+                // подсказка, что по нажатию открывается список источников ответа.
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "link").font(.system(size: 11, weight: .semibold))
+                        Text(text("Источники ответа", "Answer sources"))
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(HonorTheme.secondary)
+                    Button { onSources(SourceSelection(sources: message.sources, readOnly: false)) } label: {
+                        HStack(spacing: 8) {
+                            SourceSiteMarks(sources: message.sources)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(sourceSummary)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .lineLimit(1)
+                                Text(text("Нажмите, чтобы посмотреть страницы и цитаты",
+                                          "Tap to view the pages and quotes"))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(HonorTheme.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                        }
+                        .padding(.horizontal, 11).padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(HonorTheme.divider, lineWidth: 0.7))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(HonorTheme.foreground)
                     .accessibilityIdentifier("message.sources." + message.id.uuidString)
+                }
             }
             if !streaming && !message.content.isEmpty {
                 HStack(spacing: 0) {
@@ -1299,6 +1409,28 @@ private struct MessageRow: View, Equatable {
                 .buttonStyle(.plain)
                 .accessibilityLabel(text("Стикер \(attachment.name)", "Sticker \(attachment.name)"))
                 .accessibilityIdentifier("message.sticker." + attachment.id.uuidString)
+            } else if attachment.kind == .image {
+                // Фото показывается миниатюрой прямо в чате. Раньше здесь была только
+                // строка с именем файла, поэтому казалось, что фотография не прикрепилась.
+                Button { onAttachment(attachment) } label: {
+                    AttachmentThumbnail(attachment: attachment, height: 190)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(text("Фото \(attachment.name)", "Photo \(attachment.name)"))
+                .accessibilityIdentifier("message.photo." + attachment.id.uuidString)
+            } else if attachment.kind == .video {
+                Button { onAttachment(attachment) } label: {
+                    ZStack {
+                        AttachmentThumbnail(attachment: attachment, height: 190, frameOverride: attachment.resolvedFrameURLs.first)
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 42))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .shadow(radius: 3)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(text("Видео \(attachment.name)", "Video \(attachment.name)"))
+                .accessibilityIdentifier("message.video." + attachment.id.uuidString)
             } else {
                 Button { onAttachment(attachment) } label: {
                     Label(attachment.name, systemImage: attachmentSymbol(attachment))
@@ -1391,7 +1523,7 @@ struct ChatInfoSheet: View {
                 Section("Устройство и приложение") {
                     LabeledContent("Модель iPhone", value: DeviceModel.name)
                     LabeledContent("Система", value: DeviceModel.systemDescription)
-                    LabeledContent("Приложение", value: "Honer AI 10.11")
+                    LabeledContent("Приложение", value: "Honer AI 10.12")
                     LabeledContent("Язык интерфейса", value: settings.language == .russian ? "Русский" : "English")
                     LabeledContent("Оформление", value: appearanceName)
                 }

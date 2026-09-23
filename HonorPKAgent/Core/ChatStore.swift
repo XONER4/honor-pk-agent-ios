@@ -68,11 +68,14 @@ final class ChatStore: ObservableObject {
     @Published var memoryEnabled = true { didSet { scheduleSave() } }
     @Published private var configuration: DeepSeekConfiguration
 
-    static let maximumMemoryCount = 1000
-    static let maximumMemoryLength = 4000
+    static let maximumMemoryCount = 5000
+    static let maximumMemoryLength = 1200
 
     var systemInstruction = ""
     var profileName = ""
+    /// Мост к настройкам приложения: нужен, чтобы модель могла их менять
+    /// инструментом set_app_setting (пункт 16 ТЗ). Заполняется из вида.
+    weak var settingsBridge: AppSettings?
     var selectedConversation: Conversation? { conversations.first { $0.id == selectedConversationID && $0.archivedAt == nil } }
     var archivedConversations: [Conversation] { conversations.filter { $0.archivedAt != nil }.sorted { ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast) } }
     var messages: [ChatMessage] { selectedConversation?.messages ?? [] }
@@ -634,7 +637,8 @@ final class ChatStore: ObservableObject {
                     // оставалась одна буква. Все нужные данные (время, устройство, память)
                     // и так приходят в системной части, инструменты не нужны.
                     for try await delta in client.stream(messages: input, thinking: thinking,
-                                                         systemInstruction: instruction, searchContext: context) {
+                                                         systemInstruction: instruction, searchContext: context,
+                                                         tools: HonerTool.apiSchemas) {
                         try Task.checkCancellation()
                         guard self.activeRunID == runID else { return }
                         if !delta.reasoning.isEmpty, firstReasoningAt == nil { firstReasoningAt = Date() }
@@ -667,22 +671,16 @@ final class ChatStore: ObservableObject {
                 }
 
                 // Выполняем запрошенные инструменты и повторяем запрос с результатами.
-                // Ветка оставлена на случай, если инструменты снова включат: без
-                // корректного возврата reasoning_content этот путь ломает ответ.
-                while !toolCalls.isEmpty, toolRounds < 3, Self.toolsEnabled {
+                // Включает расширенные права: чтение и правку других чатов, запись в них,
+                // запись в память и смена настроек (пункты 7 и 16 ТЗ).
+                while !toolCalls.isEmpty, toolRounds < 4, Self.toolsEnabled {
                     toolRounds += 1
                     // Имя не `context`: так уже называется строка с результатами поиска.
-                    let toolContext = ToolExecutionContext(
-                        deviceModel: DeviceModel.name,
-                        systemVersion: UIDevice.current.systemVersion,
-                        appVersion: "10.11",
-                        messageCount: self.messages.count,
-                        voiceMessageCount: self.messages.filter { $0.inputKind == .voice }.count,
-                        chatStartedAt: self.selectedConversation?.createdAt,
-                        lastMessageAt: self.messages.last?.createdAt)
+                    let toolContext = self.toolExecutionContext()
                     self.generationStatus = "Выполняю действие…"
                     for call in toolCalls {
-                        let result = ToolExecutor.execute(call, context: toolContext)
+                        let result = ToolExecutor.executeExtended(call, context: toolContext)
+                        if let effect = result.effect { self.apply(effect) }
                         toolResults.append(result)
                     }
                     toolCalls.removeAll()
@@ -690,6 +688,7 @@ final class ChatStore: ObservableObject {
                     var followUp = input
                     var assistant = ChatMessage(role: .assistant)
                     assistant.content = rawContent
+                    assistant.reasoning = rawReasoning
                     followUp.append(assistant)
                     for result in toolResults {
                         var toolMessage = ChatMessage(role: .user)
@@ -911,10 +910,108 @@ final class ChatStore: ObservableObject {
         }
     }
 
-    /// Вызов инструментов моделью отключён: параметр tools в режиме рассуждения
-    /// требует полного возврата reasoning_content, иначе API отвечает 400, а сам
-    /// вызов обрывает поток на finish_reason=tool_calls и оставляет в чате одну букву.
-    static let toolsEnabled = false
+    /// Вызов инструментов моделью включён: модель может читать и править другие чаты,
+    /// писать в них, сохранять факты в память и менять настройки приложения.
+    /// Важно: при включённых инструментах API требует возвращать `reasoning_content`
+    /// предыдущего прохода — это делается в assistant-сообщении ниже.
+    static let toolsEnabled = true
+
+    /// Собирает данные для инструментов: список всех чатов и переписку каждого.
+    private func toolExecutionContext() -> ToolExecutionContext {
+        var overviews: [ChatOverview] = []
+        var transcripts: [Int: [ChatTranscriptLine]] = [:]
+        for (index, chat) in sortedConversations.enumerated() {
+            let number = index + 1
+            let preview = chat.messages.last(where: { !$0.content.isEmpty })
+                .map { String($0.content.prefix(120)) } ?? ""
+            overviews.append(ChatOverview(number: number,
+                                          title: chat.title,
+                                          messageCount: chat.messages.count,
+                                          lastMessageAt: chat.lastMessageAt,
+                                          pinned: chat.pinned,
+                                          archived: chat.archivedAt != nil,
+                                          preview: preview))
+            transcripts[number] = chat.messages.suffix(120).map {
+                ChatTranscriptLine(role: $0.role.rawValue, text: String($0.content.prefix(2000)))
+            }
+        }
+        return ToolExecutionContext(
+            deviceModel: DeviceModel.name,
+            systemVersion: UIDevice.current.systemVersion,
+            appVersion: "10.12",
+            messageCount: messages.count,
+            voiceMessageCount: messages.filter { $0.inputKind == .voice }.count,
+            chatStartedAt: selectedConversation?.createdAt,
+            lastMessageAt: messages.last?.createdAt,
+            chats: overviews,
+            transcripts: transcripts)
+    }
+
+    /// Применяет действие, которое попросила модель: сообщение в другой чат, память,
+    /// настройки, переименование и закрепление чатов.
+    private func apply(_ effect: ToolEffect) {
+        switch effect {
+        case .sendToChat(let number, let text):
+            guard let chat = chat(forNumber: number) else { return }
+            var message = ChatMessage(role: .assistant, content: text)
+            message.inputKind = .text
+            mutateChat(chatID: chat.id) { conversation in
+                conversation.messages.append(message)
+                conversation.updatedAt = Date()
+            }
+            saveSnapshot()
+        case .saveMemory(let text):
+            _ = addMemory(text)
+        case .setSetting(let name, let value):
+            applySetting(name: name, value: value)
+        }
+    }
+
+    private func chat(forNumber number: Int) -> Conversation? {
+        let sorted = sortedConversations
+        guard number >= 1, number <= sorted.count else { return nil }
+        return sorted[number - 1]
+    }
+
+    private func mutateChat(chatID: UUID, update: (inout Conversation) -> Void) {
+        guard let index = conversations.firstIndex(where: { $0.id == chatID }) else { return }
+        update(&conversations[index])
+    }
+
+    /// Настройки, которые разрешено менять модели, и служебные команды чатов.
+    private func applySetting(name: String, value: String) {
+        let lowered = name.lowercased()
+        if lowered.hasPrefix("rename_chat:") {
+            guard let number = Int(lowered.replacingOccurrences(of: "rename_chat:", with: "")),
+                  let chat = chat(forNumber: number) else { return }
+            mutateChat(chatID: chat.id) { $0.title = String(value.prefix(100)) }
+            saveSnapshot()
+            return
+        }
+        if lowered.hasPrefix("pin_chat:") {
+            guard let number = Int(lowered.replacingOccurrences(of: "pin_chat:", with: "")),
+                  let chat = chat(forNumber: number) else { return }
+            mutateChat(chatID: chat.id) { conversation in
+                conversation.pinned = value == "true"
+                if !conversation.pinned { conversation.pinOrder = 0 }
+            }
+            saveSnapshot()
+            return
+        }
+        let flag = ["true", "1", "да", "вкл", "on", "yes"].contains(value.lowercased())
+        switch lowered {
+        case "reasoning": reasoningEnabled = flag
+        case "search": searchEnabled = flag
+        case "notifications": settingsBridge?.notificationsEnabled = flag
+        case "autoread": settingsBridge?.autoRead = flag
+        case "fontscale":
+            if let scale = Double(value.replacingOccurrences(of: ",", with: ".")) {
+                let clamped = min(max(scale, 0.85), 1.5)
+                settingsBridge?.fontScale = clamped
+            }
+        default: break
+        }
+    }
 
     /// Запасной путь перевода: по частям, как было раньше. Нужен, если общий запрос
     /// не прошёл — например, сервис оборвал ответ.
