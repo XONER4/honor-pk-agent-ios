@@ -450,7 +450,7 @@ private struct MarkdownBlockView: View {
                         .font(.system(size: fontSize * 0.9))
                         .foregroundStyle(item.done ? HonorTheme.accent : HonorTheme.secondary)
                     inline(item.text, size: fontSize, weight: .regular)
-                        .foregroundStyle(item.done ? HonorTheme.secondary : HonorTheme.primary)
+                        .foregroundStyle(item.done ? HonorTheme.secondary : HonorTheme.foreground)
                 }
             }
         }

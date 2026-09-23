@@ -796,7 +796,7 @@ private struct MessageTimeline: View {
         .onChange(of: selectedMatch) { (id: UUID?) in
             guard let id else { return }
             followLatest = false
-            withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(id, anchor: .center) }
+            withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(id.uuidString, anchor: .center) }
         }
         .onChange(of: scrollRequest) { (request: ScrollRequest?) in
             guard let request else { return }
@@ -805,7 +805,7 @@ private struct MessageTimeline: View {
             pendingScroll?.cancel()
             pendingScroll = nil
             withAnimation(.easeInOut(duration: 0.5)) {
-                proxy.scrollTo(request.messageID.anchorID, anchor: .center)
+                proxy.scrollTo(request.messageID.uuidString, anchor: .center)
             }
         }
         .onDisappear {
@@ -848,7 +848,7 @@ private struct MessageTimeline: View {
                        },
                        onMenu: onMenu)
                 .equatable()
-                .id(message.anchorID)
+                .id(message.id.uuidString)
         }
     }
 
@@ -888,7 +888,7 @@ private struct MessageTimeline: View {
             try? await Task.sleep(nanoseconds: 90_000_000)
             guard !Task.isCancelled, followLatest, findQuery.isEmpty else { return }
             withAnimation(.easeOut(duration: 0.28)) {
-                proxy.scrollTo(id.anchorID, anchor: .bottom)
+                proxy.scrollTo(id.uuidString, anchor: .bottom)
             }
             pendingScroll = nil
         }
