@@ -1805,7 +1805,7 @@ struct MarkdownTableView: View {
     private var columnCount: Int { max(headers.count, rows.map(\.count).max() ?? 0) }
     /// Компактный режим — настоящая таблица по ширине экрана, иначе широкая
     /// таблица с горизонтальной прокруткой.
-    private var compactMode: Bool { modeOverride ?? columnCount <= Self.fitColumnLimit }
+    private var compactMode: Bool { modeOverride ?? (columnCount <= Self.fitColumnLimit) }
     /// Есть ли в шапке хоть один непустой заголовок (шапка из «| | |» — не шапка).
     private var hasHeaderText: Bool {
         headers.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
