@@ -57,7 +57,7 @@ final class LiveIntegrationTests: XCTestCase {
     func testLiveShortChatWithBrokenHistoryStillGetsFullAnswer() async throws {
         let store = try configuredStore()
         store.reasoningEnabled = true
-        let chat = Conversation(title: "Ку")
+        var chat = Conversation(title: "Ку")
         var firstQuestion = ChatMessage(role: .user, content: "Ку")
         firstQuestion.createdAt = Date().addingTimeInterval(-120)
         var broken = ChatMessage(role: .assistant, content: "П")
