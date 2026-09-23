@@ -1,6 +1,11 @@
 import XCTest
 
 final class InterfaceTests: XCTestCase {
+    private func waitUntilGone(_ element: XCUIElement) {
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed)
+    }
+
     private func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
@@ -18,9 +23,11 @@ final class InterfaceTests: XCTestCase {
         XCTAssertTrue(app.buttons["Камера"].waitForExistence(timeout: 5))
         capture("02-attachments")
         app.buttons["composer.attachments"].tap()
+        waitUntilGone(app.buttons["Камера"])
         let field = app.textViews["chat.composer"].exists ? app.textViews["chat.composer"] : app.textFields["chat.composer"]
         XCTAssertTrue(field.exists)
         field.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         field.typeText("Hello Honor")
         XCTAssertTrue(app.buttons["chat.send"].waitForExistence(timeout: 5))
         capture("03-keyboard")
@@ -37,10 +44,12 @@ final class InterfaceTests: XCTestCase {
         XCTAssertTrue(app.buttons["message.menu.edit"].waitForExistence(timeout: 5))
         capture("05-message-menu")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.16)).tap()
+        waitUntilGone(app.buttons["message.menu.dismiss"])
         app.staticTexts["Привет! У меня всё отлично, спасибо, что спросил. А как твои дела?"].firstMatch.press(forDuration: 1.1)
         XCTAssertTrue(app.buttons["message.menu.speak"].waitForExistence(timeout: 5))
         capture("08-assistant-menu")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.16)).tap()
+        waitUntilGone(app.buttons["message.menu.dismiss"])
         app.buttons["chat.sidebar"].tap()
         XCTAssertTrue(app.buttons["sidebar.settings"].waitForExistence(timeout: 5))
         capture("06-history")

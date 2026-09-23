@@ -177,6 +177,7 @@ final class FeatureAuditTests: HonorAuditCase {
 
         openMessageMenu("message.assistant." + assistantID, app: app)
         app.buttons["message.menu.like"].tap()
+        waitAbsent(app.buttons["message.menu.dismiss"])
         XCTAssertTrue(like.isSelected)
         XCTAssertFalse(dislike.isSelected)
         let reasoning = app.buttons["message.reasoning." + assistantID]

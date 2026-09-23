@@ -28,7 +28,9 @@ final class SettingsAuditTests: HonorAuditCase {
         XCTAssertTrue(app.navigationBars["About"].exists)
         back(app)
         app.buttons["settings.close"].tap()
-        app.buttons["chat.tools"].tap()
+        let tools = app.buttons["chat.tools"]
+        XCTAssertTrue(tools.isEnabled && app.frame.contains(tools.frame))
+        tools.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.buttons["chat.tools.find"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["chat.tools.find"].label.contains("Find"))
         app.buttons["chat.tools.find"].tap()

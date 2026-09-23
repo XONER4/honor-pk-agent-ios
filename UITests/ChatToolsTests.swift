@@ -123,20 +123,31 @@ final class ChatToolsTests: HonorAuditCase {
         app.buttons["chat.voice"].tap()
         XCTAssertEqual(composer(app).value as? String, "Не отправлять")
         XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "message.content.")).count, 1)
-        replaceText("", in: composer(app))
+        let field = composer(app)
+        // Typing an empty string leaves Select All unchanged; delete the selected draft.
+        replaceText(XCUIKeyboardKey.delete.rawValue, in: field)
+        let clearedValue = field.value as? String ?? ""
+        XCTAssertTrue(clearedValue.isEmpty || clearedValue == field.placeholderValue,
+                      "The next recording must start with an empty draft")
         app.buttons["chat.voice"].tap()
         XCTAssertTrue(hold.waitForExistence(timeout: 5))
         hold.press(forDuration: 0.7)
         XCTAssertTrue(app.staticTexts["Проверка голосового ввода"].waitForExistence(timeout: 8),
                       "Release must submit the finalized transcript exactly once")
         XCTAssertEqual(app.staticTexts.matching(identifier: "Проверка голосового ввода").count, 1)
+        XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "message.user.")).count, 2,
+                       "Cancel must not create a message and release must create exactly one")
         waitAbsent(element(app, "chat.voice.recording.overlay"))
     }
 
     private func openTools(_ app: XCUIApplication) {
         let tools = app.buttons["chat.tools"]
         XCTAssertTrue(tools.waitForExistence(timeout: 5))
-        tools.tap()
+        XCTAssertTrue(tools.isEnabled)
+        XCTAssertTrue(app.frame.contains(tools.frame), "Conversation menu must be inside the visible header")
+        // Native SwiftUI Menu can report no AX hit point despite its on-screen label.
+        // Tap that visible label, then require the real menu contents to appear.
+        tools.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.buttons.matching(identifier: "chat.tools.find").firstMatch.waitForExistence(timeout: 5))
     }
 

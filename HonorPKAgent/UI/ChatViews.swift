@@ -68,6 +68,7 @@ struct ChatRootView: View {
                     .accessibilityHidden(drawerOpen || menuMessage != nil)
             }
             .overlayPreferenceValue(MessageBoundsKey.self) { anchors in
+                ZStack {
                 if let message = menuMessage, let anchor = anchors[message.id] {
                     let frame = geometry[anchor]
                     let rowHeight = max(CGFloat(45), CGFloat(36 * settings.fontScale * dynamicScale + 8))
@@ -96,6 +97,9 @@ struct ChatRootView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
                     .zIndex(5)
                 }
+                }
+                // A fading-out menu must stop intercepting the next touch immediately.
+                .allowsHitTesting(menuMessage != nil)
             }
             .simultaneousGesture(DragGesture(minimumDistance: 24).onEnded { value in
                 guard menuMessage == nil else { return }
@@ -329,7 +333,7 @@ struct ChatRootView: View {
             }.accessibilityIdentifier("chat.tools.delete")
         } label: {
             Image(systemName: "ellipsis").font(.system(size: 20, weight: .medium))
-                .frame(width: 30, height: 44).contentShape(Rectangle())
+                .frame(width: 44, height: 44).contentShape(Rectangle())
         }
         .accessibilityLabel(text("Действия с чатом", "Conversation actions"))
         .accessibilityIdentifier("chat.tools")
