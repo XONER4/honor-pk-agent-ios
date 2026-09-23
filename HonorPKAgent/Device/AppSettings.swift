@@ -24,6 +24,18 @@ final class AppSettings: ObservableObject {
     @Published var displayName: String { didSet { defaults.set(displayName, forKey: "honor.displayName") } }
     @Published var apiKeyOverride: String { didSet { defaults.set(apiKeyOverride, forKey: "honor.apiKeyOverride") } }
     @Published var completedOnboarding: Bool { didSet { defaults.set(completedOnboarding, forKey: "honer.onboarding.completed") } }
+    /// Скорость чтения вслух: 0.5 — медленно, 1.0 — обычная, 1.6 — быстро.
+    @Published var voiceRate: Double { didSet { defaults.set(voiceRate, forKey: "honor.voiceRate") } }
+    /// Через сколько дней автоматически удалять чаты. 0 — никогда.
+    @Published var autoDeleteDays: Int { didSet { defaults.set(autoDeleteDays, forKey: "honor.autoDeleteDays") } }
+    /// Уведомлять о готовом ответе, если приложение свёрнуто.
+    @Published var notificationsEnabled: Bool { didSet { defaults.set(notificationsEnabled, forKey: "honor.notificationsEnabled") } }
+    /// Память между чатами: запоминать важное из разных чатов и подмешивать в новые.
+    @Published var crossChatMemoryEnabled: Bool { didSet { defaults.set(crossChatMemoryEnabled, forKey: "honor.crossChatMemoryEnabled") } }
+    /// Стикеры и эмодзи в ответах.
+    @Published var stickersEnabled: Bool { didSet { defaults.set(stickersEnabled, forKey: "honor.stickersEnabled") } }
+    /// Фото профиля (путь в песочнице приложения).
+    @Published var profilePhotoPath: String { didSet { defaults.set(profilePhotoPath, forKey: "honor.profilePhotoPath") } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -39,6 +51,13 @@ final class AppSettings: ObservableObject {
         displayName = savedName == "Honor" ? "" : savedName
         apiKeyOverride = defaults.string(forKey: "honor.apiKeyOverride") ?? ""
         completedOnboarding = defaults.bool(forKey: "honer.onboarding.completed")
+        let rate = defaults.object(forKey: "honor.voiceRate") as? Double ?? 0.95
+        voiceRate = min(1.8, max(0.4, rate))
+        autoDeleteDays = defaults.object(forKey: "honor.autoDeleteDays") as? Int ?? 0
+        notificationsEnabled = defaults.bool(forKey: "honor.notificationsEnabled")
+        crossChatMemoryEnabled = defaults.object(forKey: "honor.crossChatMemoryEnabled") as? Bool ?? true
+        stickersEnabled = defaults.object(forKey: "honor.stickersEnabled") as? Bool ?? true
+        profilePhotoPath = defaults.string(forKey: "honor.profilePhotoPath") ?? ""
     }
 
     var preferredColorScheme: ColorScheme? {

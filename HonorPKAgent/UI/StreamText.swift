@@ -93,11 +93,16 @@ enum MarkdownBlockKind: Equatable {
     case heading(level: Int)
     case paragraph
     case bullets([String], ordered: Bool)
-    case checklist([(done: Bool, text: String)])
+    case checklist([ChecklistItem])
     case quote
     case code(language: String)
     case table(headers: [String], alignments: [TableAlignment], rows: [[String]])
     case divider
+}
+
+struct ChecklistItem: Equatable {
+    let done: Bool
+    let text: String
 }
 
 enum TableAlignment: Equatable { case leading, center, trailing }
@@ -183,12 +188,12 @@ enum MarkdownBlockParser {
             // Чек-лист
             if isChecklistItem(trimmed) {
                 flushParagraph()
-                var items: [(Bool, String)] = []
+                var items: [ChecklistItem] = []
                 while index < lines.count, isChecklistItem(lines[index].trimmingCharacters(in: .whitespaces)) {
                     let item = lines[index].trimmingCharacters(in: .whitespaces)
                     let done = item.lowercased().hasPrefix("- [x]") || item.lowercased().hasPrefix("* [x]")
                     let text = String(item.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-                    items.append((done, text))
+                    items.append(ChecklistItem(done: done, text: text))
                     index += 1
                 }
                 blocks.append(MarkdownBlockModel(id: blocks.count, kind: .checklist(items), text: ""))
@@ -373,7 +378,8 @@ struct MessageNavigationLines: View {
     }
 }
 
-struct BlockMarkdownView: View {    let content: String
+struct BlockMarkdownView: View {
+    let content: String
     let fontSize: Double
     let sources: [WebSource]
     let findQuery: String
@@ -381,54 +387,82 @@ struct BlockMarkdownView: View {    let content: String
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(MarkdownBlockParser.parse(content)) { block in
-                switch block.kind {
-                case .heading(let level):
-                    inline(block.text, size: headingSize(level), weight: level <= 2 ? .bold : .semibold)
-                        .padding(.top, level <= 2 ? 8 : 4)
-                case .paragraph:
-                    inline(block.text, size: fontSize, weight: .regular)
-                case .bullets(let items, let ordered):
-                    VStack(alignment: .leading, spacing: 7) {
-                        ForEach(Array(items.enumerated()), id: \.offset) { position, item in
-                            HStack(alignment: .top, spacing: 9) {
-                                Text(ordered ? "\(position + 1)." : "•")
-                                    .font(.system(size: fontSize, weight: ordered ? .semibold : .regular))
-                                    .foregroundStyle(ordered ? HonorTheme.accent : HonorTheme.secondary)
-                                    .frame(minWidth: ordered ? 22 : 12, alignment: .trailing)
-                                inline(item, size: fontSize, weight: .regular)
-                            }
-                        }
-                    }
-                case .checklist(let items):
-                    VStack(alignment: .leading, spacing: 7) {
-                        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                            HStack(alignment: .top, spacing: 9) {
-                                Image(systemName: item.done ? "checkmark.square.fill" : "square")
-                                    .font(.system(size: fontSize * 0.9))
-                                    .foregroundStyle(item.done ? HonorTheme.accent : HonorTheme.secondary)
-                                inline(item.text, size: fontSize, weight: .regular)
-                                    .foregroundStyle(item.done ? HonorTheme.secondary : HonorTheme.primary)
-                            }
-                        }
-                    }
-                case .quote:
-                    HStack(alignment: .top, spacing: 11) {
-                        Rectangle().fill(HonorTheme.accent.opacity(0.55)).frame(width: 3)
-                        inline(block.text, size: fontSize * 0.96, weight: .regular)
-                            .foregroundStyle(HonorTheme.secondary)
-                    }
-                    .padding(.vertical, 2)
-                case .code(let language):
-                    CodeBlockView(text: block.text, language: language,
+                MarkdownBlockView(block: block, fontSize: fontSize,
+                                  sources: sources, findQuery: findQuery)
+            }
+        }
+    }
+}
+
+/// Отрисовка одного блока. Вынесено в отдельный тип, чтобы компилятор не захлёбывался
+/// на одном огромном выражении.
+private struct MarkdownBlockView: View {
+    let block: MarkdownBlockModel
+    let fontSize: Double
+    let sources: [WebSource]
+    let findQuery: String
+
+    var body: some View {
+        Group {
+            switch block.kind {
+            case .heading(let level):
+                inline(block.text, size: headingSize(level), weight: level <= 2 ? .bold : .semibold)
+                    .padding(.top, level <= 2 ? 8 : 4)
+            case .paragraph:
+                inline(block.text, size: fontSize, weight: .regular)
+            case .bullets(let items, let ordered):
+                bullets(items, ordered: ordered)
+            case .checklist(let items):
+                checklist(items)
+            case .quote:
+                quote
+            case .code(let language):
+                CodeBlockView(text: block.text, language: language,
+                              fontSize: fontSize, findQuery: findQuery)
+            case .table(let headers, let alignments, let rows):
+                MarkdownTableView(headers: headers, alignments: alignments, rows: rows,
                                   fontSize: fontSize, findQuery: findQuery)
-                case .table(let headers, let alignments, let rows):
-                    MarkdownTableView(headers: headers, alignments: alignments, rows: rows,
-                                      fontSize: fontSize, findQuery: findQuery)
-                case .divider:
-                    Rectangle().fill(HonorTheme.divider).frame(height: 1).padding(.vertical, 4)
+            case .divider:
+                Rectangle().fill(HonorTheme.divider).frame(height: 1).padding(.vertical, 4)
+            }
+        }
+    }
+
+    private func bullets(_ items: [String], ordered: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(Array(items.enumerated()), id: \.offset) { position, item in
+                HStack(alignment: .top, spacing: 9) {
+                    Text(ordered ? "\(position + 1)." : "•")
+                        .font(.system(size: fontSize, weight: ordered ? .semibold : .regular))
+                        .foregroundStyle(ordered ? HonorTheme.accent : HonorTheme.secondary)
+                        .frame(minWidth: ordered ? 22 : 12, alignment: .trailing)
+                    inline(item, size: fontSize, weight: .regular)
                 }
             }
         }
+    }
+
+    private func checklist(_ items: [ChecklistItem]) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: item.done ? "checkmark.square.fill" : "square")
+                        .font(.system(size: fontSize * 0.9))
+                        .foregroundStyle(item.done ? HonorTheme.accent : HonorTheme.secondary)
+                    inline(item.text, size: fontSize, weight: .regular)
+                        .foregroundStyle(item.done ? HonorTheme.secondary : HonorTheme.primary)
+                }
+            }
+        }
+    }
+
+    private var quote: some View {
+        HStack(alignment: .top, spacing: 11) {
+            Rectangle().fill(HonorTheme.accent.opacity(0.55)).frame(width: 3)
+            inline(block.text, size: fontSize * 0.96, weight: .regular)
+                .foregroundStyle(HonorTheme.secondary)
+        }
+        .padding(.vertical, 2)
     }
 
     private func headingSize(_ level: Int) -> Double {

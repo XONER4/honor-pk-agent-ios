@@ -80,12 +80,56 @@ struct Conversation: Identifiable, Codable, Equatable, Sendable {
     var parentConversationID: UUID? = nil
     var forkedAtMessageID: UUID? = nil
     var archivedAt: Date? = nil
+    /// Инструкция только для этого чата (меню «три точки»).
+    var systemPrompt: String = ""
+    /// Порядок среди закреплённых: закреплённые чаты можно менять местами.
+    var pinOrder: Int = 0
+}
+
+extension Conversation {
+    /// Время последнего сообщения — по нему чаты сортируются в списке.
+    var lastMessageAt: Date {
+        messages.last?.createdAt ?? updatedAt
+    }
+
+    /// «2 минуты назад», «1 час 34 минуты назад», «12 дней назад».
+    var relativeTimestamp: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.unitsStyle = .full
+        // Для свежих сообщений показываем минуты, а не «только что».
+        let interval = Date().timeIntervalSince(lastMessageAt)
+        if interval < 45 { return "только что" }
+        return formatter.localizedString(for: lastMessageAt, relativeTo: Date())
+    }
 }
 
 struct HonorMemory: Identifiable, Codable, Equatable, Sendable {
     var id: UUID = UUID()
     var text: String
     var createdAt: Date = Date()
+    /// Из какого чата пришёл факт — чтобы понимать источник (и не путать общую память с локальной).
+    var sourceChatID: UUID? = nil
+    /// Слова для быстрого отбора релевантных фактов без embeddings.
+    var keywords: [String] = []
+}
+
+/// Статистика использования приложения (раздел «Статистика» в настройках).
+struct UsageStatistics: Codable, Equatable, Sendable {
+    var sentMessages: Int = 0
+    var receivedMessages: Int = 0
+    var totalSessionSeconds: Double = 0
+    var voiceMessages: Int = 0
+    var firstLaunch: Date = Date()
+
+    var formattedTime: String {
+        let total = Int(totalSessionSeconds)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        if hours > 0 { return "\(hours) ч \(minutes) мин" }
+        if minutes > 0 { return "\(minutes) мин" }
+        return "\(total) сек"
+    }
 }
 
 struct HistoryArchive: Codable, Sendable {

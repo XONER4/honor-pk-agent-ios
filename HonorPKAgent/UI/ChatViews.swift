@@ -26,6 +26,8 @@ struct ChatRootView: View {
     @State private var findOpen = false
     /// Запрос на переход к сообщению по линиям навигации справа.
     @State private var scrollRequest: ScrollRequest?
+    /// Сообщение, которое сейчас пишется, — подсвечивается на линиях навигации.
+    @State private var streamingMessageID: UUID?
     @State private var findQuery = ""
     @State private var findIndex = 0
     @State private var voiceMode = false
@@ -746,109 +748,149 @@ private struct MessageTimeline: View {
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
 
     var body: some View {
+        ScrollViewReader { (proxy: ScrollViewProxy) in
+            messageScroll(proxy: proxy)
+        }
+    }
+
+    // Разбито на несколько функций: в одном выражении компилятор не успевал
+    // вывести типы (ошибка «unable to type-check this expression in reasonable time»).
+    @ViewBuilder
+    private func messageScroll(proxy: ScrollViewProxy) -> some View {
         let messages = store.messages
         let tail = messages.last
-        return ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 25) {
-                    Text(settings.text("Сгенерированный ИИ ответ, только для справки.", "AI-generated answers are for reference."))
-                        .font(.system(size: 13 * settings.fontScale * dynamicScale, weight: .medium))
-                        .foregroundStyle(HonorTheme.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 28).padding(.top, 23).padding(.bottom, 3)
-                    ForEach(messages) { message in
-                        MessageRow(message: message,
-                                   streaming: store.isGenerating && message.id == tail?.id,
-                                   status: store.generationStatus,
-                                   settings: settings,
-                                   findQuery: findQuery, selectedMatch: selectedMatch == message.id,
-                                   onCopy: onCopy, onSelect: onSelect, onShare: onShare, onSpeak: onSpeak,
-                                   onAttachment: onAttachment, onSources: onSources,
-                                   onRetry: { store.regenerate(messageID: message.id) },
-                                   onEdit: { store.edit(messageID: message.id) },
-                                   onFeedback: { store.setFeedback(messageID: message.id, feedback: $0) },
-                                   onMenu: onMenu)
-                            .equatable()
-                            .id(message.anchorID)
-                    }
-                    Color.clear.frame(height: 8).id("message-bottom")
-                }
-                .padding(.horizontal, 22)
-                .padding(.bottom, 8)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 25) {
+                disclaimer
+                messageList(messages: messages, tail: tail)
+                Color.clear.frame(height: 8).id("message-bottom")
             }
-            .scrollDismissesKeyboard(.interactively)
-            .simultaneousGesture(DragGesture(minimumDistance: 15).onChanged { _ in
-                followLatest = false; pendingScroll?.cancel(); pendingScroll = nil
-            })
-            .overlay(alignment: .bottomTrailing) {
-                if !followLatest {
-                    Button {
-                        followLatest = true
-                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("message-bottom", anchor: .bottom) }
-                    } label: {
-                        Image(systemName: "arrow.down").font(.system(size: 15, weight: .semibold))
-                            .frame(width: 38, height: 38)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .overlay(Circle().stroke(HonorTheme.divider))
-                            .frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel(settings.text("К последнему сообщению", "Jump to latest message"))
-                    .accessibilityIdentifier("chat.scroll.latest")
-                    .padding(.trailing, 14).padding(.bottom, 6)
-                }
+            .padding(.horizontal, 22)
+            .padding(.bottom, 8)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .simultaneousGesture(DragGesture(minimumDistance: 15).onChanged { (_: DragGesture.Value) in
+            followLatest = false
+            pendingScroll?.cancel()
+            pendingScroll = nil
+        })
+        .overlay(alignment: .bottomTrailing) { jumpToLatestButton(proxy: proxy) }
+        .onAppear {
+            proxy.scrollTo("message-bottom", anchor: .bottom)
+            streamingMessageID = store.isGenerating ? tail?.id : nil
+        }
+        .onChange(of: messages.count) { (_: Int) in
+            if messages.last?.role == .user || messages.dropLast().last?.role == .user { followLatest = true }
+            if followLatest && findQuery.isEmpty { proxy.scrollTo("message-bottom", anchor: .bottom) }
+        }
+        .onChange(of: store.selectedConversationID) { (_: UUID?) in
+            pendingScroll?.cancel()
+            pendingScroll = nil
+            followLatest = true
+            streamingMessageID = nil
+            proxy.scrollTo("message-bottom", anchor: .bottom)
+        }
+        .onChange(of: store.isGenerating) { (generating: Bool) in
+            handleGenerationChange(generating, messages: messages, proxy: proxy)
+        }
+        .onChange(of: selectedMatch) { (id: UUID?) in
+            guard let id else { return }
+            followLatest = false
+            withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(id, anchor: .center) }
+        }
+        .onChange(of: scrollRequest) { (request: ScrollRequest?) in
+            guard let request else { return }
+            scrollRequest = nil
+            followLatest = false
+            pendingScroll?.cancel()
+            pendingScroll = nil
+            withAnimation(.easeInOut(duration: 0.5)) {
+                proxy.scrollTo(request.messageID.anchorID, anchor: .center)
             }
-            .onAppear {
-                proxy.scrollTo("message-bottom", anchor: .bottom)
-                streamingMessageID = store.isGenerating ? messages.last?.id : nil
-            }
-            .onChange(of: messages.count) { _ in
-                if messages.last?.role == .user || messages.dropLast().last?.role == .user { followLatest = true }
-                if followLatest && findQuery.isEmpty { proxy.scrollTo("message-bottom", anchor: .bottom) }
-            }
-            .onChange(of: store.selectedConversationID) { _ in
-                pendingScroll?.cancel(); pendingScroll = nil
+        }
+        .onDisappear {
+            pendingScroll?.cancel()
+            pendingScroll = nil
+        }
+    }
+
+    private var disclaimer: some View {
+        Text(settings.text("Сгенерированный ИИ ответ, только для справки.",
+                           "AI-generated answers are for reference."))
+            .font(.system(size: 13 * settings.fontScale * dynamicScale, weight: .medium))
+            .foregroundStyle(HonorTheme.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 28)
+            .padding(.top, 23)
+            .padding(.bottom, 3)
+    }
+
+    @ViewBuilder
+    private func messageList(messages: [ChatMessage], tail: ChatMessage?) -> some View {
+        ForEach(messages) { (message: ChatMessage) in
+            MessageRow(message: message,
+                       streaming: store.isGenerating && message.id == tail?.id,
+                       status: store.generationStatus,
+                       settings: settings,
+                       findQuery: findQuery,
+                       selectedMatch: selectedMatch == message.id,
+                       onCopy: onCopy,
+                       onSelect: onSelect,
+                       onShare: onShare,
+                       onSpeak: onSpeak,
+                       onAttachment: onAttachment,
+                       onSources: onSources,
+                       onRetry: { store.regenerate(messageID: message.id) },
+                       onEdit: { store.edit(messageID: message.id) },
+                       onFeedback: { (value: MessageFeedback?) in
+                           store.setFeedback(messageID: message.id, feedback: value)
+                       },
+                       onMenu: onMenu)
+                .equatable()
+                .id(message.anchorID)
+        }
+    }
+
+    @ViewBuilder
+    private func jumpToLatestButton(proxy: ScrollViewProxy) -> some View {
+        if !followLatest {
+            Button {
                 followLatest = true
-                streamingMessageID = nil
-                proxy.scrollTo("message-bottom", anchor: .bottom)
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("message-bottom", anchor: .bottom) }
+            } label: {
+                Image(systemName: "arrow.down")
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 38, height: 38)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().stroke(HonorTheme.divider))
+                    .frame(width: 44, height: 44)
             }
-            // Начало нового ответа: один раз мягко доводим экран до начала этого ответа.
-            // Раньше прокрутка запускалась на каждом токене (22 раза в секунду) и спорила
-            // с ростом текста — отсюда были рывки и «прыжки» экрана.
-            .onChange(of: store.isGenerating) { generating in
-                guard generating, let id = messages.last?.id else {
-                    if !generating { streamingMessageID = nil }
-                    return
-                }
-                streamingMessageID = id
-                guard followLatest, findQuery.isEmpty else { return }
-                pendingScroll?.cancel()
-                pendingScroll = Task { @MainActor in
-                    // ждём, пока вью ответа появится в иерархии
-                    try? await Task.sleep(nanoseconds: 90_000_000)
-                    guard !Task.isCancelled, followLatest, findQuery.isEmpty else { return }
-                    withAnimation(.easeOut(duration: 0.28)) {
-                        proxy.scrollTo(id.anchorID, anchor: .bottom)
-                    }
-                    pendingScroll = nil
-                }
+            .accessibilityLabel(settings.text("К последнему сообщению", "Jump to latest message"))
+            .accessibilityIdentifier("chat.scroll.latest")
+            .padding(.trailing, 14)
+            .padding(.bottom, 6)
+        }
+    }
+
+    /// Начало нового ответа: один мягкий переход к началу этого ответа.
+    /// Раньше прокрутка запускалась на каждом токене (22 раза в секунду) и спорила
+    /// с ростом текста — отсюда были рывки и «прыжки» экрана.
+    private func handleGenerationChange(_ generating: Bool, messages: [ChatMessage], proxy: ScrollViewProxy) {
+        guard generating, let id = messages.last?.id else {
+            if !generating { streamingMessageID = nil }
+            return
+        }
+        streamingMessageID = id
+        guard followLatest, findQuery.isEmpty else { return }
+        pendingScroll?.cancel()
+        pendingScroll = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 90_000_000)
+            guard !Task.isCancelled, followLatest, findQuery.isEmpty else { return }
+            withAnimation(.easeOut(duration: 0.28)) {
+                proxy.scrollTo(id.anchorID, anchor: .bottom)
             }
-            .onChange(of: selectedMatch) { id in
-                guard let id else { return }
-                followLatest = false
-                withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(id, anchor: .center) }
-            }
-            // Линии навигации справа: плавный переход к выбранному сообщению.
-            .onChange(of: scrollRequest) { request in
-                guard let request else { return }
-                scrollRequest = nil
-                followLatest = false
-                pendingScroll?.cancel(); pendingScroll = nil
-                withAnimation(.easeInOut(duration: 0.5)) {
-                    proxy.scrollTo(request.messageID.anchorID, anchor: .center)
-                }
-            }
-            .onDisappear { pendingScroll?.cancel(); pendingScroll = nil }
+            pendingScroll = nil
         }
     }
 }

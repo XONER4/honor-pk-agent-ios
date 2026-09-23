@@ -330,6 +330,57 @@ final class ChatStore: ObservableObject {
         saveSnapshot()
     }
 
+    /// Инструкция для конкретного чата (пункт «Промт чата» в меню трёх точек).
+    func setChatPrompt(id: UUID, prompt: String) {
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        conversations[index].systemPrompt = String(prompt.prefix(4000))
+        saveSnapshot()
+    }
+
+    /// Список для панели чатов: закреплённые всегда сверху и в своём порядке,
+    /// остальные — по времени последнего сообщения.
+    var sortedConversations: [Conversation] {
+        let active = conversations.filter { $0.archivedAt == nil }
+        let pinned = active.filter(\.pinned).sorted { lhs, rhs in
+            if lhs.pinOrder != rhs.pinOrder { return lhs.pinOrder < rhs.pinOrder }
+            return lhs.lastMessageAt > rhs.lastMessageAt
+        }
+        let others = active.filter { !$0.pinned }.sorted { $0.lastMessageAt > $1.lastMessageAt }
+        return pinned + others
+    }
+
+    /// Меняет закреплённые чаты местами (только среди закреплённых).
+    func movePinned(id: UUID, offset: Int) {
+        var pinned = conversations.filter { $0.pinned && $0.archivedAt == nil }
+            .sorted { $0.pinOrder < $1.pinOrder }
+        guard let position = pinned.firstIndex(where: { $0.id == id }) else { return }
+        let target = position + offset
+        guard pinned.indices.contains(target) else { return }
+        pinned.swapAt(position, target)
+        for (order, chat) in pinned.enumerated() {
+            if let index = conversations.firstIndex(where: { $0.id == chat.id }) {
+                conversations[index].pinOrder = order
+            }
+        }
+        saveSnapshot()
+    }
+
+    /// Автоудаление чатов по сроку хранения (настройка в разделе «Данные»).
+    func purgeOldChats(olderThan days: Int) {
+        guard days > 0 else { return }
+        let threshold = Date().addingTimeInterval(-Double(days) * 86_400)
+        let doomed = conversations.filter { $0.archivedAt == nil && $0.lastMessageAt < threshold }
+        guard !doomed.isEmpty else { return }
+        let ids = Set(doomed.map(\.id))
+        let removedAttachments = doomed.flatMap(\.messages).flatMap(\.attachments)
+        conversations.removeAll { ids.contains($0.id) }
+        if let selected = selectedConversationID, ids.contains(selected) {
+            selectedConversationID = conversations.first(where: { $0.archivedAt == nil })?.id
+        }
+        removeUnreferencedAttachments(removedAttachments)
+        saveSnapshot()
+    }
+
     func clearAllChats() {
         stop()
         conversations = []
@@ -363,7 +414,13 @@ final class ChatStore: ObservableObject {
         let query = input.last(where: { $0.role == .user })?.content ?? ""
         let searching = SearchIntent.needsSearch(query: query, searchToggleOn: searchEnabled)
         let recentContext = input.suffix(4).map { String($0.content.prefix(1500)) }.joined(separator: "\n")
-        let instruction = effectiveSystemInstruction + HonerIdentity.context(for: query, recentContext: recentContext)
+        // Инструкция конкретного чата (меню «три точки») применяется поверх общей памяти.
+        var instruction = effectiveSystemInstruction
+        let chatPrompt = conversations[index].systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !chatPrompt.isEmpty {
+            instruction += "\n\nИнструкция этого чата (задана пользователем, действует только здесь):\n\(chatPrompt)"
+        }
+        instruction += HonerIdentity.context(for: query, recentContext: recentContext)
         let client = injectedClient ?? DeepSeekClient(configuration: configuration)
         let russianNormalizer = client as? RussianTextNormalizing
         generationStatus = searching ? "Ищу в интернете…" : (thinking ? "Размышляю…" : "Отвечаю…")
