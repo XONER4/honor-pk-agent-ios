@@ -1125,8 +1125,21 @@ struct AttachmentThumbnail: View {
     private func load() {
         guard image == nil else { return }
         let url = frameOverride ?? attachment.resolvedURL
-        guard let url, let data = try? Data(contentsOf: url), let loaded = UIImage(data: data) else { return }
-        image = loaded
+        guard let url else { return }
+        // Читаем и уменьшаем фото в фоне: если делать это в главном потоке,
+        // прокрутка чата с фотографиями начинает тормозить.
+        Task { @MainActor in
+            let loaded = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                guard let data = try? Data(contentsOf: url), let full = UIImage(data: data) else { return nil }
+                let side: CGFloat = 900
+                let scale = min(side / max(full.size.width, 1), side / max(full.size.height, 1), 1)
+                guard scale < 1 else { return full }
+                let target = CGSize(width: full.size.width * scale, height: full.size.height * scale)
+                let renderer = UIGraphicsImageRenderer(size: target)
+                return renderer.image { _ in full.draw(in: CGRect(origin: .zero, size: target)) }
+            }.value
+            if let loaded, image == nil { image = loaded }
+        }
     }
 }
 
