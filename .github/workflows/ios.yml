@@ -15,8 +15,10 @@ on:
           - core-only
           - archive-layout
           - archive-only
-  push:
-    branches: [main]
+  # Тяжёлая сборка с тестами запускается только вручную (workflow_dispatch),
+  # чтобы не занимать раннер на каждый коммит — быстрый workflow делает .ipa.
+  # push:
+  #   branches: [main]
 jobs:
   build:
     runs-on: macos-15
