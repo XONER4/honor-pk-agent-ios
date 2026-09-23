@@ -139,6 +139,18 @@ enum RussianTextPolicy {
         false
     }
 
+    /// Ответ короче этого порога — обрывок, а не ответ.
+    /// Живёт здесь, а не в ChatStore: ChatStore изолирован на главном акторе,
+    /// а проверка нужна ещё при сборке запроса — в фоновом контексте.
+    static func isTooShortToBeAnAnswer(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+        let terminators: Set<Character> = [".", "!", "?", "…", ":", "\n"]
+        // Одна-две буквы без знака конца — это следствие сбоя («В», «Х», «Ок»),
+        // а не ответ. Более длинные короткие реплики («Не знаю.») остаются как есть.
+        return trimmed.count <= 3 && !trimmed.contains(where: { terminators.contains($0) })
+    }
+
     /// Code blocks, URLs and names can remain in the original language; detect foreign natural prose.
     /// Порог поднят: раньше перевод запускался даже на коротких английских вставках,
     /// а каждый перевод — это второй полный запрос к API и риск обрыва.
@@ -276,7 +288,7 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
             if message.role == .assistant && message.content.isEmpty { continue }
             // Огрызок из истории («В», «Х») модель копирует как образец стиля,
             // поэтому в контекст он не попадает.
-            if message.role == .assistant && ChatStore.isTooShortToBeAnAnswer(message.content) { continue }
+            if message.role == .assistant && RussianTextPolicy.isTooShortToBeAnAnswer(message.content) { continue }
             var text = message.content
             // Реакция-эмодзи пользователя на ответ агента попадает в контекст,
             // чтобы агент мог её учесть в следующем ответе (пункт 38 ТЗ).

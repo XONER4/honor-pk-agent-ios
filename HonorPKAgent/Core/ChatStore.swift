@@ -735,10 +735,9 @@ final class ChatStore: ObservableObject {
                             guard self.activeRunID == runID else { return }
                             retryContent += delta.content
                             if !delta.reasoning.isEmpty { rawReasoning += delta.reasoning }
-                            if retryContent.count - rawContent.count > 2 { flush() }
                             rawContent = retryContent
                             pendingContent = retryContent
-                            if Date().timeIntervalSince(lastPublished) >= 0.1 { flush() }
+                            if Date().timeIntervalSince(lastPublished) >= 1.0 / 30.0 { flush() }
                         }
                         flush()
                         rawContent = retryContent
@@ -819,12 +818,7 @@ final class ChatStore: ObservableObject {
 
     /// Ответ короче этого порога — обрывок, а не ответ.
     static func isTooShortToBeAnAnswer(_ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return true }
-        let terminators: Set<Character> = [".", "!", "?", "…", ":", "\n"]
-        // Одна-две буквы без знака конца — это следствие сбоя («В», «Х», «Ок»),
-        // а не ответ. Более длинные короткие реплики («Не знаю.») остаются как есть.
-        return trimmed.count <= 3 && !trimmed.contains(where: { terminators.contains($0) })
+        RussianTextPolicy.isTooShortToBeAnAnswer(text)
     }
 
     private func mutateMessage(chatID: UUID, messageID: UUID, update: (inout ChatMessage) -> Void) {
