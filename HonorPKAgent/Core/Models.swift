@@ -1,6 +1,6 @@
 import Foundation
 
-enum MessageRole: String, Codable, Sendable { case user, assistant }
+enum MessageRole: String, Codable, Sendable { case user, assistant, tool }
 enum MessageFeedback: String, Codable, Sendable { case like, dislike }
 enum AttachmentKind: String, Codable, Sendable { case image, document, text, video, sticker }
 
@@ -75,6 +75,13 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     var reaction: String? = nil
     /// Реакция агента на сообщение пользователя (эмодзи).
     var assistantReaction: String? = nil
+    /// Идентификатор вызова инструмента. Нужен для служебного сообщения с ролью
+    /// `tool`: сервис связывает результат с вызовом только по этому полю.
+    var toolCallID: String? = nil
+    /// Вызовы инструментов в ответе ассистента, сериализованные в JSON.
+    /// Их тоже нужно возвращать в API, иначе сервис не понимает, к чему относится
+    /// результат, и отвечает ошибкой 400.
+    var toolCallsRaw: String = ""
 
     /// Устойчивый идентификатор для прокрутки к сообщению.
     var anchorID: String { "message-anchor-" + id.uuidString }

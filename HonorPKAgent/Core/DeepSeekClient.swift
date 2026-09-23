@@ -401,6 +401,19 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
                 if message.role == .assistant, !message.reasoning.isEmpty, hasTools {
                     payload["reasoning_content"] = message.reasoning
                 }
+                // Результат инструмента обязан идти сообщением с ролью tool и ссылкой
+                // на конкретный вызов. Иначе сервис отвечает ошибкой 400:
+                // «assistant message with tool_calls must be followed by tool messages».
+                if message.role == .tool, let callID = message.toolCallID, !callID.isEmpty {
+                    payload["tool_call_id"] = callID
+                }
+                // Вызовы инструментов в ответе ассистента тоже нужно возвращать,
+                // иначе сервис не свяжет результат с вызовом.
+                if message.role == .assistant, !message.toolCallsRaw.isEmpty,
+                   let callData = message.toolCallsRaw.data(using: .utf8),
+                   let parsed = try? JSONSerialization.jsonObject(with: callData) {
+                    payload["tool_calls"] = parsed
+                }
                 payloadMessages.append(payload)
             }
             guard estimatedBytes < 47 * 1024 * 1024 else { throw HonorError.requestTooLarge }

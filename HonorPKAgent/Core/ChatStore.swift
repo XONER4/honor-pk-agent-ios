@@ -720,6 +720,9 @@ final class ChatStore: ObservableObject {
                     // Имя не `context`: так уже называется строка с результатами поиска.
                     let toolContext = self.toolExecutionContext()
                     self.generationStatus = "Выполняю действие…"
+                    // Запоминаем вызовы этого прохода: их нужно вернуть в API вместе
+                    // с результатами, иначе сервис отвечает ошибкой 400.
+                    let executedCalls = toolCalls
                     for call in toolCalls {
                         let result = ToolExecutor.executeExtended(call, context: toolContext)
                         if let effect = result.effect { self.apply(effect) }
@@ -731,10 +734,14 @@ final class ChatStore: ObservableObject {
                     var assistant = ChatMessage(role: .assistant)
                     assistant.content = rawContent
                     assistant.reasoning = rawReasoning
+                    assistant.toolCallsRaw = Self.toolCallsJSON(executedCalls)
                     followUp.append(assistant)
-                    for result in toolResults {
-                        var toolMessage = ChatMessage(role: .user)
-                        toolMessage.content = "Результат вызова инструмента «\(result.name)»: \(result.content)\nУчти это в ответе и не вызывай этот инструмент повторно без необходимости."
+                    // Результат обязан идти сообщением с ролью tool и ссылкой на вызов:
+                    // этого требует протокол DeepSeek, иначе запрос отклоняется.
+                    for result in toolResults where !result.callID.isEmpty {
+                        var toolMessage = ChatMessage(role: .tool)
+                        toolMessage.content = result.content
+                        toolMessage.toolCallID = result.callID
                         followUp.append(toolMessage)
                     }
 
@@ -992,7 +999,7 @@ final class ChatStore: ObservableObject {
         return ToolExecutionContext(
             deviceModel: DeviceModel.name,
             systemVersion: UIDevice.current.systemVersion,
-            appVersion: "10.17",
+            appVersion: "10.18",
             messageCount: messages.count,
             voiceMessageCount: messages.filter { $0.inputKind == .voice }.count,
             chatStartedAt: selectedConversation?.createdAt,
@@ -1095,6 +1102,22 @@ final class ChatStore: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Сериализует вызовы инструментов в формат API: id, тип и имя с аргументами.
+    /// Нужно, чтобы вернуть их в запросе вместе с результатами.
+    static func toolCallsJSON(_ calls: [ToolCallRequest]) -> String {
+        let list: [[String: Any]] = calls.filter { !$0.name.isEmpty }.map { call in
+            [
+                "id": call.id.isEmpty ? "call_\(UUID().uuidString.prefix(8))" : call.id,
+                "type": "function",
+                "function": ["name": call.name, "arguments": call.arguments.isEmpty ? "{}" : call.arguments]
+            ]
+        }
+        guard !list.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: list),
+              let text = String(data: data, encoding: .utf8) else { return "" }
+        return text
     }
 
     /// Склеивает куски одного вызова инструмента. Куски одного вызова опознаются
