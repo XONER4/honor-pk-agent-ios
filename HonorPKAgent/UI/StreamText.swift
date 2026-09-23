@@ -96,6 +96,8 @@ enum MarkdownBlockKind: Equatable {
     case checklist([ChecklistItem])
     case quote
     case code(language: String)
+    case copyBlock
+    case card(style: String, title: String)
     case table(headers: [String], alignments: [TableAlignment], rows: [[String]])
     case divider
 }
@@ -143,8 +145,21 @@ enum MarkdownBlockParser {
                     index += 1
                 }
                 if index < lines.count { index += 1 }   // закрывающий ```
-                blocks.append(MarkdownBlockModel(id: blocks.count, kind: .code(language: language),
-                                                 text: body.joined(separator: "\n")))
+                let body = body.joined(separator: "\n")
+                // Кастомные блоки из ТЗ: ```copy — фрагмент с кнопкой копирования,
+                // ```card:info|warn|success|error — цветная карточка.
+                let marker = language.lowercased()
+                if marker == "copy" {
+                    blocks.append(MarkdownBlockModel(id: blocks.count, kind: .copyBlock, text: body))
+                } else if marker.hasPrefix("card") {
+                    let style = marker.contains(":")
+                        ? String(marker.split(separator: ":").last ?? "info")
+                        : "info"
+                    blocks.append(MarkdownBlockModel(id: blocks.count,
+                                                     kind: .card(style: style, title: ""), text: body))
+                } else {
+                    blocks.append(MarkdownBlockModel(id: blocks.count, kind: .code(language: language), text: body))
+                }
                 continue
             }
 
@@ -419,6 +434,11 @@ private struct MarkdownBlockView: View {
             case .code(let language):
                 CodeBlockView(text: block.text, language: language,
                               fontSize: fontSize, findQuery: findQuery)
+            case .copyBlock:
+                CopyBlockView(text: block.text, fontSize: fontSize)
+            case .card(let style, _):
+                CardBlockView(style: style, body: block.text, fontSize: fontSize,
+                              sources: sources, findQuery: findQuery)
             case .table(let headers, let alignments, let rows):
                 MarkdownTableView(headers: headers, alignments: alignments, rows: rows,
                                   fontSize: fontSize, findQuery: findQuery)
@@ -486,15 +506,223 @@ private struct MarkdownBlockView: View {
 
     private func inlineAttributed(_ source: String) -> AttributedString {
         let cited = linkedCitations(source, sources: sources)
-        let value = (try? AttributedString(markdown: cited,
+        var value = (try? AttributedString(markdown: cited,
                                            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(source)
+        value = InlineStyleParser.apply(to: value)
         return highlighted(value, query: findQuery)
     }
 }
 
-struct CodeBlockView: View {
+/// Кастомные расширения разметки из ТЗ: цвет текста, фон, капс, подсветка, спойлер.
+///
+/// Стандартный Markdown этого не умеет, поэтому приложение само разбирает
+/// `{color:#fff}текст{/color}`, `{bg:yellow}текст{/bg}`, `{upper}текст{/upper}`,
+/// `==выделение==` и `||спойлер||` и превращает их в нативные стили SwiftUI.
+enum InlineStyleParser {
+    private static let colorPattern = try! NSRegularExpression(
+        pattern: "\\{color:(#[0-9A-Fa-f]{3,8}|[a-zA-Zа-яА-Я]+)\\}(.*?)\\{/color\\}", options: [.dotMatchesLineSeparators])
+    private static let backgroundPattern = try! NSRegularExpression(
+        pattern: "\\{bg:(#[0-9A-Fa-f]{3,8}|[a-zA-Zа-яА-Я]+)\\}(.*?)\\{/bg\\}", options: [.dotMatchesLineSeparators])
+    private static let upperPattern = try! NSRegularExpression(
+        pattern: "\\{upper\\}(.*?)\\{/upper\\}", options: [.dotMatchesLineSeparators])
+    private static let markPattern = try! NSRegularExpression(pattern: "==([^=\\n]+)==")
+    private static let spoilerPattern = try! NSRegularExpression(pattern: "\\|\\|([^|\\n]+)\\|\\|")
+
+    private static let namedColors: [String: UInt32] = [
+        "white": 0xFFFFFF, "белый": 0xFFFFFF, "black": 0x000000, "чёрный": 0x000000, "черный": 0x000000,
+        "red": 0xFF4D4D, "красный": 0xFF4D4D, "green": 0x3DDC84, "зелёный": 0x3DDC84, "зеленый": 0x3DDC84,
+        "blue": 0x4D94FF, "синий": 0x4D94FF, "orange": 0xFFA53D, "оранжевый": 0xFFA53D,
+        "purple": 0xB07CFF, "фиолетовый": 0xB07CFF, "gray": 0x9A9A9A, "grey": 0x9A9A9A, "серый": 0x9A9A9A,
+        "yellow": 0xFFE066, "жёлтый": 0xFFE066, "желтый": 0xFFE066
+    ]
+
+    static func color(from token: String) -> Color? {
+        let value = token.lowercased()
+        if value.hasPrefix("#") {
+            var hex = String(value.dropFirst())
+            if hex.count == 3 { hex = hex.map { "\($0)\($0)" }.joined() }
+            guard hex.count == 6, let number = UInt32(hex, radix: 16) else { return nil }
+            return Color(red: Double((number >> 16) & 255) / 255,
+                         green: Double((number >> 8) & 255) / 255,
+                         blue: Double(number & 255) / 255)
+        }
+        guard let number = namedColors[value] else { return nil }
+        return Color(red: Double((number >> 16) & 255) / 255,
+                     green: Double((number >> 8) & 255) / 255,
+                     blue: Double(number & 255) / 255)
+    }
+
+    static func apply(to value: AttributedString) -> AttributedString {
+        var result = value
+        applyStyle(backgroundPattern, in: &result, background: true)
+        applyStyle(colorPattern, in: &result, background: false)
+        applyUpper(in: &result)
+        applyMark(in: &result)
+        applySpoiler(in: &result)
+        return result
+    }
+
+    /// Заменяет разметку на чистый текст, попутно применяя стиль.
+    private static func applyStyle(_ expression: NSRegularExpression, in value: inout AttributedString,
+                                   background: Bool) {
+        while true {
+            let plain = String(value.characters)
+            let range = NSRange(plain.startIndex..., in: plain)
+            guard let match = expression.firstMatch(in: plain, range: range),
+                  let whole = Range(match.range, in: plain),
+                  let tokenRange = Range(match.range(at: 1), in: plain),
+                  let bodyRange = Range(match.range(at: 2), in: plain),
+                  let color = color(from: String(plain[tokenRange])) else { return }
+            replace(&value, whole: whole, body: String(plain[bodyRange]), background: background, color: color)
+        }
+    }
+
+    private static func applyUpper(in value: inout AttributedString) {
+        while true {
+            let plain = String(value.characters)
+            guard let match = upperPattern.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)),
+                  let whole = Range(match.range, in: plain),
+                  let bodyRange = Range(match.range(at: 1), in: plain) else { return }
+            replace(&value, whole: whole, body: String(plain[bodyRange]).uppercased(),
+                    background: false, color: HonorTheme.foreground)
+        }
+    }
+
+    private static func applyMark(in value: inout AttributedString) {
+        while true {
+            let plain = String(value.characters)
+            guard let match = markPattern.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)),
+                  let whole = Range(match.range, in: plain),
+                  let bodyRange = Range(match.range(at: 1), in: plain) else { return }
+            replace(&value, whole: whole, body: String(plain[bodyRange]),
+                    background: true, color: Color.yellow.opacity(0.35))
+        }
+    }
+
+    private static func applySpoiler(in value: inout AttributedString) {
+        while true {
+            let plain = String(value.characters)
+            guard let match = spoilerPattern.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)),
+                  let whole = Range(match.range, in: plain) else { return }
+            // Спойлер: содержимое скрыто за плашкой до нажатия.
+            replace(&value, whole: whole, body: "▮▮▮▮▮",
+                    background: true, color: HonorTheme.secondary.opacity(0.45))
+        }
+    }
+
+    private static func replace(_ value: inout AttributedString, whole: Range<String.Index>, body: String,
+                                background: Bool, color: Color) {
+        guard let lower = AttributedString.Index(whole.lowerBound, within: value),
+              let upper = AttributedString.Index(whole.upperBound, within: value) else { return }
+        var replacement = AttributedString(body)
+        if background {
+            replacement.backgroundColor = color
+        } else {
+            replacement.foregroundColor = color
+        }
+        value.replaceSubrange(lower..<upper, with: replacement)
+    }
+}
+
+/// Блок ```copy — фрагмент, который копируется одной кнопкой (пункт 7 ТЗ).
+struct CopyBlockView: View {
     let text: String
+    let fontSize: Double
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(text)
+                .font(.system(size: fontSize))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                UIPasteboard.general.string = text
+                copied = true
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    copied = false
+                }
+            } label: {
+                Label(copied ? "Скопировано" : "Копировать", systemImage: copied ? "checkmark" : "square.on.square")
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 30)
+                    .overlay(Capsule().stroke(HonorTheme.divider, lineWidth: 0.7))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(copied ? HonorTheme.accent : HonorTheme.secondary)
+            .accessibilityIdentifier("message.copy.block")
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(HonorTheme.divider, lineWidth: 0.6))
+    }
+}
+
+/// Блок ```card:info|success|warn|error — цветная карточка с полосой слева (пункт 42 ТЗ).
+struct CardBlockView: View {
+    let style: String
+    let body: String
+    let fontSize: Double
+    let sources: [WebSource]
+    let findQuery: String
+
+    private var accent: Color {
+        switch style.lowercased() {
+        case "success", "ok", "успех": return Color(red: 0.24, green: 0.78, blue: 0.45)
+        case "warn", "warning", "предупреждение": return Color(red: 1.0, green: 0.72, blue: 0.24)
+        case "error", "danger", "ошибка": return Color(red: 1.0, green: 0.36, blue: 0.36)
+        case "quote", "цитата": return HonorTheme.secondary
+        default: return HonorTheme.accent
+        }
+    }
+
+    private var symbol: String {
+        switch style.lowercased() {
+        case "success", "ok", "успех": return "checkmark.circle.fill"
+        case "warn", "warning", "предупреждение": return "exclamationmark.triangle.fill"
+        case "error", "danger", "ошибка": return "xmark.octagon.fill"
+        case "quote", "цитата": return "quote.opening"
+        default: return "info.circle.fill"
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 11) {
+            Rectangle().fill(accent).frame(width: 3)
+            VStack(alignment: .leading, spacing: 7) {
+                Image(systemName: symbol)
+                    .font(.system(size: 15))
+                    .foregroundStyle(accent)
+                Text(rendered)
+                    .font(.system(size: fontSize))
+                    .lineSpacing(5)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 2)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(accent.opacity(0.35), lineWidth: 0.7))
+        .accessibilityIdentifier("message.card." + style.lowercased())
+    }
+
+    private var rendered: AttributedString {
+        let cited = linkedCitations(body, sources: sources)
+        var value = (try? AttributedString(markdown: cited,
+                                           options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(body)
+        value = InlineStyleParser.apply(to: value)
+        return highlighted(value, query: findQuery)
+    }
+}
+
+struct CodeBlockView: View {    let text: String
     let language: String
     let fontSize: Double
     let findQuery: String

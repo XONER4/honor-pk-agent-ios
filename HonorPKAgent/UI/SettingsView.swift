@@ -1,5 +1,6 @@
 import AVFoundation
 import AVKit
+import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -214,14 +215,53 @@ private struct SettingsDivider: View {
 
 private struct ProfileSettingsPage: View {
     @EnvironmentObject private var settings: AppSettings
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var photoError: String?
+
+    private var avatar: UIImage? {
+        guard !settings.profilePhotoPath.isEmpty else { return nil }
+        return UIImage(contentsOfFile: settings.profilePhotoPath)
+    }
+
     var body: some View {
         Form {
             Section {
                 HStack(spacing: 14) {
-                    Image(systemName: "person.crop.circle.fill").font(.system(size: 48)).foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(settings.displayName.isEmpty ? settings.text("Ваш профиль", "Your profile") : settings.displayName).font(.headline)
-                        Text(settings.text("Локальный профиль", "Local profile")).font(.subheadline).foregroundStyle(.secondary)
+                    Group {
+                        if let avatar {
+                            Image(uiImage: avatar)
+                                .resizable()
+                                .scaledToFill()
+                        } else {
+                            Image(systemName: "person.crop.circle.fill")
+                                .resizable()
+                                .scaledToFit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(width: 64, height: 64)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(HonorTheme.divider, lineWidth: 0.7))
+                    .accessibilityIdentifier("profile.photo.view")
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(settings.displayName.isEmpty ? settings.text("Ваш профиль", "Your profile") : settings.displayName)
+                            .font(.headline)
+                        HStack(spacing: 10) {
+                            PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
+                                Label(settings.text("Загрузить фото", "Upload photo"), systemImage: "photo")
+                                    .font(.system(size: 14, weight: .medium))
+                            }
+                            .accessibilityIdentifier("profile.photo.pick")
+                            if avatar != nil {
+                                Button(role: .destructive) {
+                                    settings.profilePhotoPath = ""
+                                } label: {
+                                    Text(settings.text("Удалить", "Remove")).font(.system(size: 14))
+                                }
+                                .accessibilityIdentifier("profile.photo.remove")
+                            }
+                        }
                     }
                 }.padding(.vertical, 7)
             }
@@ -230,6 +270,9 @@ private struct ProfileSettingsPage: View {
                     .textContentType(.nickname)
                     .onChange(of: settings.displayName) { if $0.count > 60 { settings.displayName = String($0.prefix(60)) } }
                     .accessibilityIdentifier("profile.name")
+            }
+            if let photoError {
+                Section { Text(photoError).font(.footnote).foregroundStyle(.secondary) }
             }
             Section {
                 Text(settings.text("Профиль и история чатов хранятся на этом iPhone. Вход в аккаунт не требуется.",
@@ -240,6 +283,39 @@ private struct ProfileSettingsPage: View {
         .navigationTitle(settings.text("Настройки аккаунта", "Account settings"))
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("settings.page.profile")
+        .onChange(of: pickerItem) { item in
+            guard let item else { return }
+            Task { @MainActor in
+                do {
+                    guard let data = try await item.loadTransferable(type: Data.self),
+                          let image = UIImage(data: data) else {
+                        photoError = settings.text("Не удалось прочитать изображение.", "Could not read the image.")
+                        return
+                    }
+                    // Уменьшаем и сохраняем в песочницу приложения, чтобы фото не терялось
+                    // при обновлении версии (путь хранится в настройках).
+                    let side: CGFloat = 512
+                    let scale = min(side / max(image.size.width, 1), side / max(image.size.height, 1), 1)
+                    let target = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+                    let renderer = UIGraphicsImageRenderer(size: target)
+                    let resized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: target)) }
+                    guard let jpeg = resized.jpegData(compressionQuality: 0.9) else {
+                        photoError = settings.text("Не удалось сохранить фото.", "Could not save the photo.")
+                        return
+                    }
+                    let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                        .appendingPathComponent("HonorPK", isDirectory: true)
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    let url = directory.appendingPathComponent("profile-photo.jpg")
+                    try jpeg.write(to: url, options: .atomic)
+                    settings.profilePhotoPath = url.path
+                    photoError = nil
+                } catch {
+                    photoError = error.localizedDescription
+                }
+                pickerItem = nil
+            }
+        }
     }
 }
 

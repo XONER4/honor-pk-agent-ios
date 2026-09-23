@@ -641,7 +641,15 @@ struct ChatRootView: View {
         animate { menuMessage = nil }
         switch action {
         case .copy: copy(message.content)
-        case .select: selectedText = SelectedText(content: message.content)
+        case .select:
+            // Раньше окно выбора текста пыталось открыться в тот же кадр, когда
+            // закрывалось меню, и SwiftUI его проглатывал — открывалось выделение
+            // прямо в чате. Даём меню закрыться и показываем отдельное окно.
+            let value = message.content
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 220_000_000)
+                selectedText = SelectedText(content: value)
+            }
         case .edit:
             store.edit(messageID: message.id)
             composerFocused = true
@@ -955,7 +963,8 @@ private struct MessageRow: View, Equatable {
             VStack(alignment: .leading, spacing: 7) {
                 attachmentLabels
                 if !message.content.isEmpty {
-                    Text(highlighted(AttributedString(message.content), query: findQuery))
+                    // Цветной текст работает и в сообщениях пользователя (пункт 8 ТЗ).
+                    Text(InlineStyleParser.apply(to: highlighted(AttributedString(message.content), query: findQuery)))
                         .font(.system(size: 17 * settings.fontScale * dynamicScale))
                         .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1644,6 +1653,14 @@ private struct SelectableTextSheet: View {
                 .navigationTitle(settings.text("Выбрать текст", "Select text"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            UIPasteboard.general.string = content
+                        } label: {
+                            Label(settings.text("Копировать всё", "Copy all"), systemImage: "square.on.square")
+                        }
+                        .accessibilityIdentifier("message.selection.copy")
+                    }
                     ToolbarItem(placement: .confirmationAction) {
                         Button(settings.text("Готово", "Done")) { dismiss() }
                             .accessibilityIdentifier("message.selection.done")
