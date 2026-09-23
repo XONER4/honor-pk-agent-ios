@@ -262,6 +262,25 @@ final class Honer10CoreTests: XCTestCase {
             XCTAssertEqual(rows, [["Клин", "14"]])
         } else { XCTFail("Таблица с разделителем + не распознана") }
 
+        // Таблица без строк данных не должна появляться: раньше на её месте
+        // оставалась пустая панель «Фильтр по строкам» без шапки и строк.
+        let ghost = MarkdownBlockParser.parse("| |\n|---|---|")
+        XCTAssertFalse(ghost.contains { if case .table = $0.kind { return true } else { return false } },
+                       "Пустая таблица не должна распознаваться")
+        let headerOnly = MarkdownBlockParser.parse("| Модель | Год |\n|---|---|")
+        XCTAssertFalse(headerOnly.contains { if case .table = $0.kind { return true } else { return false } },
+                       "Таблица без строк данных не должна распознаваться")
+        // Строка-разделитель не должна попадать в ответ сырым текстом.
+        let leaked = headerOnly.map(\.text).joined(separator: " ")
+        XCTAssertFalse(leaked.contains("|---"), "Разделитель таблицы попал в текст ответа")
+        // Настоящая таблица по-прежнему распознаётся.
+        let real = MarkdownBlockParser.parse("| Модель | Год |\n|---|---|\n| Motorola DynaTAC 8000X | 1983 |")
+        guard case .table(let realHeaders, _, let realRows)? = real.first?.kind else {
+            return XCTFail("Настоящая таблица перестала распознаваться")
+        }
+        XCTAssertEqual(realHeaders, ["Модель", "Год"])
+        XCTAssertEqual(realRows, [["Motorola DynaTAC 8000X", "1983"]])
+
         // Разделитель --- остаётся разделителем, а не таблицей.
         let divider = MarkdownBlockParser.parse("Текст выше\n\n---\n\nТекст ниже")
         XCTAssertFalse(divider.contains { if case .table = $0.kind { return true } else { return false } })

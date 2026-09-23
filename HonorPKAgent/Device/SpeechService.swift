@@ -127,7 +127,8 @@ final class SpeechService: NSObject, ObservableObject {
                 let rms = sqrt(Double(sum) / Double(buffer.frameLength))
                 let level = min(1, max(0, (20 * log10(max(rms, 0.00001)) + 55) / 55))
                 Task { @MainActor in
-                    guard let self, self.recordingID == token, self.isRecording,
+                    // self здесь уже развёрнут guard-ом выше (weak self + guard let self).
+                    guard self.recordingID == token, self.isRecording,
                           Date().timeIntervalSince(self.lastLevelUpdate) >= 0.07 else { return }
                     self.lastLevelUpdate = Date()
                     self.audioLevel = level

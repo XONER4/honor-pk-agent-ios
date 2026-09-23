@@ -302,14 +302,21 @@ enum MarkdownBlockParser {
                 var cursor = index + 2
                 while cursor < lines.count, isTableRow(lines[cursor]) {
                     let cells = splitRow(lines[cursor].trimmingCharacters(in: .whitespaces))
-                    if cells.contains(where: { !$0.isEmpty }) { rows.append(cells) }
+                    // Строка данных обязана нести текст: строка из пустых ячеек и
+                    // палочек («| | |») данными не считается.
+                    if cells.contains(where: { hasText($0) }) { rows.append(cells) }
                     cursor += 1
                 }
-                // Таблица без шапки и без строк — это не таблица, а мусорная разметка.
-                // Раньше она рисовала пустую панель с одним полем «Фильтр по строкам».
-                guard headers.contains(where: { !$0.isEmpty }), !rows.isEmpty else {
-                    buffer.append(line)
-                    index += 1
+                // Таблица без единой непустой строки данных не существует: именно из
+                // такой «таблицы» на экране оставалась пустая панель с полем
+                // «Фильтр по строкам». Текст шапки отдаём обычным абзацем, чтобы он
+                // не пропал, а строку-разделитель пропускаем — иначе она попадала
+                // в ответ сырым текстом вида `|---|---|`.
+                guard !rows.isEmpty else {
+                    let fallback = headers.filter { hasText($0) }.joined(separator: " · ")
+                    flushParagraph()
+                    if !fallback.isEmpty { buffer.append(fallback) }
+                    index = cursor
                     continue
                 }
                 flushParagraph()
@@ -317,6 +324,14 @@ enum MarkdownBlockParser {
                 blocks.append(MarkdownBlockModel(id: blocks.count,
                                                  kind: .table(headers: headers, alignments: alignments, rows: rows),
                                                  text: ""))
+                continue
+            }
+
+            // Остаток нераспознанной таблицы: строка из одних палочек, дефисов и
+            // двоеточий («| | |», «|---|», «|:--:|»). Текста в ней нет — в ответ
+            // не выводим, иначе палочки и дефисы лезли в абзац сырым текстом.
+            if isTextlessTableLine(trimmed) {
+                index += 1
                 continue
             }
 
@@ -471,10 +486,29 @@ enum MarkdownBlockParser {
         }
     }
 
-    /// Строка-шапка таблицы: содержит разделитель и не является строкой выравнивания.
+    /// Строка-шапка таблицы: содержит разделитель, не является строкой выравнивания
+    /// и несёт хотя бы одну ячейку с настоящим текстом. Строку из одних палочек или
+    /// пустых ячеек («| | |», «|||», «|---|») шапкой не считаем: именно из неё
+    /// получалась «таблица» без заголовков и без строк — пустая панель фильтра.
     private static func isTableHeader(_ line: String) -> Bool {
         guard separator(line) != nil else { return false }
-        return alignmentRow(line) == nil
+        guard alignmentRow(line) == nil else { return false }
+        return splitRow(line).contains { hasText($0) }
+    }
+
+    /// Строка таблицы без единого текста: все ячейки пустые или состоят только из
+    /// разделителей («-», «:», «=»). Вне распознанной таблицы это мусор разметки.
+    private static func isTextlessTableLine(_ line: String) -> Bool {
+        guard separator(line) != nil else { return false }
+        return !splitRow(line).contains { hasText($0) }
+    }
+
+    /// Настоящий текст в ячейке: пустая ячейка и ячейка из одних разделителей
+    /// («---», «:--:», «===») текстом не является.
+    private static func hasText(_ cell: String) -> Bool {
+        let value = cell.replacingOccurrences(of: " ", with: "")
+        guard !value.isEmpty else { return false }
+        return !value.allSatisfy { $0 == "-" || $0 == ":" || $0 == "=" }
     }
 
     /// Строка данных таблицы.
@@ -742,9 +776,11 @@ private struct MarkdownBlockView: View {
             case .diagram(let source):
                 MermaidDiagramView(source: source, fontSize: fontSize)
             case .table(let headers, let alignments, let rows):
-                // Пустая таблица не рисуется вовсе: иначе на экране остаётся
-                // одна панель фильтра без шапки и строк.
-                if !rows.isEmpty, headers.contains(where: { !$0.isEmpty }) {
+                // Не рисуем таблицу, у которой нет ни заголовков, ни строк: иначе на
+                // экране остаётся одна панель фильтра без шапки и строк. Строки важнее
+                // заголовков: таблица с данными и пустой шапкой рисуется.
+                if !rows.isEmpty
+                    || headers.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
                     MarkdownTableView(headers: headers, alignments: alignments, rows: rows,
                                       fontSize: fontSize, findQuery: findQuery)
                 }
@@ -1755,12 +1791,25 @@ struct MarkdownTableView: View {
     @State private var filter = ""
     @State private var showTotals = false
     @State private var exportRequest: ExportRequest?
-    /// На телефоне широкая таблица превращается в нечитаемую полосу, поэтому
-    /// по умолчанию строки показываются карточками «столбец — значение».
-    @State private var compactMode = true
+    /// До скольких столбцов таблица помещается в ширину экрана телефона: такие
+    /// таблицы по умолчанию показываются настоящей таблицей (шапка один раз,
+    /// строки друг под другом, текст переносится внутри ячейки). С 5 столбцами
+    /// остаётся широкая таблица с горизонтальной прокруткой.
+    private static let fitColumnLimit = 4
+    /// Ручной выбор режима кнопкой. Пока его нет, режим считается по числу столбцов.
+    /// Раньше здесь стояло `@State private var compactMode = true`, поэтому таблица
+    /// из 2–4 столбцов по умолчанию рисовалась карточками — по одной ячейке на экран.
+    @State private var modeOverride: Bool?
     @State private var showAllRows = false
 
     private var columnCount: Int { max(headers.count, rows.map(\.count).max() ?? 0) }
+    /// Компактный режим — настоящая таблица по ширине экрана, иначе широкая
+    /// таблица с горизонтальной прокруткой.
+    private var compactMode: Bool { modeOverride ?? columnCount <= Self.fitColumnLimit }
+    /// Есть ли в шапке хоть один непустой заголовок (шапка из «| | |» — не шапка).
+    private var hasHeaderText: Bool {
+        headers.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
     /// Сколько строк показывать без раскрытия: длинная таблица не должна
     /// растягивать ответ на несколько экранов.
     private var rowLimit: Int { 40 }
@@ -1833,7 +1882,7 @@ struct MarkdownTableView: View {
                         .foregroundStyle(showTotals ? HonorTheme.accent : HonorTheme.secondary)
                         .accessibilityLabel("Итоги по столбцам")
                     }
-                    Button { withAnimation(.easeInOut(duration: 0.18)) { compactMode.toggle() } } label: {
+                    Button { withAnimation(.easeInOut(duration: 0.18)) { modeOverride = !compactMode } } label: {
                         Image(systemName: compactMode ? "arrow.left.and.right" : "rectangle.grid.1x2")
                             .font(.system(size: 14))
                     }
@@ -1848,7 +1897,7 @@ struct MarkdownTableView: View {
                 .overlay(Capsule().stroke(HonorTheme.divider, lineWidth: 0.6))
             }
 
-            if compactMode && columnCount >= 2 {
+            if compactMode {
                 // Компактный режим — настоящая таблица по ширине экрана: шапка один раз,
                 // строки друг под другом, текст переносится внутри ячейки.
                 fitTable
@@ -1901,7 +1950,7 @@ struct MarkdownTableView: View {
     private var wideTable: some View {
         ScrollView(.horizontal, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 0) {
-                if !headers.isEmpty {
+                if hasHeaderText {
                     headerRow
                     Rectangle().fill(HonorTheme.divider).frame(height: 1)
                 }
@@ -1939,41 +1988,32 @@ struct MarkdownTableView: View {
     /// строки идут друг под другом, текст переносится внутри ячейки, а ширины столбцов
     /// считаются по содержимому.
     private var fitTable: some View {
-        let widths = compactWidths
-        return VStack(alignment: .leading, spacing: 0) {
-            if !headers.isEmpty {
+        // Столбцы делят ширину контейнера поровну: таблица не выходит за пределы
+        // сообщения и переносит текст внутри ячейки — прокрутка не нужна.
+        VStack(alignment: .leading, spacing: 0) {
+            if hasHeaderText {
                 HStack(alignment: .top, spacing: 0) {
                     ForEach(0..<columnCount, id: \.self) { index in
-                        headerCell(index, width: widths[index])
+                        headerCell(index)
                     }
                 }
                 .background(HonorTheme.raised)
                 Rectangle().fill(HonorTheme.divider).frame(height: 1)
             }
             ForEach(Array(shownRows.enumerated()), id: \.offset) { index, cells in
-                HStack(alignment: .top, spacing: 0) {
-                    ForEach(0..<columnCount, id: \.self) { column in
-                        Group {
-                            if column < cells.count, !cells[column].isEmpty {
-                                cellText(cells[column])
-                                    .multilineTextAlignment(textAlignment(alignment(column)))
-                            } else {
-                                Text("—").font(.system(size: fontSize * 0.9))
-                                    .foregroundStyle(HonorTheme.secondary)
-                            }
-                        }
-                        .frame(width: widths[column], alignment: frameAlignment(alignment(column)))
-                        .padding(.horizontal, 6).padding(.vertical, 7)
-                    }
-                }
-                .background(index.isMultiple(of: 2) ? Color.clear : HonorTheme.raised.opacity(0.25))
+                fitRow(cells, striped: !index.isMultiple(of: 2))
                 if index < shownRows.count - 1 {
                     Rectangle().fill(HonorTheme.divider.opacity(0.5)).frame(height: 0.5)
                 }
             }
             if showTotals && !numericColumns.isEmpty {
                 Rectangle().fill(HonorTheme.divider).frame(height: 1)
-                totalsRow
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(0..<columnCount, id: \.self) { column in
+                        totalsCell(column)
+                    }
+                }
+                .background(HonorTheme.raised.opacity(0.6))
             }
         }
         .background(HonorTheme.surface)
@@ -1981,43 +2021,54 @@ struct MarkdownTableView: View {
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.6))
     }
 
-    /// Ширины столбцов для компактного режима: суммарно ровно ширина экрана,
-    /// пропорционально средней длине текста в столбце.
-    private var compactWidths: [CGFloat] {
-        let usable = max(220, UIScreen.main.bounds.width - 44)
-        let spacing = CGFloat(columnCount) * 12
-        let available = max(160, usable - spacing)
-        var weights: [Double] = []
-        for column in 0..<columnCount {
-            var longest = headers.count > column ? Double(headers[column].count) : 0
-            var total = 0.0
-            var counted = 0.0
-            for row in shownRows where column < row.count {
-                longest = max(longest, Double(row[column].count))
-                total += Double(row[column].count)
-                counted += 1
+    /// Строка компактной таблицы: те же столбцы и тот же порядок, что и в шапке.
+    private func fitRow(_ cells: [String], striped: Bool) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(0..<columnCount, id: \.self) { column in
+                Group {
+                    if column < cells.count, !cells[column].isEmpty {
+                        cellText(cells[column])
+                            .multilineTextAlignment(textAlignment(alignment(column)))
+                    } else {
+                        Text("—")
+                            .font(.system(size: fontSize * 0.9))
+                            .foregroundStyle(HonorTheme.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: frameAlignment(alignment(column)))
+                .padding(.horizontal, 5).padding(.vertical, 7)
+                if column < columnCount - 1 {
+                    Rectangle().fill(HonorTheme.divider.opacity(0.6)).frame(width: 0.5)
+                }
             }
-            let average = counted > 0 ? total / counted : 0
-            // Средняя длина важнее самой длинной строки: иначе один длинный текст
-            // забирает всю ширину у остальных столбцов.
-            weights.append(max(4, average * 0.65 + longest * 0.35))
         }
-        let sum = weights.reduce(0, +)
-        guard sum > 0 else { return Array(repeating: available / CGFloat(max(1, columnCount)), count: columnCount) }
-        var widths = weights.map { CGFloat($0 / sum) * available }
-        // Никакой столбец не должен стать нечитаемым.
-        let minimum: CGFloat = columnCount <= 2 ? 92 : (columnCount == 3 ? 72 : 62)
-        for index in widths.indices where widths[index] < minimum { widths[index] = minimum }
-        let total = widths.reduce(0, +)
-        if total > available {
-            let scale = available / total
-            widths = widths.map { max(48, $0 * scale) }
+        .background(striped ? HonorTheme.raised.opacity(0.25) : Color.clear)
+    }
+
+    /// Ячейка строки итогов в компактном режиме: сумма и среднее по числовому столбцу.
+    private func totalsCell(_ column: Int) -> some View {
+        let values = numericColumnValues(column)
+        return VStack(alignment: .leading, spacing: 2) {
+            if values.isEmpty {
+                Text(column == 0 ? "Итого" : "")
+                    .font(.system(size: fontSize * 0.85, weight: .semibold))
+                    .foregroundStyle(HonorTheme.secondary)
+            } else {
+                Text("Σ \(formatted(values.reduce(0, +)))")
+                    .font(.system(size: fontSize * 0.85, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("сред. \(formatted(values.reduce(0, +) / Double(values.count)))")
+                    .font(.system(size: fontSize * 0.75))
+                    .foregroundStyle(HonorTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        return widths
+        .frame(maxWidth: .infinity, alignment: frameAlignment(alignment(column)))
+        .padding(.horizontal, 5).padding(.vertical, 7)
     }
 
     /// Заголовок одного столбца в компактном режиме: тап сортирует.
-    private func headerCell(_ index: Int, width: CGFloat) -> some View {
+    private func headerCell(_ index: Int) -> some View {
         Button {
             if sortColumn == index { sortAscending.toggle() } else { sortColumn = index; sortAscending = true }
         } label: {
@@ -2031,8 +2082,8 @@ struct MarkdownTableView: View {
                         .font(.system(size: 9, weight: .bold))
                 }
             }
-            .frame(width: width, alignment: frameAlignment(alignment(index)))
-            .padding(.horizontal, 6).padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: frameAlignment(alignment(index)))
+            .padding(.horizontal, 5).padding(.vertical, 7)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
