@@ -52,6 +52,8 @@ final class LiveIntegrationTests: XCTestCase {
 
     func testLiveEnglishAndChineseQuestionsStayRussian() async throws {
         let english = try await answer("Explain why the sky is blue in one sentence. Answer in English.", thinking: true)
+        print("HONER_WHY reasoning=[\(english.reasoning.prefix(400))]")
+        print("HONER_WHY needsReasoning=\(RussianTextPolicy.needsNormalization(english.reasoning)) translated=\(english.reasoningWasTranslated ?? false)")
         XCTAssertTrue(english.content.lowercased().contains("свет") || english.content.lowercased().contains("рассе"))
         let chinese = try await answer("请只用中文解释为什么冰会融化。", thinking: false)
         XCTAssertTrue(chinese.content.lowercased().contains("лёд") || chinese.content.lowercased().contains("льд") || chinese.content.lowercased().contains("плав"))
