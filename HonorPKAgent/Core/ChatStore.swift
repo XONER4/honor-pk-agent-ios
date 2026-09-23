@@ -783,11 +783,14 @@ final class ChatStore: ObservableObject {
                             } catch {
                                 if Task.isCancelled { throw CancellationError() }
                                 // Перевод не удался — оставляем исходный текст рассуждения,
-                                // а не заглушку: пользователь должен видеть, о чём думала модель.
+                                // а не заглушку, и помечаем, что он на языке модели:
+                                // пользователь должен видеть, о чём думала модель, и понимать,
+                                // почему текст не по-русски.
                                 self.mutateMessage(chatID: chatID, messageID: response.id) {
                                     if $0.reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                         $0.reasoning = rawReasoning
                                     }
+                                    $0.reasoningStayedForeign = true
                                 }
                             }
                         }
@@ -936,6 +939,7 @@ final class ChatStore: ObservableObject {
                     if $0.reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         $0.reasoning = sourceReasoning
                     }
+                    $0.reasoningStayedForeign = true
                 }
             }
         }

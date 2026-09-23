@@ -1174,6 +1174,13 @@ private struct MessageRow: View, Equatable {
                         Text(text("Переведено на русский", "Translated into Russian"))
                             .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
                             .accessibilityIdentifier("message.reasoning.translated." + message.id.uuidString)
+                    } else if message.reasoningStayedForeign {
+                        // Перевод не удался. Показываем текст как есть, но честно помечаем:
+                        // иначе выглядит как сбой приложения, а не как недоступный перевод.
+                        Text(text("Перевод недоступен, показан текст на языке модели",
+                                  "Translation unavailable, showing the model's own wording"))
+                            .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
+                            .accessibilityIdentifier("message.reasoning.foreign." + message.id.uuidString)
                     }
                     StreamText(target: message.reasoning, streaming: streaming, baseRate: 80) { visible in
                         BlockMarkdownView(content: visible, fontSize: 14 * settings.fontScale * dynamicScale,

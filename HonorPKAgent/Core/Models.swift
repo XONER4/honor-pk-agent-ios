@@ -57,6 +57,10 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     var error: String? = nil
     var isInterrupted: Bool = false
     var reasoningWasTranslated: Bool? = nil
+    /// Рассуждение пришло на чужом языке, и перевести его не удалось.
+    /// В этом случае текст показывается с пометкой «на языке модели», чтобы
+    /// отсутствие перевода не выглядело как сбой приложения.
+    var reasoningStayedForeign: Bool = false
     /// Как сообщение попало в чат: набрано текстом, наговорено голосом или выбрано из подсказки.
     var inputKind: MessageInputKind = .text
     /// Реакция пользователя на это сообщение (эмодзи).
