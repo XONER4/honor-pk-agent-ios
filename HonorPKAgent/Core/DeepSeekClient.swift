@@ -130,7 +130,7 @@ enum RussianTextPolicy {
     private static let markdownLinks = try! NSRegularExpression(pattern: "\\[[^]]*\\]\\([^)]*\\)")
     private static let brandNames = try! NSRegularExpression(pattern: "(?i)\\b(?:Honer\\s+AI|Honor\\s+AI|Hon[oe]r\\s+PK\\s+Agent|Honor\\s+PC\\s+Agent|DeepSeek|OpenAI)\\b")
     private static let latinWords = try! NSRegularExpression(pattern: "[A-Za-z]+")
-    private static let shortEnglishPhrases: Set<String> = ["hello", "hi", "hey", "hello there", "good morning", "good evening", "good night", "thank you", "thanks", "yes", "no", "of course", "sure"]
+    private static let shortEnglishPhrases: Set<String> = ["hello", "hi", "hey", "hello there", "good morning", "good evening", "good night", "thank you", "thanks", "yes", "no", "of course", "sure", "let me help", "let me explain", "i can help", "how can i help"]
 
     /// Раньше при этом признаке текст стирался прямо во время стрима — ответ исчезал
     /// и появлялся рывками. Теперь текст никогда не прячем: лучше показать как есть,
@@ -175,7 +175,19 @@ enum RussianTextPolicy {
         if !prose.contains(where: \.isWhitespace), prose.contains("_"),
            prose.range(of: "^[A-Za-z_][A-Za-z0-9_]*$", options: .regularExpression) != nil { return false }
         if letters >= 220 { return true }
-        return letters >= 60 && latinWords.numberOfMatches(in: prose, range: NSRange(prose.startIndex..., in: prose)) >= 8
+        // Короткая английская фраза на 6+ слов — это тоже чужой язык: «Ice melts when
+        // it receives enough heat energy» должен переводиться, а не оставаться как есть.
+        return letters >= 45 && latinWords.numberOfMatches(in: prose, range: NSRange(prose.startIndex..., in: prose)) >= 6
+    }
+
+    /// Проверка перевода: он не должен быть пустым, не должен остаться чужим языком
+    /// и не должен быть заметно короче исходника (иначе это обрывок, а не перевод).
+    static func isAcceptableTranslation(_ translated: String, source: String) -> Bool {
+        let cleaned = translated.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty, !needsNormalization(cleaned) else { return false }
+        let sourceLength = source.trimmingCharacters(in: .whitespacesAndNewlines).count
+        if sourceLength < 40 { return true }
+        return cleaned.count >= sourceLength / 2
     }
 
     /// Рассуждение — короткий текст, и порог на 220 букв его не ловил: модель
@@ -452,8 +464,10 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= 2 * 1024 * 1024 else { throw HonorError.invalidResponse }
         let result = try JSONDecoder().decode(RussianCompletion.self, from: data).choices.first?.message.content ?? ""
-        guard !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !RussianTextPolicy.needsNormalization(result) else { throw HonorError.invalidResponse }
-        return result
+        // Обрезанный или оставшийся английским перевод не принимаем: иначе полный
+        // ответ подменялся бы огрызком.
+        guard RussianTextPolicy.isAcceptableTranslation(result, source: text) else { throw HonorError.invalidResponse }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

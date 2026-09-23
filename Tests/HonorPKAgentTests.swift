@@ -325,7 +325,7 @@ final class HonorPKAgentTests: XCTestCase {
         let url = temporaryHistory()
         let store = ChatStore(configuration: .init(apiKey: "test"), storageURL: url)
         XCTAssertFalse(store.addMemory(" \n"))
-        XCTAssertFalse(store.addMemory(String(repeating: "x", count: 1001)))
+        XCTAssertFalse(store.addMemory(String(repeating: "x", count: ChatStore.maximumMemoryLength + 1)))
         XCTAssertTrue(store.addMemory("  Обращайся ко мне на ты  "))
         XCTAssertFalse(store.addMemory("обращайся ко мне на ты"))
         let id = try XCTUnwrap(store.memories.first?.id)
@@ -392,17 +392,18 @@ final class HonorPKAgentTests: XCTestCase {
     @MainActor
     func testOverCapacityMemoryImportLeavesExistingChatsAndMemoriesUntouched() throws {
         let store = ChatStore(configuration: .init(apiKey: "test"), storageURL: temporaryHistory())
-        for index in 0..<50 { XCTAssertTrue(store.addMemory("Memory \(index)")) }
+        // Лимит памяти — 1000 записей, поэтому «сверх вместимости» начинается с 1000.
+        for index in 0..<ChatStore.maximumMemoryCount { XCTAssertTrue(store.addMemory("Memory \(index)")) }
         let old = Conversation(title: "Keep me")
         store.conversations = [old]
         let incoming = HistoryArchive(conversations: [Conversation(title: "Do not partially import")], selectedConversationID: nil,
-                                      memories: [HonorMemory(text: "Memory 51")])
+                                      memories: [HonorMemory(text: "Memory over capacity")])
         let url = temporaryHistory()
         let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(incoming).write(to: url)
         XCTAssertThrowsError(try store.importData(from: url))
         XCTAssertEqual(store.conversations, [old])
-        XCTAssertEqual(store.memories.count, 50)
+        XCTAssertEqual(store.memories.count, ChatStore.maximumMemoryCount)
     }
 
     @MainActor
@@ -441,6 +442,22 @@ final class HonorPKAgentTests: XCTestCase {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         XCTFail("Generation did not finish")
+    }
+
+    @MainActor
+    func testDiagnoseControlledClientIsCalled() async throws {
+        let client = ControlledClient()
+        let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"), client: client, storageURL: temporaryHistory())
+        store.draft = "Первый чат"
+        let canSendBefore = store.canSend
+        store.send()
+        for _ in 0..<200 where client.continuations.isEmpty { try await Task.sleep(nanoseconds: 5_000_000) }
+        let report = "canSend=\(canSendBefore) hasKey=\(store.hasAPIKey) generating=\(store.isGenerating) "
+            + "conversations=\(store.conversations.count) messages=\(store.messages.count) "
+            + "continuations=\(client.continuations.count) error=\(store.errorMessage ?? "nil") "
+            + "status=\(store.generationStatus ?? "nil")"
+        print("HONER-DIAG: \(report)")
+        XCTAssertFalse(client.continuations.isEmpty, "HONER-DIAG: \(report)")
     }
 
     private func temporaryHistory() -> URL {

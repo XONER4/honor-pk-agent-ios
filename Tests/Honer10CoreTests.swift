@@ -267,6 +267,17 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertFalse(divider.contains { if case .table = $0.kind { return true } else { return false } })
     }
 
+    func testTruncatedOrForeignTranslationIsRejected() throws {
+        // Полный ответ не должен подменяться обрывком перевода или английским текстом.
+        let source = String(repeating: "Ice melts when it receives enough heat energy. ", count: 12)
+        XCTAssertTrue(RussianTextPolicy.isAcceptableTranslation(String(repeating: "Лёд тает, когда получает достаточно тепла. ", count: 12), source: source))
+        XCTAssertFalse(RussianTextPolicy.isAcceptableTranslation("В", source: source))
+        XCTAssertFalse(RussianTextPolicy.isAcceptableTranslation("Лёд тает.", source: source))
+        XCTAssertFalse(RussianTextPolicy.isAcceptableTranslation("", source: source))
+        XCTAssertFalse(RussianTextPolicy.isAcceptableTranslation(source, source: source))
+        XCTAssertTrue(RussianTextPolicy.isAcceptableTranslation("Ок.", source: "Hi"))
+    }
+
     private func historyURL() -> URL { FileManager.default.temporaryDirectory.appendingPathComponent("Honer10-\(UUID()).json") }
 }
 

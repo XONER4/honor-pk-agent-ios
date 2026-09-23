@@ -700,15 +700,28 @@ final class ChatStore: ObservableObject {
                     let normalizeContent = RussianTextPolicy.needsNormalization(rawContent)
                     let normalizeReasoning = RussianTextPolicy.needsReasoningNormalization(rawReasoning)
                     self.mutateMessage(chatID: chatID, messageID: response.id) {
-                        if !normalizeContent { $0.content = rawContent }
+                        // Пока идёт перевод, показываем ответ как есть: пустого места
+                        // быть не должно, даже если перевод не удастся.
+                        $0.content = rawContent
                         if !normalizeReasoning { $0.reasoning = rawReasoning }
                     }
                     if normalizeContent {
                         self.generationStatus = "Перевожу ответ на русский…"
-                        let translated = try await russianNormalizer.normalizeRussian(rawContent, reasoning: false)
-                        try Task.checkCancellation()
-                        guard self.activeRunID == runID else { return }
-                        self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = translated }
+                        do {
+                            let translated = try await russianNormalizer.normalizeRussian(rawContent, reasoning: false)
+                            try Task.checkCancellation()
+                            guard self.activeRunID == runID else { return }
+                            self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = translated }
+                        } catch {
+                            if Task.isCancelled { throw CancellationError() }
+                            // Перевод не удался — оставляем исходный ответ целиком.
+                            // Раньше на этом месте ответ мог подмениться обрывком перевода.
+                            self.mutateMessage(chatID: chatID, messageID: response.id) {
+                                if $0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    $0.content = rawContent
+                                }
+                            }
+                        }
                     }
                     if normalizeReasoning {
                         do {
