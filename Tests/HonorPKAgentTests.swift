@@ -161,10 +161,8 @@ final class HonorPKAgentTests: XCTestCase {
         let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"), client: client, storageURL: temporaryHistory())
         store.draft = "Первый чат"
         store.send()
-        for _ in 0..<50 where client.continuations.isEmpty { try await Task.sleep(nanoseconds: 5_000_000) }
+        try await waitForContinuation(client)
         let firstID = try XCTUnwrap(store.selectedConversationID)
-        print("HONER-DIAG stop: continuations=\(client.continuations.count) generating=\(store.isGenerating) "
-            + "messages=\(store.messages.count) canSend=\(store.canSend) error=\(store.errorMessage ?? "nil")")
         let oldStream = try XCTUnwrap(client.continuations.first)
         oldStream.yield(.init(content: "Начало ответа."))
         try await Task.sleep(nanoseconds: 20_000_000)
@@ -414,7 +412,7 @@ final class HonorPKAgentTests: XCTestCase {
         let client = ControlledClient()
         let store = ChatStore(configuration: .init(apiKey: "test"), client: client, storageURL: url)
         store.draft = "Delete this conversation"; store.send()
-        for _ in 0..<50 where client.continuations.isEmpty { try await Task.sleep(nanoseconds: 5_000_000) }
+        try await waitForContinuation(client)
         let firstID = try XCTUnwrap(store.selectedConversationID)
         let firstStream = try XCTUnwrap(client.continuations.first)
         firstStream.yield(.init(content: "Первая часть. "))
@@ -425,7 +423,7 @@ final class HonorPKAgentTests: XCTestCase {
         store.deleteChats(ids: [firstID])
         firstStream.yield(.init(content: "STALE")); firstStream.finish()
         store.draft = "Keep this conversation"; store.send()
-        for _ in 0..<50 where client.continuations.count < 2 { try await Task.sleep(nanoseconds: 5_000_000) }
+        try await waitForContinuation(client, count: 2)
         XCTAssertEqual(client.continuations.count, 2)
         client.continuations.last?.yield(.init(content: "Свежий ответ."))
         client.continuations.last?.finish()
@@ -439,27 +437,25 @@ final class HonorPKAgentTests: XCTestCase {
 
     @MainActor
     private func waitUntilIdle(_ store: ChatStore) async throws {
-        for _ in 0..<200 {
+        // Раннер в CI медленный: генерация может занять секунды, поэтому ждём до 30 с.
+        for _ in 0..<600 {
             if !store.isGenerating { return }
-            try await Task.sleep(nanoseconds: 10_000_000)
+            try await Task.sleep(nanoseconds: 50_000_000)
         }
         XCTFail("Generation did not finish")
     }
 
+    /// Ждёт появления потока у тестового клиента. 250 мс не хватало: задача
+    /// генерации на загруженном раннере не успевала дойти до вызова клиента.
     @MainActor
-    func testDiagnoseControlledClientIsCalled() async throws {
-        let client = ControlledClient()
-        let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"), client: client, storageURL: temporaryHistory())
-        store.draft = "Первый чат"
-        let canSendBefore = store.canSend
-        store.send()
-        for _ in 0..<200 where client.continuations.isEmpty { try await Task.sleep(nanoseconds: 5_000_000) }
-        let report = "canSend=\(canSendBefore) hasKey=\(store.hasAPIKey) generating=\(store.isGenerating) "
-            + "conversations=\(store.conversations.count) messages=\(store.messages.count) "
-            + "continuations=\(client.continuations.count) error=\(store.errorMessage ?? "nil") "
-            + "status=\(store.generationStatus ?? "nil")"
-        print("HONER-DIAG: \(report)")
-        XCTAssertFalse(client.continuations.isEmpty, "HONER-DIAG: \(report)")
+    private func waitForContinuation(_ client: ControlledClient, count: Int = 1,
+                                     file: StaticString = #filePath, line: UInt = #line) async throws {
+        for _ in 0..<200 {
+            if client.continuations.count >= count { return }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTFail("Continuation did not appear: have \(client.continuations.count), want \(count)",
+                file: file, line: line)
     }
 
     private func temporaryHistory() -> URL {
