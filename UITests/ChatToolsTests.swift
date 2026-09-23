@@ -41,12 +41,34 @@ final class ChatToolsTests: HonorAuditCase {
         XCTAssertTrue(app.buttons["sidebar.settings"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["history.row." + chatID].exists)
         app.buttons["sidebar.settings"].tap()
+        openSettingsRow("settings.font", app: app)
+        let slider = app.sliders["font.slider"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5))
+        slider.adjust(toNormalizedSliderPosition: 1)
+        assertDisplayedValue("140%", id: "font.value", app: app)
+        back(app)
         openSettingsRow("settings.archive", app: app)
         let restore = app.buttons["archive.restore." + chatID]
         XCTAssertTrue(restore.waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons.matching(identifier: "archive.restore." + chatID).count, 1)
-        XCTAssertTrue(app.buttons["archive.delete." + chatID].exists)
+        let delete = app.buttons["archive.delete." + chatID]
+        XCTAssertTrue(delete.exists)
         XCTAssertEqual(app.staticTexts["archive.row." + chatID].label, "Приветствие")
+        let date = app.staticTexts["archive.date." + chatID]
+        XCTAssertTrue(date.exists)
+        XCTAssertNotNil(date.label.range(of: "[А-Яа-яЁё]", options: .regularExpression),
+                        "The archive date must use the selected Russian locale")
+        XCTAssertNil(date.label.range(of: "[A-Za-z]", options: .regularExpression))
+        XCTAssertTrue(app.frame.contains(date.frame))
+        XCTAssertLessThanOrEqual(date.frame.maxY, restore.frame.minY,
+                                 "The date must occupy its own line above the actions")
+        let restoreTitle = restore.staticTexts["Восстановить"].firstMatch
+        XCTAssertTrue(restoreTitle.exists)
+        XCTAssertLessThanOrEqual(restoreTitle.frame.height, 44.5,
+                                 "The 140% restore label must fit the single-line 44pt control; two lines would exceed it")
+        XCTAssertTrue(app.frame.contains(restore.frame))
+        XCTAssertFalse(restore.frame.intersects(delete.frame))
+        XCTAssertTrue(restore.isHittable)
         capture("honer10-archived-conversation")
         restore.tap()
         waitAbsent(restore)

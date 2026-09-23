@@ -14,6 +14,7 @@ on:
           - final-audit
           - core-only
           - archive-layout
+          - archive-only
   push:
     branches: [main]
 jobs:
@@ -74,6 +75,9 @@ jobs:
             EXTRA=(-only-testing:HonorPKAgentUITests/ChatToolsTests/testArchiveMovesConversationAndRestorePreservesItsMessages
               -only-testing:HonorPKAgentUITests/ChatToolsTests/testUploadedFilesOpenOriginalAndSourceDetailsExposeReadPage)
           fi
+          if [ "$TEST_SCOPE" = "archive-only" ]; then
+            EXTRA=(-only-testing:HonorPKAgentUITests/ChatToolsTests/testArchiveMovesConversationAndRestorePreservesItsMessages)
+          fi
           if [ "$TEST_SCOPE" = "final-audit" ]; then
             EXTRA=(-only-testing:HonorPKAgentTests
               -only-testing:HonorPKAgentUITests/ChatToolsTests
@@ -99,7 +103,7 @@ jobs:
           if [ -n "$VIDEO_PID" ]; then kill -INT "$VIDEO_PID"; wait "$VIDEO_PID"; fi
           exit "$TEST_EXIT"
       - name: Check compact and large iPhone layouts
-        if: inputs.scope != 'tutorial-only' && inputs.scope != 'core-only'
+        if: inputs.scope != 'tutorial-only' && inputs.scope != 'core-only' && inputs.scope != 'archive-only'
         run: |
           RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["identifier"] for x in reversed(d["runtimes"]) if "iOS" in x["name"] and x["isAvailable"]))')
           xcrun simctl shutdown all

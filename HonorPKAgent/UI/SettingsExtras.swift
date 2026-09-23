@@ -5,6 +5,8 @@ struct ArchivedChatsPage: View {
     @EnvironmentObject private var store: ChatStore
     @EnvironmentObject private var settings: AppSettings
     @State private var pendingDelete: UUID?
+    @ScaledMetric(relativeTo: .body) private var rowFontSize = 17.0
+    @ScaledMetric(relativeTo: .caption) private var dateFontSize = 12.0
 
     var body: some View {
         List {
@@ -20,16 +22,24 @@ struct ArchivedChatsPage: View {
             }
             ForEach(store.archivedConversations) { chat in
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(chat.title).font(.headline).lineLimit(3)
+                    Text(chat.title).font(.system(size: rowFontSize * settings.fontScale, weight: .semibold)).lineLimit(3)
                         .accessibilityIdentifier("archive.row.\(chat.id)")
-                    HStack {
-                        Text(chat.archivedAt ?? chat.updatedAt, style: .date).font(.caption).foregroundStyle(.secondary)
-                        Spacer()
+                    Text((chat.archivedAt ?? chat.updatedAt).formatted(
+                        Date.FormatStyle(date: .long, time: .omitted)
+                            .locale(Locale(identifier: settings.language == .russian ? "ru_RU" : "en"))))
+                        .font(.system(size: dateFontSize * settings.fontScale)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("archive.date.\(chat.id)")
+                    HStack(spacing: 12) {
                         Button { withAnimation { store.restoreChat(id: chat.id) } } label: {
                             Label(settings.text("Восстановить", "Restore"), systemImage: "arrow.uturn.backward")
-                        }.buttonStyle(.borderless).accessibilityIdentifier("archive.restore.\(chat.id)")
+                                .font(.system(size: rowFontSize * settings.fontScale))
+                                .lineLimit(1).minimumScaleFactor(0.75).frame(minHeight: 44)
+                        }.buttonStyle(.borderless).layoutPriority(1)
+                            .accessibilityIdentifier("archive.restore.\(chat.id)")
+                        Spacer(minLength: 0)
                         Button(role: .destructive) { pendingDelete = chat.id } label: {
-                            Image(systemName: "trash").frame(width: 38, height: 36)
+                            Image(systemName: "trash").frame(width: 44, height: 44)
                         }.buttonStyle(.borderless).accessibilityLabel(settings.text("Удалить", "Delete"))
                             .accessibilityIdentifier("archive.delete.\(chat.id)")
                     }
