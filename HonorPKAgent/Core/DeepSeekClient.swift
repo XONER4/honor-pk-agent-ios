@@ -175,9 +175,10 @@ enum RussianTextPolicy {
         if !prose.contains(where: \.isWhitespace), prose.contains("_"),
            prose.range(of: "^[A-Za-z_][A-Za-z0-9_]*$", options: .regularExpression) != nil { return false }
         if letters >= 220 { return true }
-        // Короткая английская фраза на 6+ слов — это тоже чужой язык: «Ice melts when
-        // it receives enough heat energy» должен переводиться, а не оставаться как есть.
-        return letters >= 45 && latinWords.numberOfMatches(in: prose, range: NSRange(prose.startIndex..., in: prose)) >= 6
+        // Восемь латинских слов подряд — это английская проза, даже если текст короткий
+        // («Ice melts when it receives enough heat energy»). Проверка выше уже отсеяла
+        // русские ответы, поэтому здесь риск ложного срабатывания минимален.
+        return latinWords.numberOfMatches(in: prose, range: NSRange(prose.startIndex..., in: prose)) >= 8
     }
 
     /// Проверка перевода: он не должен быть пустым, не должен остаться чужим языком
