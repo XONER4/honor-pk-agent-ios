@@ -70,7 +70,8 @@ private final class UITestStreamingClient: DeepSeekStreaming {
     private var requests = 0
     init(mode: String) { self.mode = mode }
 
-    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String, searchContext: String) -> AsyncThrowingStream<DeepSeekDelta, Error> {
+    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
+                searchContext: String, tools: [[String: Any]]?) -> AsyncThrowingStream<DeepSeekDelta, Error> {
         lock.lock()
         requests += 1
         let number = requests

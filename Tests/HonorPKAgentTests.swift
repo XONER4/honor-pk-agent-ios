@@ -450,7 +450,8 @@ final class HonorPKAgentTests: XCTestCase {
 
 private struct ImmediateClient: DeepSeekStreaming {
     var events: [DeepSeekDelta]
-    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String, searchContext: String) -> AsyncThrowingStream<DeepSeekDelta, Error> {
+    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
+                searchContext: String, tools: [[String: Any]]?) -> AsyncThrowingStream<DeepSeekDelta, Error> {
         AsyncThrowingStream { continuation in
             events.forEach { continuation.yield($0) }
             continuation.finish()
@@ -460,7 +461,8 @@ private struct ImmediateClient: DeepSeekStreaming {
 
 private final class ControlledClient: DeepSeekStreaming {
     var continuations: [AsyncThrowingStream<DeepSeekDelta, Error>.Continuation] = []
-    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String, searchContext: String) -> AsyncThrowingStream<DeepSeekDelta, Error> {
+    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
+                searchContext: String, tools: [[String: Any]]?) -> AsyncThrowingStream<DeepSeekDelta, Error> {
         AsyncThrowingStream { continuation in continuations.append(continuation) }
     }
 }
@@ -471,7 +473,8 @@ private struct FailingSearch: WebSearching {
 
 private final class CapturingClient: DeepSeekStreaming {
     var instructions: [String] = []
-    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String, searchContext: String) -> AsyncThrowingStream<DeepSeekDelta, Error> {
+    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
+                searchContext: String, tools: [[String: Any]]?) -> AsyncThrowingStream<DeepSeekDelta, Error> {
         instructions.append(systemInstruction)
         return AsyncThrowingStream { continuation in
             continuation.yield(.init(content: "Мне нравится зелёный"))

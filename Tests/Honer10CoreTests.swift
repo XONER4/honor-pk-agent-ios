@@ -273,7 +273,10 @@ final class Honer10CoreTests: XCTestCase {
 private final class NormalizingFixture: DeepSeekStreaming, RussianTextNormalizing {
     var receivedInstructions = ""
     var normalizedKinds: [Bool] = []
-    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String, searchContext: String) -> AsyncThrowingStream<DeepSeekDelta, Error> {
+    /// Требование протокола — пять параметров. Четырёхпараметрическая версия
+    /// из расширения протокола не засчитывается как реализация требования.
+    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
+                searchContext: String, tools: [[String: Any]]?) -> AsyncThrowingStream<DeepSeekDelta, Error> {
         receivedInstructions = systemInstruction
         return AsyncThrowingStream { continuation in
             continuation.yield(.init(reasoning: "We need to explain how ice changes from solid to liquid."))
