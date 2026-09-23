@@ -639,7 +639,8 @@ final class ChatStore: ObservableObject {
                 // Выполняем запрошенные инструменты и повторяем запрос с результатами.
                 while !toolCalls.isEmpty, toolRounds < 3 {
                     toolRounds += 1
-                    let context = ToolExecutionContext(
+                    // Имя не `context`: так уже называется строка с результатами поиска.
+                    let toolContext = ToolExecutionContext(
                         deviceModel: DeviceModel.name,
                         systemVersion: UIDevice.current.systemVersion,
                         appVersion: "10.6",
@@ -649,7 +650,7 @@ final class ChatStore: ObservableObject {
                         lastMessageAt: self.messages.last?.createdAt)
                     self.generationStatus = "Выполняю действие…"
                     for call in toolCalls {
-                        let result = ToolExecutor.execute(call, context: context)
+                        let result = ToolExecutor.execute(call, context: toolContext)
                         toolResults.append(result)
                     }
                     toolCalls.removeAll()
