@@ -13,6 +13,7 @@ on:
           - tutorial-only
           - final-audit
           - core-only
+          - archive-layout
   push:
     branches: [main]
 jobs:
@@ -68,6 +69,10 @@ jobs:
           VIDEO_PID=''
           if [ "$TEST_SCOPE" = "core-only" ]; then
             EXTRA=(-only-testing:HonorPKAgentTests)
+          fi
+          if [ "$TEST_SCOPE" = "archive-layout" ]; then
+            EXTRA=(-only-testing:HonorPKAgentUITests/ChatToolsTests/testArchiveMovesConversationAndRestorePreservesItsMessages
+              -only-testing:HonorPKAgentUITests/ChatToolsTests/testUploadedFilesOpenOriginalAndSourceDetailsExposeReadPage)
           fi
           if [ "$TEST_SCOPE" = "final-audit" ]; then
             EXTRA=(-only-testing:HonorPKAgentTests

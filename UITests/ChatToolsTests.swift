@@ -44,9 +44,14 @@ final class ChatToolsTests: HonorAuditCase {
         openSettingsRow("settings.archive", app: app)
         let restore = app.buttons["archive.restore." + chatID]
         XCTAssertTrue(restore.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons.matching(identifier: "archive.restore." + chatID).count, 1)
+        XCTAssertTrue(app.buttons["archive.delete." + chatID].exists)
+        XCTAssertEqual(app.staticTexts["archive.row." + chatID].label, "Приветствие")
         capture("honer10-archived-conversation")
         restore.tap()
         waitAbsent(restore)
+        XCTAssertFalse(app.staticTexts["archive.row." + chatID].exists)
+        XCTAssertTrue(element(app, "archive.empty").exists)
         back(app)
         app.buttons["settings.close"].tap()
         app.buttons["chat.sidebar"].tap()
@@ -55,6 +60,10 @@ final class ChatToolsTests: HonorAuditCase {
         row.tap()
         XCTAssertTrue(element(app, "message.user." + userID).waitForExistence(timeout: 5))
         XCTAssertTrue(element(app, "message.content." + assistantID).label.contains("спасибо, что спросил"))
+        relaunch(app)
+        XCTAssertTrue(element(app, "message.user." + userID).waitForExistence(timeout: 5))
+        XCTAssertTrue(element(app, "message.content." + assistantID).label.contains("спасибо, что спросил"),
+                      "Restoring must preserve the original conversation and persist across launches")
     }
 
     func testUploadedFilesOpenOriginalAndSourceDetailsExposeReadPage() {

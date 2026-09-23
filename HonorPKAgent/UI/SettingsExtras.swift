@@ -21,6 +21,7 @@ struct ArchivedChatsPage: View {
             ForEach(store.archivedConversations) { chat in
                 VStack(alignment: .leading, spacing: 12) {
                     Text(chat.title).font(.headline).lineLimit(3)
+                        .accessibilityIdentifier("archive.row.\(chat.id)")
                     HStack {
                         Text(chat.archivedAt ?? chat.updatedAt, style: .date).font(.caption).foregroundStyle(.secondary)
                         Spacer()
@@ -32,7 +33,7 @@ struct ArchivedChatsPage: View {
                         }.buttonStyle(.borderless).accessibilityLabel(settings.text("Удалить", "Delete"))
                             .accessibilityIdentifier("archive.delete.\(chat.id)")
                     }
-                }.padding(.vertical, 6).accessibilityIdentifier("archive.row.\(chat.id)")
+                }.padding(.vertical, 6)
             }
         }
         .navigationTitle(settings.text("Архив чатов", "Archived chats"))

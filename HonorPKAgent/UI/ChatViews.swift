@@ -1622,7 +1622,9 @@ private struct SourceDetailsSheet: View {
                             Text(source.snippet).font(.system(size: 14)).foregroundStyle(HonorTheme.secondary)
                                 .lineLimit(4)
                             if let fetchedAt = source.fetchedAt {
-                                Text(settings.text("Прочитано ", "Read ") + fetchedAt.formatted(date: .abbreviated, time: .shortened))
+                                Text(settings.text("Прочитано ", "Read ") + fetchedAt.formatted(
+                                    Date.FormatStyle(date: .abbreviated, time: .shortened)
+                                        .locale(Locale(identifier: settings.language == .russian ? "ru_RU" : "en"))))
                                     .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
                             }
                             if let content = source.content {
