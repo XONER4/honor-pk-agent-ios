@@ -6,3 +6,7 @@ xcuserdata/
 HonorPKAgent/DeepSeekConfig.plist
 *.ipa
 *.xcresult
+
+# локальные отчёты сборки
+Test-results.json
+VALIDATION.md
