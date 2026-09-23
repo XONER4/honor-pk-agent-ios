@@ -23,6 +23,8 @@ struct ChatRootView: View {
     @State private var attachmentGalleryOpen = false
     @State private var previewAttachment: MessageAttachment?
     @State private var sourceSheet: SourceSelection?
+    /// Панель «Информация о чате» (пункт 38 ТЗ).
+    @State private var chatInfoOpen = false
     @State private var deleteChatConfirmation = false
     @State private var findOpen = false
     /// Запрос на переход к сообщению по линиям навигации справа.
@@ -172,6 +174,10 @@ struct ChatRootView: View {
             ChatAttachmentsSheet(attachments: store.messages.flatMap(\.attachments), settings: settings)
         }
         .sheet(item: $previewAttachment) { attachment in AttachmentPreviewSheet(attachment: attachment, settings: settings) }
+        .sheet(isPresented: $chatInfoOpen) {
+            ChatInfoSheet(store: store, settings: settings)
+                .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        }
         .sheet(item: $sourceSheet) { selection in
             SourceDetailsSheet(selection: selection, settings: settings)
                 .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
@@ -345,6 +351,11 @@ struct ChatRootView: View {
                 findFocused = true
             } label: { Label(text("Найти в чате", "Find in conversation"), systemImage: "magnifyingglass") }
                 .accessibilityIdentifier("chat.tools.find")
+            Button {
+                composerFocused = false
+                chatInfoOpen = true
+            } label: { Label(text("Информация о чате", "Chat information"), systemImage: "info.circle") }
+                .accessibilityIdentifier("chat.tools.info")
             Divider()
             Button {
                 if let id = store.selectedConversationID {
@@ -1177,6 +1188,155 @@ private struct MessageRow: View, Equatable {
         else if (2...4).contains(last) && !(12...14).contains(lastTwo) { ending = "секунды" }
         else { ending = "секунд" }
         return text("Размышлял \(seconds) \(ending)", "Thought for \(seconds)s")
+    }
+}
+
+/// Понятное название модели iPhone по внутреннему идентификатору.
+enum DeviceModel {
+    static var name: String {
+        #if targetEnvironment(simulator)
+        return "Симулятор iPhone"
+        #else
+        var info = utsname()
+        uname(&info)
+        let identifier = withUnsafePointer(to: &info.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 256) { String(cString: $0) }
+        }
+        return friendly(identifier)
+        #endif
+    }
+
+    static func friendly(_ identifier: String) -> String {
+        let map: [String: String] = [
+            "iPhone14,7": "iPhone 14", "iPhone14,8": "iPhone 14 Plus",
+            "iPhone15,2": "iPhone 14 Pro", "iPhone15,3": "iPhone 14 Pro Max",
+            "iPhone15,4": "iPhone 15", "iPhone15,5": "iPhone 15 Plus",
+            "iPhone16,1": "iPhone 15 Pro", "iPhone16,2": "iPhone 15 Pro Max",
+            "iPhone17,1": "iPhone 16 Pro", "iPhone17,2": "iPhone 16 Pro Max",
+            "iPhone17,3": "iPhone 16", "iPhone17,4": "iPhone 16 Plus",
+            "iPhone17,5": "iPhone 16e",
+            "iPhone18,1": "iPhone 17 Pro", "iPhone18,2": "iPhone 17 Pro Max",
+            "iPhone18,3": "iPhone 17", "iPhone18,4": "iPhone Air",
+            "iPhone14,6": "iPhone SE (3-е поколение)"
+        ]
+        return map[identifier] ?? identifier
+    }
+
+    static var systemDescription: String {
+        "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
+    }
+}
+
+/// Панель «Информация о чате» из меню трёх точек (пункт 38 ТЗ):
+/// модель телефона, настройки, число чатов, автор и способ ввода каждого сообщения
+/// и разница во времени между соседними сообщениями.
+struct ChatInfoSheet: View {
+    @ObservedObject var store: ChatStore
+    @ObservedObject var settings: AppSettings
+    @Environment(\.dismiss) private var dismiss
+
+    private var chat: Conversation? { store.selectedConversation }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Устройство и приложение") {
+                    LabeledContent("Модель iPhone", value: DeviceModel.name)
+                    LabeledContent("Система", value: DeviceModel.systemDescription)
+                    LabeledContent("Приложение", value: "Honer AI 10.4")
+                    LabeledContent("Язык интерфейса", value: settings.language == .russian ? "Русский" : "English")
+                    LabeledContent("Оформление", value: appearanceName)
+                }
+
+                Section("Настройки") {
+                    LabeledContent("Режим рассуждения", value: store.reasoningEnabled ? "включён" : "выключен")
+                    LabeledContent("Поиск в интернете", value: store.searchEnabled ? "включён" : "выключен")
+                    LabeledContent("Память Honer AI", value: store.memoryEnabled ? "включена (\(store.memories.count) записей)" : "выключена")
+                    LabeledContent("Авточтение ответов", value: settings.autoRead ? "включено" : "выключено")
+                    LabeledContent("Скорость чтения", value: String(format: "%.2f×", settings.voiceRate))
+                    LabeledContent("Масштаб текста", value: String(format: "%.0f %%", settings.fontScale * 100))
+                }
+
+                Section("Чаты") {
+                    LabeledContent("Всего чатов", value: "\(store.conversations.filter { $0.archivedAt == nil }.count)")
+                    LabeledContent("В архиве", value: "\(store.archivedConversations.count)")
+                    LabeledContent("Сообщений в этом чате", value: "\(chat?.messages.count ?? 0)")
+                    LabeledContent("Пользователь", value: settings.displayName.isEmpty ? "без имени" : settings.displayName)
+                }
+
+                if let chat, !chat.messages.isEmpty {
+                    Section("Сообщения этого чата") {
+                        ForEach(Array(chat.messages.enumerated()), id: \.element.id) { index, message in
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 6) {
+                                    Text(message.role == .user ? "Вы" : "Honer AI")
+                                        .font(.system(size: 14, weight: .semibold))
+                                    if message.inputKind == .voice {
+                                        Image(systemName: "mic.fill").font(.system(size: 11))
+                                    }
+                                    if message.inputKind == .suggestion {
+                                        Image(systemName: "hand.tap.fill").font(.system(size: 11))
+                                    }
+                                    Spacer()
+                                    Text(timeString(message.createdAt))
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.secondary)
+                                }
+                                if let previous = previousMessage(before: index) {
+                                    Text("с прошлого сообщения: \(gap(from: previous.createdAt, to: message.createdAt))")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text(message.content.isEmpty ? "—" : String(message.content.prefix(140)))
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(3)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Информация о чате")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Готово") { dismiss() }
+                        .accessibilityIdentifier("chat.info.close")
+                }
+            }
+            .accessibilityIdentifier("chat.info.sheet")
+        }
+    }
+
+    private var appearanceName: String {
+        switch settings.appearance {
+        case .system: return "как в системе"
+        case .light: return "светлое"
+        case .dark: return "тёмное"
+        }
+    }
+
+    private func previousMessage(before index: Int) -> ChatMessage? {
+        guard let chat, index > 0, index <= chat.messages.count else { return nil }
+        return chat.messages[index - 1]
+    }
+
+    private func timeString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.dateFormat = "d MMM, HH:mm"
+        return formatter.string(from: date)
+    }
+
+    private func gap(from start: Date, to end: Date) -> String {
+        let seconds = max(0, Int(end.timeIntervalSince(start)))
+        if seconds < 60 { return "\(seconds) сек" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes) мин" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours) ч \(minutes % 60) мин" }
+        return "\(hours / 24) дн"
     }
 }
 
