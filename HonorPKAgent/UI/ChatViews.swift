@@ -778,6 +778,8 @@ private struct MessageTimeline: View {
     @State private var pendingScroll: Task<Void, Never>?
     /// Ответ, который сейчас пишется, — для линий навигации справа.
     @State private var streamingMessageID: UUID?
+    /// Сколько последних сообщений показывать (пагинация длинных чатов).
+    @State private var visibleLimit = 40
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
 
     var body: some View {
@@ -821,6 +823,7 @@ private struct MessageTimeline: View {
             pendingScroll = nil
             followLatest = true
             streamingMessageID = nil
+            visibleLimit = 40
             proxy.scrollTo("message-bottom", anchor: .bottom)
         }
         .onChange(of: store.isGenerating) { (generating: Bool) in
@@ -861,7 +864,26 @@ private struct MessageTimeline: View {
 
     @ViewBuilder
     private func messageList(messages: [ChatMessage], tail: ChatMessage?) -> some View {
-        ForEach(messages) { (message: ChatMessage) in
+        // Пагинация: длинный чат рендерится окном, иначе на больших историях
+        // интерфейс тормозит и появляется пустота при прокрутке вверх (пункт 14).
+        if messages.count > visibleLimit {
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    visibleLimit = min(visibleLimit + 60, messages.count)
+                }
+            } label: {
+                Label("Показать более ранние (\(messages.count - visibleLimit))", systemImage: "arrow.up")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .background(HonorTheme.surface, in: Capsule())
+                    .overlay(Capsule().stroke(HonorTheme.divider, lineWidth: 0.7))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(HonorTheme.secondary)
+            .padding(.bottom, 4)
+            .accessibilityIdentifier("chat.load.earlier")
+        }
+        ForEach(Array(messages.suffix(visibleLimit))) { (message: ChatMessage) in
             MessageRow(message: message,
                        streaming: store.isGenerating && message.id == tail?.id,
                        status: store.generationStatus,
@@ -1074,6 +1096,11 @@ private struct MessageRow: View, Equatable {
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(message.content)
                 .accessibilityIdentifier("message.content." + message.id.uuidString)
+                // Карточки-превью ссылок из ответа (OG-теги).
+                if !streaming {
+                    LinkPreviewListView(content: message.content,
+                                        fontSize: 17 * settings.fontScale * dynamicScale)
+                }
             }
             if let error = message.error {
                 Label(error, systemImage: "exclamationmark.circle")

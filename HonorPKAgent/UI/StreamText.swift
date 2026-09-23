@@ -1281,6 +1281,94 @@ struct MermaidDiagramView: View {
     }
 }
 
+/// Карточки-превью ссылок из ответа: заголовок, описание, картинка и имя сайта (пункт 42 ТЗ).
+struct LinkPreviewListView: View {
+    let content: String
+    let fontSize: Double
+
+    @State private var previews: [LinkPreview] = []
+
+    /// Достаёт http/https ссылки из текста, без дублей и мусора.
+    static func links(in text: String) -> [URL] {
+        guard let regex = try? NSRegularExpression(pattern: "https?://[^\\s\\)\\]\"'<>]+") else { return [] }
+        let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+        var result: [URL] = []
+        var seen = Set<String>()
+        for match in matches {
+            guard let range = Range(match.range, in: text) else { continue }
+            var value = String(text[range])
+            // Убираем хвостовую пунктуацию, которую модель иногда приклеивает.
+            while let last = value.last, ".,;:!?»)".contains(last) { value.removeLast() }
+            guard let url = URL(string: value), let host = url.host, host.contains(".") else { continue }
+            guard seen.insert(value).inserted else { continue }
+            result.append(url)
+            if result.count >= 3 { break }
+        }
+        return result
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(previews) { preview in
+                Link(destination: preview.url) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let imageURL = preview.imageURL {
+                            AsyncImage(url: imageURL) { phase in
+                                if case .success(let image) = phase {
+                                    image.resizable().scaledToFill().frame(height: 120).clipped()
+                                } else {
+                                    Color.clear.frame(height: 0)
+                                }
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            if !preview.siteName.isEmpty {
+                                Text(preview.siteName.uppercased())
+                                    .font(.system(size: fontSize * 0.68, weight: .semibold))
+                                    .foregroundStyle(HonorTheme.secondary)
+                            }
+                            Text(preview.title)
+                                .font(.system(size: fontSize * 0.9, weight: .semibold))
+                                .foregroundStyle(HonorTheme.foreground)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                            if !preview.description.isEmpty {
+                                Text(preview.description)
+                                    .font(.system(size: fontSize * 0.8))
+                                    .foregroundStyle(HonorTheme.secondary)
+                                    .lineLimit(3)
+                                    .multilineTextAlignment(.leading)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(HonorTheme.divider, lineWidth: 0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("message.link.preview")
+            }
+        }
+        .task(id: content) {
+            let urls = Self.links(in: content)
+            guard !urls.isEmpty else {
+                previews = []
+                return
+            }
+            var loaded: [LinkPreview] = []
+            for url in urls {
+                if let preview = await LinkPreviewService.shared.load(url) {
+                    loaded.append(preview)
+                }
+            }
+            previews = loaded
+        }
+    }
+}
+
 /// Блок ```copy — фрагмент, который копируется одной кнопкой (пункт 7 ТЗ).
 struct CopyBlockView: View {
     let text: String
