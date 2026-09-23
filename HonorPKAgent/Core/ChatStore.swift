@@ -575,6 +575,8 @@ final class ChatStore: ObservableObject {
                 var lastPublished = Date.distantPast
                 var lastSaved = Date()
                 var finishReason: String?
+                /// Вызовы инструментов, собранные из потока (пункт 11 ТЗ).
+                var toolCalls: [ToolCallRequest] = []
 
                 @MainActor func flush() {
                     guard !pendingContent.isEmpty || !pendingReasoning.isEmpty else { return }
@@ -595,14 +597,31 @@ final class ChatStore: ObservableObject {
                     flush()
                 }
 
+                // Цикл выполнения инструментов (пункт 11 ТЗ): модель может попросить
+                // вызвать функцию, приложение выполняет её и отправляет результат обратно,
+                // после чего модель формирует итоговый ответ.
+                var toolResults: [ToolCallResult] = []
+                var toolRounds = 0
+
                 do {
-                    for try await delta in client.stream(messages: input, thinking: thinking, systemInstruction: instruction, searchContext: context) {
+                    for try await delta in client.stream(messages: input, thinking: thinking,
+                                                         systemInstruction: instruction, searchContext: context,
+                                                         tools: HonerTool.apiSchemas) {
                         try Task.checkCancellation()
                         guard self.activeRunID == runID else { return }
                         if !delta.reasoning.isEmpty, firstReasoningAt == nil { firstReasoningAt = Date() }
                         if !delta.content.isEmpty {
                             if firstReasoningAt != nil && reasoningEndedAt == nil { reasoningEndedAt = Date() }
                             if self.generationStatus != "Отвечаю…" { self.generationStatus = "Отвечаю…" }
+                        }
+                        // Собираем вызовы инструментов, склеивая аргументы по индексу.
+                        for call in delta.toolCalls {
+                            if let existing = toolCalls.firstIndex(where: { $0.id == call.id && !call.id.isEmpty }) {
+                                toolCalls[existing].arguments += call.arguments
+                                if toolCalls[existing].name.isEmpty { toolCalls[existing].name = call.name }
+                            } else {
+                                toolCalls.append(call)
+                            }
                         }
                         pendingContent += delta.content
                         pendingReasoning += delta.reasoning
@@ -614,6 +633,59 @@ final class ChatStore: ObservableObject {
                 } catch {
                     if self.activeRunID == runID { flush() }
                     throw error
+                }
+
+                // Выполняем запрошенные инструменты и повторяем запрос с результатами.
+                while !toolCalls.isEmpty, toolRounds < 3 {
+                    toolRounds += 1
+                    let context = ToolExecutionContext(
+                        deviceModel: DeviceModel.name,
+                        systemVersion: UIDevice.current.systemVersion,
+                        appVersion: "10.6",
+                        messageCount: self.messages.count,
+                        voiceMessageCount: self.messages.filter { $0.inputKind == .voice }.count,
+                        chatStartedAt: self.selectedConversation?.createdAt,
+                        lastMessageAt: self.messages.last?.createdAt)
+                    self.generationStatus = "Выполняю действие…"
+                    for call in toolCalls {
+                        let result = ToolExecutor.execute(call, context: context)
+                        toolResults.append(result)
+                    }
+                    toolCalls.removeAll()
+
+                    var followUp = input
+                    var assistant = ChatMessage(role: .assistant)
+                    assistant.content = rawContent
+                    followUp.append(assistant)
+                    for result in toolResults {
+                        var toolMessage = ChatMessage(role: .user)
+                        toolMessage.content = "Результат вызова инструмента «\(result.name)»: \(result.content)\nУчти это в ответе и не вызывай этот инструмент повторно без необходимости."
+                        followUp.append(toolMessage)
+                    }
+
+                    self.generationStatus = "Отвечаю…"
+                    do {
+                        for try await delta in client.stream(messages: followUp, thinking: thinking,
+                                                             systemInstruction: instruction, searchContext: context,
+                                                             tools: HonerTool.apiSchemas) {
+                            try Task.checkCancellation()
+                            guard self.activeRunID == runID else { return }
+                            for call in delta.toolCalls {
+                                if let existing = toolCalls.firstIndex(where: { $0.id == call.id && !call.id.isEmpty }) {
+                                    toolCalls[existing].arguments += call.arguments
+                                } else {
+                                    toolCalls.append(call)
+                                }
+                            }
+                            pendingContent += delta.content
+                            pendingReasoning += delta.reasoning
+                            finishReason = delta.finishReason ?? finishReason
+                            if Date().timeIntervalSince(lastPublished) >= 0.1 { flush() }
+                        }
+                        flush()
+                    } catch {
+                        if self.activeRunID == runID { flush() }
+                    }
                 }
                 guard self.activeRunID == runID else { return }
                 if let russianNormalizer {

@@ -4,11 +4,22 @@ struct DeepSeekDelta: Equatable {
     var content: String = ""
     var reasoning: String = ""
     var finishReason: String? = nil
+    /// Вызовы инструментов, которые вернула модель (пункт 11 ТЗ).
+    var toolCalls: [ToolCallRequest] = []
 }
 
 protocol DeepSeekStreaming {
     func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
-                searchContext: String) -> AsyncThrowingStream<DeepSeekDelta, Error>
+                searchContext: String, tools: [[String: Any]]?) -> AsyncThrowingStream<DeepSeekDelta, Error>
+}
+
+extension DeepSeekStreaming {
+    /// Совместимость: вызов без инструментов.
+    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
+                searchContext: String) -> AsyncThrowingStream<DeepSeekDelta, Error> {
+        stream(messages: messages, thinking: thinking, systemInstruction: systemInstruction,
+               searchContext: searchContext, tools: nil)
+    }
 }
 
 protocol RussianTextNormalizing {
@@ -212,7 +223,7 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
     }
 
     func makeRequest(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
-                     searchContext: String) throws -> URLRequest {
+                     searchContext: String, tools: [[String: Any]]? = nil) throws -> URLRequest {
         guard !configuration.apiKey.isEmpty else { throw HonorError.missingAPIKey }
         var instruction = HonerIdentity.instruction
             + HonerIdentity.currentDateTimeBlock()
@@ -279,6 +290,11 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
             "max_tokens": 16384
         ]
         if thinking { body["reasoning_effort"] = "high" }
+        // Список инструментов: модель может вызвать их сама (пункт 11 ТЗ).
+        if let tools, !tools.isEmpty {
+            body["tools"] = tools
+            body["tool_choice"] = "auto"
+        }
         let data = try JSONSerialization.data(withJSONObject: body)
         guard data.count < 48 * 1024 * 1024 else { throw HonorError.requestTooLarge }
         var request = URLRequest(url: configuration.baseURL.appendingPathComponent("chat/completions"))
@@ -292,13 +308,14 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
     }
 
     func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
-                searchContext: String) -> AsyncThrowingStream<DeepSeekDelta, Error> {
+                searchContext: String, tools: [[String: Any]]? = nil) -> AsyncThrowingStream<DeepSeekDelta, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     try Task.checkCancellation()
                     let request = try makeRequest(messages: messages, thinking: thinking,
-                                                  systemInstruction: systemInstruction, searchContext: searchContext)
+                                                  systemInstruction: systemInstruction, searchContext: searchContext,
+                                                  tools: tools)
                     let (bytes, response) = try await session.bytes(for: request)
                     defer { bytes.task.cancel() }
                     guard let http = response as? HTTPURLResponse else { throw HonorError.invalidResponse }
@@ -345,7 +362,20 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
         let envelope = try JSONDecoder().decode(StreamEnvelope.self, from: data)
         if let error = envelope.error { throw HonorError.http(400, error.message) }
         guard let choice = envelope.choices?.first else { return nil }
-        return DeepSeekDelta(content: choice.delta?.content ?? "", reasoning: choice.delta?.reasoningContent ?? "", finishReason: choice.finishReason)
+
+        // Вызовы инструментов приходят по частям: id и имя — в первом куске,
+        // аргументы — строкой, которую нужно склеивать по index (пункт 11 ТЗ).
+        var calls: [ToolCallRequest] = []
+        for call in choice.delta?.toolCalls ?? [] {
+            calls.append(ToolCallRequest(id: call.id ?? "",
+                                         name: call.function?.name ?? "",
+                                         arguments: call.function?.arguments ?? ""))
+        }
+
+        return DeepSeekDelta(content: choice.delta?.content ?? "",
+                             reasoning: choice.delta?.reasoningContent ?? "",
+                             finishReason: choice.finishReason,
+                             toolCalls: calls)
     }
 
     func normalizeRussian(_ text: String, reasoning: Bool) async throws -> String {
@@ -388,11 +418,26 @@ private struct RussianCompletion: Decodable {
 
 private struct StreamEnvelope: Decodable {
     struct APIError: Decodable { let message: String }
+    /// Вызов инструмента в потоке: имя и id приходят целиком, аргументы — кусками.
+    struct ToolCall: Decodable {
+        struct Function: Decodable {
+            let name: String?
+            let arguments: String?
+        }
+        let index: Int?
+        let id: String?
+        let function: Function?
+    }
     struct Choice: Decodable {
         struct Delta: Decodable {
             let content: String?
             let reasoningContent: String?
-            enum CodingKeys: String, CodingKey { case content; case reasoningContent = "reasoning_content" }
+            let toolCalls: [ToolCall]?
+            enum CodingKeys: String, CodingKey {
+                case content
+                case reasoningContent = "reasoning_content"
+                case toolCalls = "tool_calls"
+            }
         }
         let delta: Delta?
         let finishReason: String?
