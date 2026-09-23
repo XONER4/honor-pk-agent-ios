@@ -931,10 +931,9 @@ private struct MessageTimeline: View {
             // уже после конца потока, и без этого конец ответа уходил под клавиатуру.
             scheduleStreamFollow(proxy: proxy)
         }
-        .onChange(of: composerFocused) { focused in
-            // Клавиатура поднимается — сразу подтягиваем низ переписки, чтобы конец
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+            // Клавиатура поднялась — сразу подтягиваем низ переписки, чтобы конец
             // ответа не оказался за клавиатурой.
-            guard focused else { return }
             followLatest = true
             scheduleStreamFollow(proxy: proxy, timeout: 3.0)
         }

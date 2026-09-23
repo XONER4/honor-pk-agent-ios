@@ -286,9 +286,9 @@ enum ToolExecutor {
             }
             return ToolCallResult(callID: call.id, name: call.name, content: parts.joined(separator: ". ") + ".")
 
-        case .none:
+        case .none, .listChats, .readChat, .renameChat, .pinChat, .sendToChat, .saveMemory, .setAppSetting:
             return ToolCallResult(callID: call.id, name: call.name,
-                                  content: "Инструмент «\(call.name)» недоступен.")
+                                  content: "Инструмент «\(call.name)» доступен только в расширенном режиме.")
         }
     }
 
