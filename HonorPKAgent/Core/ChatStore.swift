@@ -875,12 +875,27 @@ final class ChatStore: ObservableObject {
                 let serverAnomaly = finishReason == "insufficient_system_resource" || finishReason == "aborted"
                 if answerIsEmpty || answerIsFragment || serverAnomaly {
                     self.generationStatus = "Дописываю ответ…"
+                    // Собираем запрос на повтор. Если модель уже что-то узнала через
+                    // инструменты, эти данные нужно приложить обычным сообщением —
+                    // иначе повтор не может ответить и снова обещает «сейчас найду».
+                    var recoveryInput = input
+                    if !toolResults.isEmpty {
+                        if !rawContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            var attempt = ChatMessage(role: .assistant)
+                            attempt.content = rawContent
+                            recoveryInput.append(attempt)
+                        }
+                        var data = ChatMessage(role: .user)
+                        let collected = toolResults.map { "• \($0.content)" }.joined(separator: "\n")
+                        data.content = "Вот данные, которые ты запросил:\n\(collected)\n\nИспользуй их и дай итоговый ответ пользователю. Больше инструментов нет — отвечай текстом."
+                        recoveryInput.append(data)
+                    }
                     // Сначала обычный запрос без потока: он приходит целиком и
                     // обрываться на середине ему нечем. Если и он не дал текста —
                     // повторяем потоком, уже без режима рассуждения.
                     var retryContent = ""
                     do {
-                        retryContent = try await client.complete(messages: input, thinking: false,
+                        retryContent = try await client.complete(messages: recoveryInput, thinking: false,
                                                                  systemInstruction: instruction,
                                                                  searchContext: context)
                         if !retryContent.isEmpty {
