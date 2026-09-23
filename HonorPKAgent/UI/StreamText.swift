@@ -35,7 +35,7 @@ struct ScrollRequest: Equatable {
 struct StreamText<Content: View>: View {
     let target: String
     let streaming: Bool
-    /// Минимальная скорость показа, символов в секунду.
+    /// Скорость показа, символов в секунду.
     var baseRate: Double = 55
     /// Отставание, после которого начинаем догонять буфер.
     var comfortableLag: Int = 240
@@ -43,7 +43,12 @@ struct StreamText<Content: View>: View {
 
     @State private var revealed: String = ""
     @State private var lastTick: Date = .distantPast
-    @State private var lastTarget: String = ""
+    /// Сколько символов уже достигнуто. Держим отдельно: пересчёт `revealed.count`
+    /// на каждом кадре — лишняя работа на длинных ответах.
+    @State private var revealedCount: Int = 0
+    /// Пока буфер пуст, показываем всё, что уже есть: иначе при медленном
+    /// соединении строка замирает на одном символе и выглядит как обрыв.
+    @State private var lastGrowth: Date = .distantPast
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: isSettled)) { context in
@@ -56,39 +61,56 @@ struct StreamText<Content: View>: View {
     }
 
     /// Всё показано и поток закончился — таймер можно останавливать.
-    private var isSettled: Bool { !streaming && revealed.count >= target.count }
+    private var isSettled: Bool { !streaming && revealedCount >= target.count }
 
     private func syncTarget() {
-        if target != lastTarget { lastTarget = target }
         // Поток завершился: мгновенно показываем финальный текст без «дописывания».
-        if !streaming && revealed != target {
-            revealed = target
+        // Раньше при этом оставался огрызок, если аниматор не успел доиграть.
+        if !streaming {
+            if revealedCount != target.count || revealed != target {
+                revealed = target
+                revealedCount = target.count
+            }
             lastTick = .distantPast
+            return
         }
-        if revealed.count > target.count { revealed = target }
+        if revealedCount > target.count {
+            revealed = target
+            revealedCount = target.count
+        }
     }
 
     private func advance(to now: Date) {
-        guard streaming || revealed.count < target.count else { return }
+        guard streaming || revealedCount < target.count else { return }
         if lastTick == .distantPast { lastTick = now; return }
         let elapsed = min(now.timeIntervalSince(lastTick), 0.25)
         lastTick = now
         guard elapsed > 0 else { return }
 
-        let remaining = target.count - revealed.count
-        guard remaining > 0 else { return }
+        let total = target.count
+        var remaining = total - revealedCount
 
-        // Адаптивная скорость: догоняем буфер, но не даём тексту «прыгать».
-        let rate: Double
-        if remaining > comfortableLag * 3 {
-            rate = baseRate * 12
-        } else if remaining > comfortableLag {
-            rate = baseRate * 4
-        } else {
-            rate = baseRate
+        // Буфер не растёт дольше 0,35 с (сеть «молчит») — догоняем всё, что есть,
+        // чтобы не оставлять на экране один символ.
+        let stalled = now.timeIntervalSince(lastGrowth) > 0.35
+        if remaining <= 0 {
+            if revealedCount != total, stalled {
+                revealed = target
+                revealedCount = total
+            }
+            return
         }
 
-        let step = max(1, Int((rate * elapsed).rounded()))
+        // Адаптивная скорость: догоняем буфер, но текст не «прыгает».
+        var rate = baseRate
+        if remaining > comfortableLag * 3 {
+            rate = max(baseRate * 12, 900)
+        } else if remaining > comfortableLag {
+            rate = baseRate * 4
+        }
+
+        var step = max(1, Int((rate * elapsed).rounded()))
+        if stalled { step = remaining }
         let take = min(step, remaining)
         let end = target.index(target.startIndex, offsetBy: take)
         // Не разрываем графемы (эмодзи, составные символы).
@@ -97,6 +119,10 @@ struct StreamText<Content: View>: View {
             slice = target[target.startIndex..<target.index(end, offsetBy: -1)]
         }
         revealed = String(slice)
+        revealedCount = revealed.count
+        if revealedCount > 0 { lastGrowth = now }
+        remaining = total - revealedCount
+        if remaining <= 0 { revealed = target; revealedCount = total }
     }
 
     private func isCombining(_ scalar: Unicode.Scalar) -> Bool {
@@ -266,18 +292,18 @@ enum MarkdownBlockParser {
                 continue
             }
 
-            // Таблица GFM
-            if trimmed.hasPrefix("|"), index + 1 < lines.count,
-               let alignments = alignmentRow(lines[index + 1]) {
+            // Таблица GFM. Раньше распознавались только строки, начинающиеся с «|»,
+            // поэтому таблицы без внешних палочек (`a | b` / `---|---`) и таблицы
+            // с разделителем «+» не рисовались вовсе — вместо них был сырой текст.
+            if index + 1 < lines.count, let alignments = alignmentRow(lines[index + 1]),
+               isTableHeader(trimmed) {
                 flushParagraph()
                 let headers = splitRow(trimmed)
                 var rows: [[String]] = []
                 index += 2
-                while index < lines.count {
-                    let row = lines[index].trimmingCharacters(in: .whitespaces)
-                    guard row.hasPrefix("|") else { break }
-                    let cells = splitRow(row)
-                    if !cells.isEmpty { rows.append(cells) }
+                while index < lines.count, isTableRow(lines[index]) {
+                    let cells = splitRow(lines[index].trimmingCharacters(in: .whitespaces))
+                    if !cells.isEmpty, cells.contains(where: { !$0.isEmpty }) { rows.append(cells) }
                     index += 1
                 }
                 blocks.append(MarkdownBlockModel(id: blocks.count,
@@ -425,22 +451,49 @@ enum MarkdownBlockParser {
         return (true, String(line[line.index(after: afterMarker)...]).trimmingCharacters(in: .whitespaces))
     }
 
-    private static func splitRow(_ line: String) -> [String] {
+    /// Разделитель столбцов: палочка или «+».
+    private static func separator(_ line: String) -> Character? {
+        let pipe = line.firstIndex(of: "|")
+        let plus = line.firstIndex(of: "+")
+        switch (pipe, plus) {
+        case (nil, nil): return nil
+        case (.some, nil): return "|"
+        case (nil, .some): return "+"
+        case (.some(let p), .some(let s)): return p < s ? "|" : "+"
+        }
+    }
+
+    /// Строка-шапка таблицы: содержит разделитель и не является строкой выравнивания.
+    private static func isTableHeader(_ line: String) -> Bool {
+        guard separator(line) != nil else { return false }
+        return alignmentRow(line) == nil
+    }
+
+    /// Строка данных таблицы.
+    private static func isTableRow(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return false }
+        return separator(trimmed) != nil
+    }
+
+    static func splitRow(_ line: String) -> [String] {
         var value = line.trimmingCharacters(in: .whitespaces)
-        if value.hasPrefix("|") { value = String(value.dropFirst()) }
-        if value.hasSuffix("|") { value = String(value.dropLast()) }
-        return value.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+        let marker = separator(value) ?? "|"
+        if value.hasPrefix(String(marker)) { value = String(value.dropFirst()) }
+        if value.hasSuffix(String(marker)) { value = String(value.dropLast()) }
+        return value.components(separatedBy: String(marker))
+            .map { $0.replacingOccurrences(of: "\\|", with: "|").trimmingCharacters(in: .whitespaces) }
     }
 
     private static func alignmentRow(_ line: String) -> [TableAlignment]? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard trimmed.hasPrefix("|"), trimmed.contains("-") else { return nil }
+        guard separator(trimmed) != nil, trimmed.contains("-") else { return nil }
         let cells = splitRow(trimmed)
-        guard !cells.isEmpty else { return nil }
+        guard !cells.isEmpty, cells.count >= 2 else { return nil }
         var result: [TableAlignment] = []
         for cell in cells {
             let dashes = cell.replacingOccurrences(of: " ", with: "")
-            guard dashes.count >= 1, dashes.allSatisfy({ $0 == "-" || $0 == ":" }) else { return nil }
+            guard dashes.count >= 1, dashes.allSatisfy({ $0 == "-" || $0 == ":" || $0 == "=" }) else { return nil }
             let left = dashes.hasPrefix(":")
             let right = dashes.hasSuffix(":")
             if left && right { result.append(.center) }
@@ -610,13 +663,34 @@ struct BlockMarkdownView: View {
     /// Нажатие варианта ответа в блоке ```ask (пункт 33).
     var onAnswer: ((String) -> Void)? = nil
 
+    /// Пока текст печатается, разбор всего ответа на каждом кадре — самая
+    /// дорогая работа в кадре, из-за неё длинный ответ «заикается». Поэтому
+    /// разбор идёт по мере роста текста шагами, а не каждый кадр.
+    @State private var parsed: [MarkdownBlockModel] = []
+    @State private var parsedLength: Int = -1
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(MarkdownBlockParser.parse(content)) { block in
+            ForEach(blocks) { block in
                 MarkdownBlockView(block: block, fontSize: fontSize,
                                   sources: sources, findQuery: findQuery, onAnswer: onAnswer)
             }
         }
+        .onAppear { reparse(force: true) }
+        .onChange(of: content) { _ in reparse(force: false) }
+    }
+
+    private var blocks: [MarkdownBlockModel] {
+        // Между кадрами текст успевает вырасти на десятки символов; пересобираем
+        // блоки только когда накопилось 24 новых символа или текст закончился.
+        if parsedLength < 0 || abs(content.count - parsedLength) >= 24 { return MarkdownBlockParser.parse(content) }
+        return parsed
+    }
+
+    private func reparse(force: Bool) {
+        guard force || parsedLength < 0 || content.count - parsedLength >= 24 || content.count < parsedLength else { return }
+        parsed = MarkdownBlockParser.parse(content)
+        parsedLength = content.count
     }
 }
 
@@ -1669,8 +1743,15 @@ struct MarkdownTableView: View {
     @State private var filter = ""
     @State private var showTotals = false
     @State private var exportRequest: ExportRequest?
+    /// На телефоне широкая таблица превращается в нечитаемую полосу, поэтому
+    /// по умолчанию строки показываются карточками «столбец — значение».
+    @State private var compactMode = true
+    @State private var showAllRows = false
 
     private var columnCount: Int { max(headers.count, rows.map(\.count).max() ?? 0) }
+    /// Сколько строк показывать без раскрытия: длинная таблица не должна
+    /// растягивать ответ на несколько экранов.
+    private var rowLimit: Int { 40 }
 
     /// Строки после фильтра и сортировки.
     private var visibleRows: [[String]] {
@@ -1699,8 +1780,9 @@ struct MarkdownTableView: View {
 
     /// Есть ли в столбце числа — тогда показываем итоги.
     private var numericColumns: [Int] {
-        (0..<columnCount).filter { column in
-            let values = visibleRows.compactMap { row -> Double? in
+        let sample = shownRows
+        return (0..<columnCount).filter { column in
+            let values = sample.compactMap { row -> Double? in
                 guard column < row.count else { return nil }
                 let cleaned = row[column]
                     .replacingOccurrences(of: " ", with: "")
@@ -1709,7 +1791,7 @@ struct MarkdownTableView: View {
                     .replacingOccurrences(of: "%", with: "")
                 return Double(cleaned)
             }
-            return values.count >= 2 && values.count == visibleRows.count
+            return values.count >= 2 && values.count == sample.count
         }
     }
 
@@ -1739,6 +1821,14 @@ struct MarkdownTableView: View {
                         .foregroundStyle(showTotals ? HonorTheme.accent : HonorTheme.secondary)
                         .accessibilityLabel("Итоги по столбцам")
                     }
+                    Button { withAnimation(.easeInOut(duration: 0.18)) { compactMode.toggle() } } label: {
+                        Image(systemName: compactMode ? "rectangle.grid.1x2" : "tablecells")
+                            .font(.system(size: 14))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(HonorTheme.secondary)
+                    .accessibilityLabel(compactMode ? "Показать широкой таблицей" : "Показать карточками")
+                    .accessibilityIdentifier("table.mode")
                 }
                 .padding(.horizontal, 10)
                 .frame(minHeight: 32)
@@ -1746,26 +1836,21 @@ struct MarkdownTableView: View {
                 .overlay(Capsule().stroke(HonorTheme.divider, lineWidth: 0.6))
             }
 
-            ScrollView(.horizontal, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 0) {
-                    if !headers.isEmpty {
-                        headerRow
-                        Rectangle().fill(HonorTheme.divider).frame(height: 1)
-                    }
-                    ForEach(Array(visibleRows.enumerated()), id: \.offset) { index, cells in
-                        row(cells, isHeader: false)
-                        if index < visibleRows.count - 1 {
-                            Rectangle().fill(HonorTheme.divider.opacity(0.5)).frame(height: 0.5)
-                        }
-                    }
-                    if showTotals && !numericColumns.isEmpty {
-                        Rectangle().fill(HonorTheme.divider).frame(height: 1)
-                        totalsRow
-                    }
+            if compactMode && columnCount >= 2 {
+                compactTable
+            } else {
+                wideTable
+            }
+
+            if !showAllRows, visibleRows.count > rowLimit {
+                Button { withAnimation(.easeOut(duration: 0.2)) { showAllRows = true } } label: {
+                    Label("Показать все строки (\(visibleRows.count))", systemImage: "chevron.down")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(maxWidth: .infinity, minHeight: 32)
                 }
-                .background(HonorTheme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.6))
+                .buttonStyle(.plain)
+                .foregroundStyle(HonorTheme.accent)
+                .accessibilityIdentifier("table.rows.more")
             }
 
             HStack(spacing: 8) {
@@ -1798,6 +1883,93 @@ struct MarkdownTableView: View {
         }
     }
 
+    /// Широкая таблица с горизонтальной прокруткой и липкой шапкой.
+    private var wideTable: some View {
+        ScrollView(.horizontal, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 0) {
+                if !headers.isEmpty {
+                    headerRow
+                    Rectangle().fill(HonorTheme.divider).frame(height: 1)
+                }
+                ForEach(Array(shownRows.enumerated()), id: \.offset) { index, cells in
+                    row(cells, isHeader: false)
+                    if index < shownRows.count - 1 {
+                        Rectangle().fill(HonorTheme.divider.opacity(0.5)).frame(height: 0.5)
+                    }
+                }
+                if showTotals && !numericColumns.isEmpty {
+                    Rectangle().fill(HonorTheme.divider).frame(height: 1)
+                    totalsRow
+                }
+            }
+            .background(HonorTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.6))
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if shownRows.count > 2 {
+                Label("прокрутите", systemImage: "arrow.left.and.right")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(HonorTheme.secondary)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(HonorTheme.raised, in: Capsule())
+                    .padding(6)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    /// Компактный режим: одна строка таблицы — карточка «столбец: значение».
+    /// На узком экране телефона это единственный способ прочитать таблицу
+    /// из 3+ столбцов без горизонтальной возни.
+    private var compactTable: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(shownRows.enumerated()), id: \.offset) { index, cells in
+                VStack(alignment: .leading, spacing: 5) {
+                    if shownRows.count > 1 {
+                        Text("\(index + 1)")
+                            .font(.system(size: fontSize * 0.72, weight: .semibold))
+                            .foregroundStyle(HonorTheme.secondary)
+                    }
+                    ForEach(0..<columnCount, id: \.self) { column in
+                        if column < cells.count, !cells[column].isEmpty {
+                            VStack(alignment: .leading, spacing: 1) {
+                                if !headers.isEmpty, column < headers.count, !headers[column].isEmpty {
+                                    Text(headers[column])
+                                        .font(.system(size: fontSize * 0.74, weight: .semibold))
+                                        .foregroundStyle(HonorTheme.secondary)
+                                }
+                                cellText(cells[column])
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.6))
+            }
+        }
+    }
+
+    /// Строки, которые реально показываются: длинная таблица сворачивается.
+    private var shownRows: [[String]] {
+        let rows = visibleRows
+        if showAllRows || rows.count <= rowLimit { return rows }
+        return Array(rows.prefix(rowLimit))
+    }
+
+    /// Текст ячейки с поддержкой **жирного**, `кода` и подсветки поиска.
+    private func cellText(_ value: String) -> some View {
+        let attributed = (try? AttributedString(markdown: value,
+                                                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(value)
+        return Text(highlighted(attributed, query: findQuery))
+            .font(.system(size: fontSize * 0.92))
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+    }
+
     /// Шапка: тап по столбцу сортирует его.
     private var headerRow: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -1809,12 +1981,13 @@ struct MarkdownTableView: View {
                         Text(index < headers.count ? headers[index] : "")
                             .font(.system(size: fontSize * 0.92, weight: .semibold))
                             .multilineTextAlignment(textAlignment(alignment(index)))
+                            .fixedSize(horizontal: false, vertical: true)
                         if sortColumn == index {
                             Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 9, weight: .bold))
                         }
                     }
-                    .frame(minWidth: 88, maxWidth: 240, alignment: frameAlignment(alignment(index)))
+                    .frame(minWidth: 96, maxWidth: 260, alignment: frameAlignment(alignment(index)))
                     .padding(.horizontal, 10).padding(.vertical, 8)
                     .contentShape(Rectangle())
                 }
@@ -1847,7 +2020,7 @@ struct MarkdownTableView: View {
                             .foregroundStyle(HonorTheme.secondary)
                     }
                 }
-                .frame(minWidth: 88, maxWidth: 240, alignment: frameAlignment(alignment(index)))
+                .frame(minWidth: 96, maxWidth: 260, alignment: frameAlignment(alignment(index)))
                 .padding(.horizontal, 10).padding(.vertical, 8)
                 if index < columnCount - 1 {
                     Rectangle().fill(HonorTheme.divider.opacity(0.6)).frame(width: 0.5)
@@ -1859,7 +2032,7 @@ struct MarkdownTableView: View {
 
     private func numericColumnValues(_ column: Int) -> [Double] {
         guard numericColumns.contains(column) else { return [] }
-        return visibleRows.compactMap { row in
+        return shownRows.compactMap { row in
             guard column < row.count else { return nil }
             let cleaned = row[column]
                 .replacingOccurrences(of: " ", with: "")
@@ -1893,13 +2066,17 @@ struct MarkdownTableView: View {
     private func row(_ cells: [String], isHeader: Bool) -> some View {
         HStack(alignment: .top, spacing: 0) {
             ForEach(0..<columnCount, id: \.self) { index in
-                let value = index < cells.count ? cells[index] : ""
-                Text(highlighted(AttributedString(value), query: findQuery))
-                    .font(.system(size: fontSize * 0.9))
-                    .multilineTextAlignment(textAlignment(alignment(index)))
-                    .frame(minWidth: 88, maxWidth: 240, alignment: frameAlignment(alignment(index)))
-                    .padding(.horizontal, 10).padding(.vertical, 8)
-                    .fixedSize(horizontal: false, vertical: true)
+                Group {
+                    if index < cells.count, !cells[index].isEmpty {
+                        cellText(cells[index])
+                            .multilineTextAlignment(textAlignment(alignment(index)))
+                    } else {
+                        Text("—").font(.system(size: fontSize * 0.9))
+                            .foregroundStyle(HonorTheme.secondary)
+                    }
+                }
+                .frame(minWidth: 96, maxWidth: 260, alignment: frameAlignment(alignment(index)))
+                .padding(.horizontal, 10).padding(.vertical, 8)
                 if index < columnCount - 1 {
                     Rectangle().fill(HonorTheme.divider.opacity(0.6)).frame(width: 0.5)
                 }

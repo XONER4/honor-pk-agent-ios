@@ -795,6 +795,10 @@ private struct MessageTimeline: View {
     let onMenu: (ChatMessage) -> Void
     @State private var followLatest = true
     @State private var pendingScroll: Task<Void, Never>?
+    /// Плавное сопровождение растущего ответа. Прокрутка на каждое обновление
+    /// текста дерётся с анимацией вывода — текст «дёргается». Ведём её кадрами
+    /// по 0,2 с, пока пользователь не отлистал вверх.
+    @State private var followTask: Task<Void, Never>?
     /// Ответ, который сейчас пишется, — для линий навигации справа.
     @State private var streamingMessageID: UUID?
     /// Сколько последних сообщений показывать (пагинация длинных чатов).
@@ -848,6 +852,10 @@ private struct MessageTimeline: View {
         .onChange(of: store.isGenerating) { (generating: Bool) in
             handleGenerationChange(generating, messages: messages, proxy: proxy)
         }
+        .onChange(of: tail?.content.count ?? 0) { (_: Int) in
+            guard store.isGenerating, followLatest, findQuery.isEmpty else { return }
+            scheduleStreamFollow(proxy: proxy)
+        }
         .onChange(of: selectedMatch) { (id: UUID?) in
             guard let id else { return }
             followLatest = false
@@ -866,6 +874,23 @@ private struct MessageTimeline: View {
         .onDisappear {
             pendingScroll?.cancel()
             pendingScroll = nil
+            followTask?.cancel()
+            followTask = nil
+        }
+    }
+
+    /// Прокрутка «за ответом» кадрами по 0,2 с, без анимации: так текст едет
+    /// вместе с набором, а не прыгает.
+    private func scheduleStreamFollow(proxy: ScrollViewProxy) {
+        guard followTask == nil else { return }
+        followTask = Task { @MainActor in
+            defer { followTask = nil }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                if Task.isCancelled { return }
+                guard followLatest, store.isGenerating else { return }
+                proxy.scrollTo("message-bottom", anchor: .bottom)
+            }
         }
     }
 
@@ -960,7 +985,11 @@ private struct MessageTimeline: View {
     /// с ростом текста — отсюда были рывки и «прыжки» экрана.
     private func handleGenerationChange(_ generating: Bool, messages: [ChatMessage], proxy: ScrollViewProxy) {
         guard generating, let id = messages.last?.id else {
-            if !generating { streamingMessageID = nil }
+            if !generating {
+                streamingMessageID = nil
+                followTask?.cancel()
+                followTask = nil
+            }
             return
         }
         streamingMessageID = id
@@ -1302,7 +1331,7 @@ struct ChatInfoSheet: View {
                 Section("Устройство и приложение") {
                     LabeledContent("Модель iPhone", value: DeviceModel.name)
                     LabeledContent("Система", value: DeviceModel.systemDescription)
-                    LabeledContent("Приложение", value: "Honer AI 10.7")
+                    LabeledContent("Приложение", value: "Honer AI 10.8")
                     LabeledContent("Язык интерфейса", value: settings.language == .russian ? "Русский" : "English")
                     LabeledContent("Оформление", value: appearanceName)
                 }

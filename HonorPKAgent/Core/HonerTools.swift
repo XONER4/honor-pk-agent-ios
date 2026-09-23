@@ -69,6 +69,9 @@ struct ToolCallRequest: Equatable, Sendable {
     var id: String
     var name: String
     var arguments: String
+    /// Номер вызова в потоке. Именно по нему склеиваются куски аргументов:
+    /// id и имя приходят только в первом куске, дальше идёт один index.
+    var index: Int? = nil
 
     /// Разобранные аргументы вызова.
     var parsedArguments: [String: Any] {
@@ -89,7 +92,7 @@ struct ToolCallResult: Sendable {
 struct ToolExecutionContext: Sendable {
     var deviceModel: String = "iPhone"
     var systemVersion: String = ""
-    var appVersion: String = "10.7"
+    var appVersion: String = "10.8"
     var currentDateTime: String = ""
     var messageCount: Int = 0
     var voiceMessageCount: Int = 0

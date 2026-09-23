@@ -615,19 +615,21 @@ final class ChatStore: ObservableObject {
                             if firstReasoningAt != nil && reasoningEndedAt == nil { reasoningEndedAt = Date() }
                             if self.generationStatus != "Отвечаю…" { self.generationStatus = "Отвечаю…" }
                         }
-                        // Собираем вызовы инструментов, склеивая аргументы по индексу.
+                        // Собираем вызовы инструментов, склеивая аргументы по index.
+                        // Сопоставление только по id теряло куски: id приходит лишь
+                        // в первом куске, а в остальных есть только index. Из-за этого
+                        // вызовы дублировались, аргументы ломались, и вместо ответа
+                        // в чате оставался обрывок вроде одной буквы.
                         for call in delta.toolCalls {
-                            if let existing = toolCalls.firstIndex(where: { $0.id == call.id && !call.id.isEmpty }) {
-                                toolCalls[existing].arguments += call.arguments
-                                if toolCalls[existing].name.isEmpty { toolCalls[existing].name = call.name }
-                            } else {
-                                toolCalls.append(call)
-                            }
+                            Self.mergeToolCall(call, into: &toolCalls)
                         }
                         pendingContent += delta.content
                         pendingReasoning += delta.reasoning
                         finishReason = delta.finishReason ?? finishReason
-                        if Date().timeIntervalSince(lastPublished) >= 0.1 { flush() }
+                        // Публикуем текст ровно столько раз, сколько нужно для плавного
+                        // показа: не реже 30 раз в секунду, но и не на каждый байт.
+                        let published = Date().timeIntervalSince(lastPublished)
+                        if pendingContent.count + pendingReasoning.count >= 12 || published >= 1.0 / 30.0 { flush() }
                         if Date().timeIntervalSince(lastSaved) >= 1.5 { self.saveSnapshot(); lastSaved = Date() }
                     }
                     flush()
@@ -643,7 +645,7 @@ final class ChatStore: ObservableObject {
                     let toolContext = ToolExecutionContext(
                         deviceModel: DeviceModel.name,
                         systemVersion: UIDevice.current.systemVersion,
-                        appVersion: "10.7",
+                        appVersion: "10.8",
                         messageCount: self.messages.count,
                         voiceMessageCount: self.messages.filter { $0.inputKind == .voice }.count,
                         chatStartedAt: self.selectedConversation?.createdAt,
@@ -673,16 +675,13 @@ final class ChatStore: ObservableObject {
                             try Task.checkCancellation()
                             guard self.activeRunID == runID else { return }
                             for call in delta.toolCalls {
-                                if let existing = toolCalls.firstIndex(where: { $0.id == call.id && !call.id.isEmpty }) {
-                                    toolCalls[existing].arguments += call.arguments
-                                } else {
-                                    toolCalls.append(call)
-                                }
+                                Self.mergeToolCall(call, into: &toolCalls)
                             }
                             pendingContent += delta.content
                             pendingReasoning += delta.reasoning
                             finishReason = delta.finishReason ?? finishReason
-                            if Date().timeIntervalSince(lastPublished) >= 0.1 { flush() }
+                            let published = Date().timeIntervalSince(lastPublished)
+                            if pendingContent.count + pendingReasoning.count >= 12 || published >= 1.0 / 30.0 { flush() }
                         }
                         flush()
                     } catch {
@@ -692,7 +691,7 @@ final class ChatStore: ObservableObject {
                 guard self.activeRunID == runID else { return }
                 if let russianNormalizer {
                     let normalizeContent = RussianTextPolicy.needsNormalization(rawContent)
-                    let normalizeReasoning = RussianTextPolicy.needsNormalization(rawReasoning)
+                    let normalizeReasoning = RussianTextPolicy.needsReasoningNormalization(rawReasoning)
                     self.mutateMessage(chatID: chatID, messageID: response.id) {
                         if !normalizeContent { $0.content = rawContent }
                         if !normalizeReasoning { $0.reasoning = rawReasoning }
@@ -705,7 +704,6 @@ final class ChatStore: ObservableObject {
                         self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = translated }
                     }
                     if normalizeReasoning {
-                        self.generationStatus = "Перевожу описание рассуждения…"
                         do {
                             let translated = try await russianNormalizer.normalizeRussian(rawReasoning, reasoning: true)
                             try Task.checkCancellation()
@@ -713,15 +711,48 @@ final class ChatStore: ObservableObject {
                             self.mutateMessage(chatID: chatID, messageID: response.id) { $0.reasoning = translated; $0.reasoningWasTranslated = true }
                         } catch {
                             if Task.isCancelled { throw CancellationError() }
+                            // Перевод не удался — оставляем исходный текст рассуждения,
+                            // а не заглушку: пользователь должен видеть, о чём думала модель.
                             self.mutateMessage(chatID: chatID, messageID: response.id) {
-                                $0.reasoning = "Описание рассуждения на русском сейчас недоступно. Итоговый ответ сохранён."
-                                $0.reasoningWasTranslated = true
+                                if $0.reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    $0.reasoning = rawReasoning
+                                }
                             }
                         }
                     }
                 }
+                // Последняя защита от обрывка. Раньше при неудачной склейке вызова
+                // инструмента в чате оставалась одна буква, и это уходило в историю.
+                // Теперь короткий огрызок перезапрашивается без инструментов.
+                if Self.isTooShortToBeAnAnswer(rawContent) {
+                    self.generationStatus = "Дописываю ответ…"
+                    do {
+                        var retryContent = ""
+                        for try await delta in client.stream(messages: input, thinking: thinking,
+                                                             systemInstruction: instruction,
+                                                             searchContext: context, tools: nil) {
+                            try Task.checkCancellation()
+                            guard self.activeRunID == runID else { return }
+                            retryContent += delta.content
+                            if !delta.reasoning.isEmpty { rawReasoning += delta.reasoning }
+                            if retryContent.count - rawContent.count > 2 { flush() }
+                            rawContent = retryContent
+                            pendingContent = retryContent
+                            if Date().timeIntervalSince(lastPublished) >= 0.1 { flush() }
+                        }
+                        flush()
+                        rawContent = retryContent
+                        // Первый проход закончился обрывком — его finish_reason
+                        // больше не относится к показанному ответу.
+                        if !Self.isTooShortToBeAnAnswer(retryContent) { finishReason = nil }
+                    } catch {
+                        if Task.isCancelled { throw CancellationError() }
+                    }
+                    self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = rawContent }
+                }
                 let final = self.conversations.first(where: { $0.id == chatID })?.messages.first(where: { $0.id == response.id })
                 guard !(final?.content.isEmpty ?? true) else { throw HonorError.emptyResponse }
+                guard !(final.map { Self.isTooShortToBeAnAnswer($0.content) } ?? false) else { throw HonorError.emptyResponse }
                 if finishReason == "length" {
                     self.mutateMessage(chatID: chatID, messageID: response.id) { $0.error = "Достигнута максимальная длина ответа. Попросите продолжить." }
                 } else if finishReason == "content_filter" {
@@ -760,6 +791,40 @@ final class ChatStore: ObservableObject {
                 NotificationCenterService.shared.notifyAnswerReady(delivered?.content ?? "")
             }
         }
+    }
+
+    /// Склеивает куски одного вызова инструмента. Куски одного вызова опознаются
+    /// по index (он есть всегда), затем по id, затем по имени функции.
+    static func mergeToolCall(_ call: ToolCallRequest, into calls: inout [ToolCallRequest]) {
+        if let index = call.index,
+           let existing = calls.firstIndex(where: { $0.index == index }) {
+            calls[existing].arguments += call.arguments
+            if calls[existing].id.isEmpty, !call.id.isEmpty { calls[existing].id = call.id }
+            if calls[existing].name.isEmpty, !call.name.isEmpty { calls[existing].name = call.name }
+            return
+        }
+        if !call.id.isEmpty, let existing = calls.firstIndex(where: { $0.id == call.id }) {
+            calls[existing].arguments += call.arguments
+            if calls[existing].name.isEmpty, !call.name.isEmpty { calls[existing].name = call.name }
+            if calls[existing].index == nil { calls[existing].index = call.index }
+            return
+        }
+        if !call.name.isEmpty, let existing = calls.firstIndex(where: { $0.name == call.name && $0.index == call.index }) {
+            calls[existing].arguments += call.arguments
+            if calls[existing].id.isEmpty, !call.id.isEmpty { calls[existing].id = call.id }
+            return
+        }
+        calls.append(call)
+    }
+
+    /// Ответ короче этого порога — обрывок, а не ответ.
+    static func isTooShortToBeAnAnswer(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+        let terminators: Set<Character> = [".", "!", "?", "…", ":", "\n"]
+        // Одна-две буквы без знака конца — это следствие сбоя («В», «Х», «Ок»),
+        // а не ответ. Более длинные короткие реплики («Не знаю.») остаются как есть.
+        return trimmed.count <= 3 && !trimmed.contains(where: { terminators.contains($0) })
     }
 
     private func mutateMessage(chatID: UUID, messageID: UUID, update: (inout ChatMessage) -> Void) {

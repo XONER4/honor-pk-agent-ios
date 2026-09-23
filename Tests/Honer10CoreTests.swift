@@ -49,19 +49,22 @@ final class Honer10CoreTests: XCTestCase {
             let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
             let system = try XCTUnwrap((body["messages"] as? [[String: Any]])?.first?["content"] as? String)
             XCTAssertTrue(system.contains("Honer AI"))
-            XCTAssertTrue(system.contains("Владислав"))
+            XCTAssertFalse(system.contains("Владислав"))
+            XCTAssertFalse(system.contains("созданный"))
             XCTAssertTrue(system.contains("по-русски"))
             XCTAssertFalse(system.contains("PowerShell"))
         }
         XCTAssertTrue(HonerIdentity.context(for: "Как приготовить суп?").isEmpty)
-        XCTAssertTrue(HonerIdentity.context(for: "Кто твой создатель?").contains("из России"))
+        let creator = HonerIdentity.context(for: "Кто твой создатель?")
+        XCTAssertTrue(creator.contains("Я Honer AI"))
+        XCTAssertFalse(creator.contains("из России"))
         let pc = HonerIdentity.context(for: "Что умеет настольный Honer PK Agent?")
         XCTAssertTrue(pc.contains("Honor PK Agent"))
         XCTAssertTrue(pc.contains("PowerShell"))
         XCTAssertTrue(pc.contains("закрыто"))
         XCTAssertTrue(pc.contains("Мобильное Honer AI не заявляет управление компьютером"))
         XCTAssertTrue(HonerIdentity.context(for: "Что ещё создал твой разработчик?").contains("PowerShell"))
-        XCTAssertTrue(HonerIdentity.context(for: "Какие у него функции?", recentContext: "Владислав создал Honer PK Agent.").contains("PowerShell"))
+        XCTAssertTrue(HonerIdentity.context(for: "Какие у него функции?", recentContext: "Пользователь спрашивал про Honer PK Agent.").contains("PowerShell"))
     }
 
     @MainActor
@@ -225,6 +228,43 @@ final class Honer10CoreTests: XCTestCase {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         XCTFail("Generation did not complete")
+    }
+
+    @MainActor
+    func testShortFragmentIsNotAnAnswerAndTablesParseInEveryForm() throws {
+        // Одна буква вместо ответа — сбой, а не ответ: такой текст не попадает
+        // ни в историю, ни в контекст следующего запроса.
+        XCTAssertTrue(ChatStore.isTooShortToBeAnAnswer("В"))
+        XCTAssertTrue(ChatStore.isTooShortToBeAnAnswer("  Х "))
+        XCTAssertTrue(ChatStore.isTooShortToBeAnAnswer(""))
+        XCTAssertFalse(ChatStore.isTooShortToBeAnAnswer("Не знаю."))
+        XCTAssertFalse(ChatStore.isTooShortToBeAnAnswer("Лёд тает при 0 °C."))
+
+        // Таблица со внешними палочками.
+        let padded = MarkdownBlockParser.parse("| Город | Температура |\n|:---|---:|\n| Клин | 14 |\n| Москва | 12 |")
+        if case .table(let headers, let alignments, let rows)? = padded.first?.kind {
+            XCTAssertEqual(headers, ["Город", "Температура"])
+            XCTAssertEqual(alignments, [.leading, .trailing])
+            XCTAssertEqual(rows, [["Клин", "14"], ["Москва", "12"]])
+        } else { XCTFail("Таблица с палочками не распознана") }
+
+        // Таблица без внешних палочек: раньше рисовалась сырым текстом.
+        let bare = MarkdownBlockParser.parse("Город | Температура\n---|---\nКлин | 14")
+        if case .table(let headers, _, let rows)? = bare.first?.kind {
+            XCTAssertEqual(headers, ["Город", "Температура"])
+            XCTAssertEqual(rows, [["Клин", "14"]])
+        } else { XCTFail("Таблица без внешних палочек не распознана") }
+
+        // Таблица с разделителем «+».
+        let plus = MarkdownBlockParser.parse("Город + Температура\n---+---\nКлин + 14")
+        if case .table(let headers, _, let rows)? = plus.first?.kind {
+            XCTAssertEqual(headers, ["Город", "Температура"])
+            XCTAssertEqual(rows, [["Клин", "14"]])
+        } else { XCTFail("Таблица с разделителем + не распознана") }
+
+        // Разделитель --- остаётся разделителем, а не таблицей.
+        let divider = MarkdownBlockParser.parse("Текст выше\n\n---\n\nТекст ниже")
+        XCTAssertFalse(divider.contains { if case .table = $0.kind { return true } else { return false } })
     }
 
     private func historyURL() -> URL { FileManager.default.temporaryDirectory.appendingPathComponent("Honer10-\(UUID()).json") }

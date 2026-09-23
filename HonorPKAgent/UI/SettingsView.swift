@@ -706,8 +706,8 @@ private struct AboutSettingsPage: View {
                 }.padding(.vertical, 10)
             }
             Section {
-                Text(settings.text("Honer AI — приложение разработчика Владислава. Общение, поиск с источниками, фото и видео, документы, голосовой ввод и личная память — в одном месте.",
-                                   "Honer AI is an app created by developer Vladislav. Conversations, search with sources, photos and videos, documents, voice input and personal memory — in one place."))
+                Text(settings.text("Honer AI — ИИ-помощник. Общение, поиск с источниками, фото и видео, документы, голосовой ввод и личная память — в одном месте.",
+                                   "Honer AI is an AI assistant. Conversations, search with sources, photos and videos, documents, voice input and personal memory — in one place."))
                 Text(settings.text("Чаты сохраняются на вашем iPhone. Оценки ответов сохраняются локально.",
                                    "Conversations are saved on your iPhone. Response feedback is stored locally."))
                     .foregroundStyle(.secondary)
