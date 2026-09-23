@@ -1,4 +1,25 @@
 import SwiftUI
+import UIKit
+
+/// Запрос на экспорт содержимого файлом (таблица в Numbers и подобное).
+struct ExportRequest: Identifiable {
+    let id = UUID()
+    let content: String
+}
+
+/// Системный лист «Поделиться» с файлом: оттуда таблицу можно открыть в Numbers.
+struct DocumentExportSheet: UIViewControllerRepresentable {
+    let csv: String
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let name = "Honer-таблица-\(Int(Date().timeIntervalSince1970)).csv"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try? csv.data(using: .utf8)?.write(to: url, options: .atomic)
+        return UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
 
 /// Запрос на плавный переход к конкретному сообщению (линии навигации справа).
 struct ScrollRequest: Equatable {
@@ -500,6 +521,87 @@ struct MessageNavigationLines: View {
     }
 }
 
+/// Инлайн-содержимое абзаца: текст плюс картинки, если модель вставила
+/// Markdown-изображение `![подпись](url)` (пункт 3 ТЗ).
+struct InlineContentView: View {
+    let source: String
+    let size: Double
+    let weight: Font.Weight
+    let attributed: AttributedString
+
+    private struct Part: Identifiable {
+        let id = UUID()
+        let text: String?
+        let imageURL: URL?
+        let caption: String
+    }
+
+    private static let imagePattern = try! NSRegularExpression(pattern: "!\\[([^\\]]*)\\]\\((https?://[^)\\s]+)\\)")
+
+    private var parts: [Part] {
+        let pattern = Self.imagePattern
+        let full = NSRange(source.startIndex..., in: source)
+        let matches = pattern.matches(in: source, range: full)
+        guard !matches.isEmpty else { return [Part(text: source, imageURL: nil, caption: "")] }
+        var result: [Part] = []
+        var cursor = source.startIndex
+        for match in matches {
+            guard let whole = Range(match.range, in: source),
+                  let captionRange = Range(match.range(at: 1), in: source),
+                  let urlRange = Range(match.range(at: 2), in: source) else { continue }
+            let before = String(source[cursor..<whole.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !before.isEmpty { result.append(Part(text: before, imageURL: nil, caption: "")) }
+            result.append(Part(text: nil,
+                               imageURL: URL(string: String(source[urlRange])),
+                               caption: String(source[captionRange])))
+            cursor = whole.upperBound
+        }
+        let tail = String(source[cursor...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tail.isEmpty { result.append(Part(text: tail, imageURL: nil, caption: "")) }
+        return result
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(parts) { part in
+                if let url = part.imageURL {
+                    VStack(alignment: .leading, spacing: 4) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image.resizable().scaledToFit()
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                            case .failure:
+                                Label("Не удалось загрузить изображение", systemImage: "photo.badge.exclamationmark")
+                                    .font(.system(size: size * 0.85))
+                                    .foregroundStyle(HonorTheme.secondary)
+                            default:
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(HonorTheme.surface)
+                                    .frame(height: 140)
+                                    .overlay(ProgressView())
+                            }
+                        }
+                        if !part.caption.isEmpty {
+                            Text(part.caption)
+                                .font(.system(size: size * 0.78))
+                                .foregroundStyle(HonorTheme.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("message.image")
+                } else if let text = part.text {
+                    Text(text == source ? attributed : AttributedString(text))
+                        .font(.system(size: size, weight: weight))
+                        .lineSpacing(5)
+                        .tint(HonorTheme.accent)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
 struct BlockMarkdownView: View {
     let content: String
     let fontSize: Double
@@ -614,12 +716,8 @@ private struct MarkdownBlockView: View {
     }
 
     private func inline(_ text: String, size: Double, weight: Font.Weight) -> some View {
-        Text(inlineAttributed(text))
-            .font(.system(size: size, weight: weight))
-            .lineSpacing(5)
-            .tint(HonorTheme.accent)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
+        InlineContentView(source: text, size: size, weight: weight,
+                          attributed: inlineAttributed(text))
     }
 
     private func inlineAttributed(_ source: String) -> AttributedString {
@@ -1401,6 +1499,7 @@ struct MarkdownTableView: View {
     @State private var sortAscending = true
     @State private var filter = ""
     @State private var showTotals = false
+    @State private var exportRequest: ExportRequest?
 
     private var columnCount: Int { max(headers.count, rows.map(\.count).max() ?? 0) }
 
@@ -1504,6 +1603,17 @@ struct MarkdownTableView: View {
                 copyButton("Markdown", value: asMarkdown)
                 copyButton("TSV", value: asTSV)
                 copyButton("CSV", value: asCSV)
+                // Экспорт таблицы файлом — можно открыть в Numbers (пункт 42 ТЗ).
+                Button {
+                    exportRequest = ExportRequest(content: asCSV)
+                } label: {
+                    Text("В Numbers").font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 10).frame(minHeight: 28)
+                        .overlay(Capsule().stroke(HonorTheme.divider, lineWidth: 0.7))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(HonorTheme.secondary)
+                .accessibilityIdentifier("table.export.numbers")
                 if !filter.isEmpty {
                     Text("найдено \(visibleRows.count) из \(rows.count)")
                         .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
@@ -1513,6 +1623,9 @@ struct MarkdownTableView: View {
                         .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
                 }
             }
+        }
+        .sheet(item: $exportRequest) { request in
+            DocumentExportSheet(csv: request.content)
         }
     }
 
