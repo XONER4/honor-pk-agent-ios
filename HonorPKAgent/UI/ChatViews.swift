@@ -482,6 +482,12 @@ struct ChatRootView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("welcomeMessage")
+                // Версия видна сразу на главном экране: по ней можно убедиться,
+                // что установилась именно новая сборка, а не старая.
+                Text(Self.appVersion)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(HonorTheme.secondary)
+                    .accessibilityIdentifier("welcomeVersion")
             }
             .padding(.horizontal, 30)
             .frame(width: geometry.size.width)
@@ -489,6 +495,12 @@ struct ChatRootView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { composerFocused = false }
+    }
+
+    /// Версия приложения из бандла — та же, что в настройках.
+    static var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        return version.isEmpty ? "Honer AI" : "Honer AI \(version)"
     }
 
     private var composer: some View {
