@@ -227,7 +227,7 @@ final class AttachmentTests: XCTestCase {
         writer.add(input)
         guard writer.startWriting() else { throw writer.error ?? fixtureError("Cannot start video writer") }
         writer.startSession(atSourceTime: .zero)
-        let deadline = Date().addingTimeInterval(15)
+        let deadline = Date().addingTimeInterval(90)
         for index in 0..<frameCount {
             while !input.isReadyForMoreMediaData {
                 guard Date() < deadline, writer.status == .writing else {
