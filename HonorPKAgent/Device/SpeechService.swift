@@ -22,6 +22,8 @@ final class SpeechService: NSObject, ObservableObject {
     private var recordingID = UUID()
     private var lastLevelUpdate = Date.distantPast
     private var finishTimeout: Task<Void, Never>?
+    /// Предел длительности одной записи: защита от потерянного события «отпустил палец».
+    private var recordingWatchdog: Task<Void, Never>?
     private var finishWaiters: [CheckedContinuation<String, Never>] = []
     private var activeUtterance: AVSpeechUtterance?
     private var interruptionObserver: NSObjectProtocol?
@@ -32,8 +34,23 @@ final class SpeechService: NSObject, ObservableObject {
         synthesizer.delegate = self
         interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
             guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
-                  AVAudioSession.InterruptionType(rawValue: raw) == .began else { return }
-            Task { @MainActor in self?.cancelRecording(); self?.stopSpeaking() }
+                  let interruptionType = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            Task { @MainActor [weak self] in
+                switch interruptionType {
+                case .began:
+                    self?.cancelRecording()
+                    self?.stopSpeaking()
+                case .ended:
+                    // Прерывание закончилось: состояние речи и финализации могло остаться
+                    // «занятым», и новая запись больше не запускалась.
+                    self?.cancelRecording()
+                    self?.isSpeaking = false
+                    self?.activeUtterance = nil
+                    self?.deactivateAudioIfIdle()
+                @unknown default:
+                    break
+                }
+            }
         }
         backgroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.cancelRecording(); self?.stopSpeaking() }
@@ -52,7 +69,10 @@ final class SpeechService: NSObject, ObservableObject {
         isPreparingRecording = true
         let token = UUID()
         recordingID = token
-        defer { if recordingID == token { isPreparingRecording = false } }
+        // Снимаем флаг подготовки ВСЕГДА. Раньше он снимался только если токен не сменился,
+        // поэтому после отмены во время запроса разрешений флаг залипал навсегда и
+        // `guard` выше блокировал любую следующую запись — «Подключаю микрофон…» навсегда.
+        defer { isPreparingRecording = false }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-UITestVoice") {
             isPreparingRecording = false
@@ -62,15 +82,15 @@ final class SpeechService: NSObject, ObservableObject {
             return
         }
         #endif
-        let authorized = await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
-        }
-        guard recordingID == token else { return }
-        guard authorized else {
+        // Разрешения запрашиваем с таймаутом: системный диалог может не ответить
+        // (прерван, отклонён системой), и тогда запись не начнётся никогда.
+        guard await Self.requestSpeechAuthorization(timeout: 12) else {
+            guard recordingID == token else { return }
             needsPermissionSettings = true
             errorMessage = language.hasPrefix("ru") ? "Разрешите распознавание речи в настройках iPhone → Honer AI." : "Allow speech recognition in iPhone Settings → Honer AI."
             return
         }
+        guard recordingID == token else { return }
         let microphoneAllowed = await withCheckedContinuation { continuation in
             AVAudioSession.sharedInstance().requestRecordPermission { continuation.resume(returning: $0) }
         }
@@ -97,6 +117,9 @@ final class SpeechService: NSObject, ObservableObject {
             let format = input.outputFormat(forBus: 0)
             guard format.sampleRate > 0, format.channelCount > 0 else { throw SpeechFailure.noInput }
             input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+                // Буферы не должны уходить в уже отменённый запрос: иначе распознавание
+                // молчит, а состояние записи остаётся включённым.
+                guard let self, self.isRecording, self.recordingID == token else { return }
                 request.append(buffer)
                 guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
                 var sum: Float = 0
@@ -115,18 +138,59 @@ final class SpeechService: NSObject, ObservableObject {
             try engine.start()
             isPreparingRecording = false
             isRecording = true
+            // Запись не может длиться вечно: если пользователь отпустил палец, а событие
+            // потерялось, приложение выходило из записи только вручную. Теперь есть предел.
+            recordingWatchdog?.cancel()
+            recordingWatchdog = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 90_000_000_000)
+                guard !Task.isCancelled, let self, self.recordingID == token else { return }
+                self.recognitionRequest?.endAudio()
+                self.completeRecording(token: token)
+            }
             recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
                 Task { @MainActor in
-                    guard let self, self.recordingID == token else { return }
+                    // Раньше здесь стояла проверка токена, и терминальный колбэк
+                    // отбрасывался после stopCapture/finish: состояние оставалось «в записи».
+                    guard let self else { return }
                     if let result { self.transcript = result.bestTranscription.formattedString }
-                    if result?.isFinal == true { self.completeRecording(token: token) }
-                    else if let error {
+                    if result?.isFinal == true {
+                        self.completeRecording(token: self.recordingID)
+                    } else if let error {
                         if !self.isFinalizingRecording { self.errorMessage = error.localizedDescription }
-                        self.completeRecording(token: token)
+                        self.completeRecording(token: self.recordingID)
                     }
                 }
             }
-        } catch { cancelRecording(); errorMessage = error.localizedDescription }
+        } catch {
+            // При ошибке снимаем состояние безусловно: токен мог уже смениться.
+            stopCapture()
+            recordingWatchdog?.cancel(); recordingWatchdog = nil
+            finishTimeout?.cancel(); finishTimeout = nil
+            recognitionRequest?.endAudio(); recognitionTask?.cancel()
+            recognitionTask = nil; recognitionRequest = nil; recognizer = nil
+            isPreparingRecording = false; isFinalizingRecording = false
+            resolveWaiters(with: transcript)
+            deactivateAudioIfIdle()
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Запрос разрешения на распознавание с таймаутом.
+    private static func requestSpeechAuthorization(timeout: TimeInterval) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                await withCheckedContinuation { continuation in
+                    SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                return false
+            }
+            let result = await group.next() ?? false
+            group.cancelAll()
+            return result
+        }
     }
 
     /// Stop the microphone immediately, then await final words for no longer than 1.2 seconds.
@@ -166,9 +230,12 @@ final class SpeechService: NSObject, ObservableObject {
     /// Swipe cancellation and navigation invalidate every pending recognition callback.
     func cancelRecording() {
         recordingID = UUID()
-        stopCapture()
-        finishTimeout?.cancel(); finishTimeout = nil
+        // Сначала гасим запись и задачу распознавания, потом снимаем движок:
+        // иначе буферы успевали уйти в отменённый запрос.
         recognitionRequest?.endAudio(); recognitionTask?.cancel()
+        stopCapture()
+        recordingWatchdog?.cancel(); recordingWatchdog = nil
+        finishTimeout?.cancel(); finishTimeout = nil
         recognitionTask = nil; recognitionRequest = nil; recognizer = nil
         isPreparingRecording = false; isFinalizingRecording = false
         transcript = ""
@@ -183,6 +250,7 @@ final class SpeechService: NSObject, ObservableObject {
     private func completeRecording(token: UUID) {
         guard recordingID == token else { return }
         recordingID = UUID()
+        recordingWatchdog?.cancel(); recordingWatchdog = nil
         stopCapture()
         finishTimeout?.cancel(); finishTimeout = nil
         recognitionTask?.cancel(); recognitionTask = nil; recognitionRequest = nil; recognizer = nil

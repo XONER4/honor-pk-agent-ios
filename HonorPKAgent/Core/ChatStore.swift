@@ -88,7 +88,9 @@ final class ChatStore: ObservableObject {
         self.persistence = HistoryPersistence(url: resolvedStorageURL)
         // Режимы «Рассуждение» и «Поиск» раньше не сохранялись и сбрасывались сами —
         // теперь запоминаются между запусками.
-        self.reasoningEnabled = UserDefaults.standard.object(forKey: "honor.reasoningEnabled") as? Bool ?? true
+        // Режим рассуждения по умолчанию выключен: он давал долгие паузы («Размышлял 8 секунд»)
+        // и риск пустого ответа. Пользователь включает его сам кнопкой в панели ввода.
+        self.reasoningEnabled = UserDefaults.standard.object(forKey: "honor.reasoningEnabled") as? Bool ?? false
         self.searchEnabled = UserDefaults.standard.object(forKey: "honor.searchEnabled") as? Bool ?? false
         if let data = UserDefaults.standard.data(forKey: "honor.statistics"),
            let saved = try? JSONDecoder().decode(UsageStatistics.self, from: data) {
@@ -652,7 +654,7 @@ final class ChatStore: ObservableObject {
                     let toolContext = ToolExecutionContext(
                         deviceModel: DeviceModel.name,
                         systemVersion: UIDevice.current.systemVersion,
-                        appVersion: "10.10",
+                        appVersion: "10.11",
                         messageCount: self.messages.count,
                         voiceMessageCount: self.messages.filter { $0.inputKind == .voice }.count,
                         chatStartedAt: self.selectedConversation?.createdAt,
@@ -747,13 +749,15 @@ final class ChatStore: ObservableObject {
                         }
                     }
                 }
-                // Последняя защита от обрывка. Раньше при неудачной склейке вызова
-                // инструмента в чате оставалась одна буква, и это уходило в историю.
-                // Теперь короткий огрызок перезапрашивается — без инструментов
-                // и без режима рассуждения, чтобы получить полный ответ быстро.
+                // Страховка от пустого ответа и обрывка.
+                // Раньше при пустом ответе приложение просто молчало: пользователь видел
+                // только строку рассуждения и пустоту под ней. Теперь в этом случае
+                // запрос автоматически повторяется без режима рассуждения, а если и он
+                // ничего не дал — выводится понятное сообщение и кнопка «Повторить».
                 let answerIsEmpty = rawContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 let answerIsFragment = Self.isTooShortToBeAnAnswer(rawContent)
-                if !answerIsEmpty, (answerIsFragment || finishReason == "insufficient_system_resource" || finishReason == "aborted") {
+                let serverAnomaly = finishReason == "insufficient_system_resource" || finishReason == "aborted"
+                if answerIsEmpty || answerIsFragment || serverAnomaly {
                     self.generationStatus = "Дописываю ответ…"
                     do {
                         var retryContent = ""
@@ -770,16 +774,25 @@ final class ChatStore: ObservableObject {
                         }
                         flush()
                         rawContent = retryContent
-                        // Первый проход закончился обрывком — его finish_reason
+                        // Первый проход закончился ничем — его finish_reason
                         // больше не относится к показанному ответу.
                         if !Self.isTooShortToBeAnAnswer(retryContent) { finishReason = nil }
                     } catch {
+                        // Отмену пробрасываем, а сетевую ошибку повторного запроса —
+                        // нет: ниже сработает проверка пустого ответа и пользователь
+                        // увидит сообщение вместо молчания.
                         if Task.isCancelled { throw CancellationError() }
                     }
                     self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = rawContent }
                 }
                 let final = self.conversations.first(where: { $0.id == chatID })?.messages.first(where: { $0.id == response.id })
                 guard !(final?.content.isEmpty ?? true) else { throw HonorError.emptyResponse }
+                guard !(final.map { Self.isTooShortToBeAnAnswer($0.content) } ?? false) else {
+                    self.mutateMessage(chatID: chatID, messageID: response.id) {
+                        $0.error = "Ответ пришёл обрывком. Нажмите «Повторить запрос»."
+                    }
+                    throw HonorError.emptyResponse
+                }
                 if finishReason == "length" {
                     self.mutateMessage(chatID: chatID, messageID: response.id) { $0.error = "Достигнута максимальная длина ответа. Попросите продолжить." }
                 } else if finishReason == "content_filter" {

@@ -39,6 +39,8 @@ struct ChatRootView: View {
     @State private var voiceHolding = false
     @State private var voiceCancelArmed = false
     @State private var voiceSessionID: UUID?
+    /// Сторож голосового ввода: снимает залипшее состояние записи.
+    @State private var voiceWatchdog: Task<Void, Never>?
     @State private var voiceOriginalDraft = ""
     @FocusState private var composerFocused: Bool
     @FocusState private var findFocused: Bool
@@ -609,9 +611,11 @@ struct ChatRootView: View {
                     }
                     .accessibilityLabel(text("Отправить", "Send"))
                     .accessibilityIdentifier("chat.send")
-                } else {
-                    voiceButton
                 }
+                // Кнопка голосового ввода показывается ВСЕГДА. Раньше она исчезала,
+                // когда черновик пуст или идёт генерация, и из голосового режима
+                // не оставалось ни одного способа выйти.
+                voiceButton
             }
             .buttonStyle(.plain)
         }
@@ -643,6 +647,12 @@ struct ChatRootView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(text(voiceMode ? "Клавиатура" : "Голосовой ввод", voiceMode ? "Keyboard" : "Voice input"))
         .accessibilityIdentifier("chat.voice")
+        .onChange(of: voiceMode) { active in
+            // Любое выключение голосового режима обязано остановить запись.
+            if !active, voiceHolding || speech.isRecording || speech.isPreparingRecording {
+                cancelVoice()
+            }
+        }
     }
 
     private func modePill(symbol: String, label: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -703,6 +713,8 @@ struct ChatRootView: View {
 
     private func beginVoice() {
         guard !voiceHolding, !speech.isFinalizingRecording, !store.isGenerating else { return }
+        // Страховка: если предыдущая запись осталась «висеть», начинаем с чистого состояния.
+        if !speech.isRecording { speech.cancelRecording() }
         let session = UUID()
         voiceSessionID = session
         voiceOriginalDraft = store.draft
@@ -716,9 +728,19 @@ struct ChatRootView: View {
             guard voiceSessionID == session else { return }
             if !speech.isRecording { voiceHolding = false; voiceSessionID = nil }
         }
+        // Сторож: если через 10 секунд запись так и не началась, но удержание
+        // считается активным, снимаем состояние сами. Раньше при потерянном событии
+        // «отпустил палец» приложение замирало в режиме записи навсегда.
+        voiceWatchdog?.cancel()
+        voiceWatchdog = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard !Task.isCancelled, voiceSessionID == session else { return }
+            if !speech.isRecording { cancelVoice() }
+        }
     }
 
     private func finishVoice() {
+        voiceWatchdog?.cancel(); voiceWatchdog = nil
         guard let session = voiceSessionID else { return }
         if voiceCancelArmed || speech.isPreparingRecording { cancelVoice(); return }
         animate { voiceHolding = false }
@@ -727,7 +749,11 @@ struct ChatRootView: View {
             guard voiceSessionID == session else { return }
             voiceSessionID = nil
             voiceCancelArmed = false
-            guard !transcript.isEmpty else { return }
+            guard !transcript.isEmpty else {
+                // Ничего не распознали — выходим из голосового режима, а не висим в нём.
+                voiceMode = false
+                return
+            }
             store.draft = voiceOriginalDraft.isEmpty ? transcript : voiceOriginalDraft + " " + transcript
             voiceMode = false
             send(inputKind: .voice)
@@ -735,6 +761,7 @@ struct ChatRootView: View {
     }
 
     private func cancelVoice() {
+        voiceWatchdog?.cancel(); voiceWatchdog = nil
         voiceSessionID = nil
         voiceHolding = false
         voiceCancelArmed = false
@@ -1331,7 +1358,7 @@ struct ChatInfoSheet: View {
                 Section("Устройство и приложение") {
                     LabeledContent("Модель iPhone", value: DeviceModel.name)
                     LabeledContent("Система", value: DeviceModel.systemDescription)
-                    LabeledContent("Приложение", value: "Honer AI 10.10")
+                    LabeledContent("Приложение", value: "Honer AI 10.11")
                     LabeledContent("Язык интерфейса", value: settings.language == .russian ? "Русский" : "English")
                     LabeledContent("Оформление", value: appearanceName)
                 }

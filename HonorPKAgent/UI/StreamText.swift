@@ -297,15 +297,23 @@ enum MarkdownBlockParser {
             // с разделителем «+» не рисовались вовсе — вместо них был сырой текст.
             if index + 1 < lines.count, let alignments = alignmentRow(lines[index + 1]),
                isTableHeader(trimmed) {
-                flushParagraph()
                 let headers = splitRow(trimmed)
                 var rows: [[String]] = []
-                index += 2
-                while index < lines.count, isTableRow(lines[index]) {
-                    let cells = splitRow(lines[index].trimmingCharacters(in: .whitespaces))
-                    if !cells.isEmpty, cells.contains(where: { !$0.isEmpty }) { rows.append(cells) }
-                    index += 1
+                var cursor = index + 2
+                while cursor < lines.count, isTableRow(lines[cursor]) {
+                    let cells = splitRow(lines[cursor].trimmingCharacters(in: .whitespaces))
+                    if cells.contains(where: { !$0.isEmpty }) { rows.append(cells) }
+                    cursor += 1
                 }
+                // Таблица без шапки и без строк — это не таблица, а мусорная разметка.
+                // Раньше она рисовала пустую панель с одним полем «Фильтр по строкам».
+                guard headers.contains(where: { !$0.isEmpty }), !rows.isEmpty else {
+                    buffer.append(line)
+                    index += 1
+                    continue
+                }
+                flushParagraph()
+                index = cursor
                 blocks.append(MarkdownBlockModel(id: blocks.count,
                                                  kind: .table(headers: headers, alignments: alignments, rows: rows),
                                                  text: ""))
@@ -734,8 +742,12 @@ private struct MarkdownBlockView: View {
             case .diagram(let source):
                 MermaidDiagramView(source: source, fontSize: fontSize)
             case .table(let headers, let alignments, let rows):
-                MarkdownTableView(headers: headers, alignments: alignments, rows: rows,
-                                  fontSize: fontSize, findQuery: findQuery)
+                // Пустая таблица не рисуется вовсе: иначе на экране остаётся
+                // одна панель фильтра без шапки и строк.
+                if !rows.isEmpty, headers.contains(where: { !$0.isEmpty }) {
+                    MarkdownTableView(headers: headers, alignments: alignments, rows: rows,
+                                      fontSize: fontSize, findQuery: findQuery)
+                }
             case .divider:
                 Rectangle().fill(HonorTheme.divider).frame(height: 1).padding(.vertical, 4)
             }
@@ -1822,12 +1834,12 @@ struct MarkdownTableView: View {
                         .accessibilityLabel("Итоги по столбцам")
                     }
                     Button { withAnimation(.easeInOut(duration: 0.18)) { compactMode.toggle() } } label: {
-                        Image(systemName: compactMode ? "rectangle.grid.1x2" : "tablecells")
+                        Image(systemName: compactMode ? "arrow.left.and.right" : "rectangle.grid.1x2")
                             .font(.system(size: 14))
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(HonorTheme.secondary)
-                    .accessibilityLabel(compactMode ? "Показать широкой таблицей" : "Показать карточками")
+                    .accessibilityLabel(compactMode ? "Показать широкой таблицей с прокруткой" : "Уместить таблицу в экран")
                     .accessibilityIdentifier("table.mode")
                 }
                 .padding(.horizontal, 10)
@@ -1837,7 +1849,9 @@ struct MarkdownTableView: View {
             }
 
             if compactMode && columnCount >= 2 {
-                compactTable
+                // Компактный режим — настоящая таблица по ширине экрана: шапка один раз,
+                // строки друг под другом, текст переносится внутри ячейки.
+                fitTable
             } else {
                 wideTable
             }
@@ -1919,37 +1933,111 @@ struct MarkdownTableView: View {
         }
     }
 
-    /// Компактный режим: одна строка таблицы — карточка «столбец: значение».
-    /// На узком экране телефона это единственный способ прочитать таблицу
-    /// из 3+ столбцов без горизонтальной возни.
-    private var compactTable: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(shownRows.enumerated()), id: \.offset) { index, cells in
-                VStack(alignment: .leading, spacing: 5) {
-                    if shownRows.count > 1 {
-                        Text("\(index + 1)")
-                            .font(.system(size: fontSize * 0.72, weight: .semibold))
-                            .foregroundStyle(HonorTheme.secondary)
-                    }
-                    ForEach(0..<columnCount, id: \.self) { column in
-                        if column < cells.count, !cells[column].isEmpty {
-                            VStack(alignment: .leading, spacing: 1) {
-                                if !headers.isEmpty, column < headers.count, !headers[column].isEmpty {
-                                    Text(headers[column])
-                                        .font(.system(size: fontSize * 0.74, weight: .semibold))
-                                        .foregroundStyle(HonorTheme.secondary)
-                                }
-                                cellText(cells[column])
-                            }
-                        }
+    /// Компактный режим: настоящая таблица, умещённая в ширину экрана.
+    /// Раньше здесь была карточка на каждую строку — «Модель … Год …» по одной ячейке
+    /// на экран, это и выглядело как «не таблица». Теперь шапка показывается один раз,
+    /// строки идут друг под другом, текст переносится внутри ячейки, а ширины столбцов
+    /// считаются по содержимому.
+    private var fitTable: some View {
+        let widths = compactWidths
+        return VStack(alignment: .leading, spacing: 0) {
+            if !headers.isEmpty {
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(0..<columnCount, id: \.self) { index in
+                        headerCell(index, width: widths[index])
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.6))
+                .background(HonorTheme.raised)
+                Rectangle().fill(HonorTheme.divider).frame(height: 1)
+            }
+            ForEach(Array(shownRows.enumerated()), id: \.offset) { index, cells in
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(0..<columnCount, id: \.self) { column in
+                        Group {
+                            if column < cells.count, !cells[column].isEmpty {
+                                cellText(cells[column])
+                                    .multilineTextAlignment(textAlignment(alignment(column)))
+                            } else {
+                                Text("—").font(.system(size: fontSize * 0.9))
+                                    .foregroundStyle(HonorTheme.secondary)
+                            }
+                        }
+                        .frame(width: widths[column], alignment: frameAlignment(alignment(column)))
+                        .padding(.horizontal, 6).padding(.vertical, 7)
+                    }
+                }
+                .background(index.isMultiple(of: 2) ? Color.clear : HonorTheme.raised.opacity(0.25))
+                if index < shownRows.count - 1 {
+                    Rectangle().fill(HonorTheme.divider.opacity(0.5)).frame(height: 0.5)
+                }
+            }
+            if showTotals && !numericColumns.isEmpty {
+                Rectangle().fill(HonorTheme.divider).frame(height: 1)
+                totalsRow
             }
         }
+        .background(HonorTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.6))
+    }
+
+    /// Ширины столбцов для компактного режима: суммарно ровно ширина экрана,
+    /// пропорционально средней длине текста в столбце.
+    private var compactWidths: [CGFloat] {
+        let usable = max(220, UIScreen.main.bounds.width - 44)
+        let spacing = CGFloat(columnCount) * 12
+        let available = max(160, usable - spacing)
+        var weights: [Double] = []
+        for column in 0..<columnCount {
+            var longest = headers.count > column ? Double(headers[column].count) : 0
+            var total = 0.0
+            var counted = 0.0
+            for row in shownRows where column < row.count {
+                longest = max(longest, Double(row[column].count))
+                total += Double(row[column].count)
+                counted += 1
+            }
+            let average = counted > 0 ? total / counted : 0
+            // Средняя длина важнее самой длинной строки: иначе один длинный текст
+            // забирает всю ширину у остальных столбцов.
+            weights.append(max(4, average * 0.65 + longest * 0.35))
+        }
+        let sum = weights.reduce(0, +)
+        guard sum > 0 else { return Array(repeating: available / CGFloat(max(1, columnCount)), count: columnCount) }
+        var widths = weights.map { CGFloat($0 / sum) * available }
+        // Никакой столбец не должен стать нечитаемым.
+        let minimum: CGFloat = columnCount <= 2 ? 92 : (columnCount == 3 ? 72 : 62)
+        for index in widths.indices where widths[index] < minimum { widths[index] = minimum }
+        let total = widths.reduce(0, +)
+        if total > available {
+            let scale = available / total
+            widths = widths.map { max(48, $0 * scale) }
+        }
+        return widths
+    }
+
+    /// Заголовок одного столбца в компактном режиме: тап сортирует.
+    private func headerCell(_ index: Int, width: CGFloat) -> some View {
+        Button {
+            if sortColumn == index { sortAscending.toggle() } else { sortColumn = index; sortAscending = true }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(index < headers.count ? headers[index] : "")
+                    .font(.system(size: fontSize * 0.9, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(textAlignment(alignment(index)))
+                if sortColumn == index {
+                    Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                }
+            }
+            .frame(width: width, alignment: frameAlignment(alignment(index)))
+            .padding(.horizontal, 6).padding(.vertical, 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(sortColumn == index ? HonorTheme.accent : HonorTheme.foreground)
+        .accessibilityLabel("Сортировать по столбцу")
     }
 
     /// Строки, которые реально показываются: длинная таблица сворачивается.

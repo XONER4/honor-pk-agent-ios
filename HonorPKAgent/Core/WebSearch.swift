@@ -72,18 +72,24 @@ struct WebSearchClient: WebSearching {
         let candidates = await (bing, duck)
         try Task.checkCancellation()
         var seen = Set<String>()
-        let ranked = (candidates.0 + candidates.1).filter {
-            SearchRelevance.score(source: $0, query: searchQuery) > 0 && seen.insert($0.url.absoluteString).inserted
+        let unique = (candidates.0 + candidates.1).filter { seen.insert($0.url.absoluteString).inserted }
+        var ranked = unique.filter {
+            SearchRelevance.score(source: $0, query: searchQuery) > 0
         }.sorted { SearchRelevance.score(source: $0, query: searchQuery) > SearchRelevance.score(source: $1, query: searchQuery) }
         if ranked.isEmpty {
-            guard let urlDiscovery else { throw HonorError.searchUnavailable }
-            let suggested = try await urlDiscovery.candidates(for: query)
-            try Task.checkCancellation()
-            let candidates = Array(suggested.prefix(3)).map { WebSource(title: $0.host ?? "Страница", url: $0, snippet: "Проверенная по прямой ссылке страница; не поисковая выдержка") }
-            let fetched = (await readPages(candidates, limit: 3, timeout: 8)).filter { $0.content != nil }
-            try Task.checkCancellation()
-            guard !fetched.isEmpty else { throw HonorError.searchUnavailable }
-            return fetched
+            // Ни одна выдача не прошла фильтр релевантности — лучше показать модели
+            // найденные страницы, чем соврать, что поиск ничего не дал.
+            ranked = unique.sorted { SearchRelevance.score(source: $0, query: searchQuery) > SearchRelevance.score(source: $1, query: searchQuery) }
+            if ranked.isEmpty {
+                guard let urlDiscovery else { throw HonorError.searchUnavailable }
+                let suggested = try await urlDiscovery.candidates(for: query)
+                try Task.checkCancellation()
+                let fallback = Array(suggested.prefix(3)).map { WebSource(title: $0.host ?? "Страница", url: $0, snippet: "Проверенная по прямой ссылке страница; не поисковая выдержка") }
+                let fetchedFallback = (await readPages(fallback, limit: 3, timeout: 8)).filter { $0.content != nil }
+                try Task.checkCancellation()
+                guard !fetchedFallback.isEmpty else { throw HonorError.searchUnavailable }
+                return fetchedFallback
+            }
         }
         let fetched = await readPages(Array(ranked.prefix(12)), limit: 5)
         try Task.checkCancellation()
@@ -191,9 +197,28 @@ struct DeepSeekURLDiscovery: SearchURLDiscovering {
 }
 
 enum SearchRelevance {
+    /// Служебные слова запроса. Поисковику нужна тема, а не просьба:
+    /// по запросу «Пох создай таблицу старых телефонов» возвращались страницы
+    /// про то, как сделать таблицу в Excel и PostgreSQL, — то есть про инструменты,
+    /// а не про телефоны.
+    private static let commandWords: Set<String> = [
+        "создай", "создать", "сделай", "сделать", "составь", "составить", "собери", "собрать",
+        "найди", "найти", "поищи", "пох", "покажи", "показать", "дай", "дайте",
+        "таблицу", "таблица", "таблицей", "список", "списком", "подборку", "подборка",
+        "лучших", "лучшие", "лучший", "топ", "мне", "нам", "пожалуйста", "нужно", "надо",
+        "можешь", "можете", "хочу", "хотел", "информацию", "информация", "данные", "данных"
+    ]
+
     static func compactQuery(_ query: String) -> String {
         let firstSentence = query.components(separatedBy: ". ").first ?? query
-        let stripped = firstSentence.replacingOccurrences(of: "(?i)^(?:please\\s+)?(?:find|search for|look up|найди|найдите|поищи|покажи|пожалуйста)[,: ]+", with: "", options: .regularExpression)
+        var stripped = firstSentence.replacingOccurrences(of: "(?i)^(?:please\\s+)?(?:find|search for|look up|найди|найдите|поищи|покажи|пожалуйста)[,: ]+", with: "", options: .regularExpression)
+        // Убираем слова-команды, но только если после этого в запросе что-то осталось.
+        let words = stripped.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        let kept = words.filter { word in
+            let clean = word.lowercased().trimmingCharacters(in: CharacterSet.punctuationCharacters)
+            return !commandWords.contains(clean)
+        }
+        if !kept.isEmpty, kept.count >= 1 { stripped = kept.joined(separator: " ") }
         return String(stripped.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
     }
 
@@ -205,7 +230,9 @@ enum SearchRelevance {
         let words = query.components(separatedBy: CharacterSet.letters.inverted).filter { $0.count >= 3 && !stops.contains($0) }
         guard !words.isEmpty else { return 1 }
         let hits = words.reduce(0) { $0 + (text.contains(String($1.prefix(5))) ? 1 : 0) }
-        guard hits > 0, Double(hits) / Double(words.count) >= 0.3 else { return 0 }
+        // Порог снижен с 0.3 до 0.2: из-за строгого фильтра результаты поиска
+        // отбрасывались целиком, и модель отвечала «поиск ничего не дал».
+        guard hits > 0, Double(hits) / Double(words.count) >= 0.2 else { return 0 }
         return hits * 10 + (source.url.host?.hasSuffix(".gov") == true ? 2 : 0)
     }
 }

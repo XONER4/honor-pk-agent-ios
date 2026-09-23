@@ -92,7 +92,7 @@ struct ToolCallResult: Sendable {
 struct ToolExecutionContext: Sendable {
     var deviceModel: String = "iPhone"
     var systemVersion: String = ""
-    var appVersion: String = "10.10"
+    var appVersion: String = "10.11"
     var currentDateTime: String = ""
     var messageCount: Int = 0
     var voiceMessageCount: Int = 0
