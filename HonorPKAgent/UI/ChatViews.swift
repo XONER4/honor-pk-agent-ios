@@ -1556,7 +1556,7 @@ struct ChatInfoSheet: View {
                 Section("Устройство и приложение") {
                     LabeledContent("Модель iPhone", value: DeviceModel.name)
                     LabeledContent("Система", value: DeviceModel.systemDescription)
-                    LabeledContent("Приложение", value: "Honer AI 10.16")
+                    LabeledContent("Приложение", value: "Honer AI 10.17")
                     LabeledContent("Язык интерфейса", value: settings.language == .russian ? "Русский" : "English")
                     LabeledContent("Оформление", value: appearanceName)
                 }

@@ -316,6 +316,33 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertTrue(RussianTextPolicy.isAcceptableTranslation("Ок.", source: "Hi"))
     }
 
+    func testToolsRequireReasoningContentToBeSentBack() throws {
+        // Документация DeepSeek: при наличии параметра tools reasoning_content
+        // предыдущих ответов обязан возвращаться в API, иначе сервис отвечает
+        // ошибкой 400 — это и выглядело как «запрос не работает».
+        let client = DeepSeekClient(configuration: .init(apiKey: "test"))
+        var assistant = ChatMessage(role: .assistant, content: "Готовый ответ.")
+        assistant.reasoning = "Ход мысли."
+        let messages = [ChatMessage(role: .user, content: "Вопрос"), assistant]
+
+        func systemPayload(_ tools: [[String: Any]]?) throws -> [[String: Any]] {
+            let request = try client.makeRequest(messages: messages, thinking: true,
+                                                 systemInstruction: "", searchContext: "", tools: tools)
+            let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+            return try XCTUnwrap(body["messages"] as? [[String: Any]])
+        }
+
+        let withTools = try systemPayload(HonerTool.apiSchemas)
+        let assistantWithTools = try XCTUnwrap(withTools.last)
+        XCTAssertEqual(assistantWithTools["reasoning_content"] as? String, "Ход мысли.",
+                       "С инструментами reasoning_content обязан уходить в API")
+
+        let withoutTools = try systemPayload(nil)
+        let assistantWithoutTools = try XCTUnwrap(withoutTools.last)
+        XCTAssertNil(assistantWithoutTools["reasoning_content"],
+                     "Без инструментов reasoning_content не нужен")
+    }
+
     private func historyURL() -> URL { FileManager.default.temporaryDirectory.appendingPathComponent("Honer10-\(UUID()).json") }
 }
 

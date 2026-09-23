@@ -992,7 +992,7 @@ final class ChatStore: ObservableObject {
         return ToolExecutionContext(
             deviceModel: DeviceModel.name,
             systemVersion: UIDevice.current.systemVersion,
-            appVersion: "10.16",
+            appVersion: "10.17",
             messageCount: messages.count,
             voiceMessageCount: messages.filter { $0.inputKind == .voice }.count,
             chatStartedAt: selectedConversation?.createdAt,
