@@ -653,10 +653,11 @@ final class ChatStore: ObservableObject {
                         pendingContent += delta.content
                         pendingReasoning += delta.reasoning
                         finishReason = delta.finishReason ?? finishReason
-                        // Публикуем текст ровно столько раз, сколько нужно для плавного
-                        // показа: не реже 30 раз в секунду, но и не на каждый байт.
-                        let published = Date().timeIntervalSince(lastPublished)
-                        if pendingContent.count + pendingReasoning.count >= 12 || published >= 1.0 / 30.0 { flush() }
+                        // Публикуем каждый кусок, который пришёл от сервиса. Раньше здесь
+                        // ждали накопления 12 символов, и при мелких кусках текст не появлялся
+                        // по ходу ответа — пользователь видел пустое место до самого конца.
+                        // Плавность обеспечивает аниматор вывода, а не задержка публикации.
+                        flush()
                         if Date().timeIntervalSince(lastSaved) >= 1.5 { self.saveSnapshot(); lastSaved = Date() }
                     }
                     flush()
@@ -709,8 +710,8 @@ final class ChatStore: ObservableObject {
                             pendingContent += delta.content
                             pendingReasoning += delta.reasoning
                             finishReason = delta.finishReason ?? finishReason
-                            let published = Date().timeIntervalSince(lastPublished)
-                            if pendingContent.count + pendingReasoning.count >= 12 || published >= 1.0 / 30.0 { flush() }
+                            // Каждый кусок публикуем сразу: см. пояснение в основном цикле.
+                            flush()
                         }
                         flush()
                     } catch {
