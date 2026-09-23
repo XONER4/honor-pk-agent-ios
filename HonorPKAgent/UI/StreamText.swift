@@ -1535,11 +1535,12 @@ struct CodeBlockView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(visibleText.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
                     let trimmed = line.trimmingCharacters(in: .whitespaces)
-                    Text(SyntaxHighlighter.highlight(line.isEmpty ? " " : line,
-                                                     language: language,
-                                                     theme: SyntaxHighlighter.Theme.named(useLightTheme ? "light" : "dark"),
-                                                     fontSize: fontSize))
-                        .font(.system(size: fontSize * 0.82, design: .monospaced))
+                    // highlight возвращает Text — его нужно складывать, а не оборачивать в Text(...)
+                    (SyntaxHighlighter.highlight(line.isEmpty ? " " : line,
+                                                 language: language,
+                                                 theme: SyntaxHighlighter.Theme.named(useLightTheme ? "light" : "dark"),
+                                                 fontSize: fontSize)
+                        .font(.system(size: fontSize * 0.82, design: .monospaced)))
                         .textSelection(.enabled)
                         .padding(.horizontal, 6)
                         .frame(maxWidth: .infinity, alignment: .leading)

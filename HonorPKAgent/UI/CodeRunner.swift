@@ -107,7 +107,9 @@ enum CodeRunner {
         }
         if value.isString { return value.toString() ?? "" }
         if value.isArray {
-            let items = (0..<value.forProperty("length")?.toInt() ?? 0).map { index -> String in
+            // У JSValue нет toInt: длину берём через toNumber().
+            let count = Int(value.forProperty("length")?.toNumber().int32Value ?? 0)
+            let items = (0..<max(0, count)).map { index -> String in
                 guard let item = value.atIndex(index) else { return "undefined" }
                 return describe(item)
             }
