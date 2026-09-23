@@ -137,28 +137,28 @@ enum MarkdownBlockParser {
             if trimmed.hasPrefix("```") {
                 flushParagraph()
                 let language = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                var body: [String] = []
+                var codeLines: [String] = []
                 index += 1
                 while index < lines.count,
                       !lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                    body.append(lines[index])
+                    codeLines.append(lines[index])
                     index += 1
                 }
                 if index < lines.count { index += 1 }   // закрывающий ```
-                let body = body.joined(separator: "\n")
+                let blockBody = codeLines.joined(separator: "\n")
                 // Кастомные блоки из ТЗ: ```copy — фрагмент с кнопкой копирования,
                 // ```card:info|warn|success|error — цветная карточка.
                 let marker = language.lowercased()
                 if marker == "copy" {
-                    blocks.append(MarkdownBlockModel(id: blocks.count, kind: .copyBlock, text: body))
+                    blocks.append(MarkdownBlockModel(id: blocks.count, kind: .copyBlock, text: blockBody))
                 } else if marker.hasPrefix("card") {
                     let style = marker.contains(":")
                         ? String(marker.split(separator: ":").last ?? "info")
                         : "info"
                     blocks.append(MarkdownBlockModel(id: blocks.count,
-                                                     kind: .card(style: style, title: ""), text: body))
+                                                     kind: .card(style: style, title: ""), text: blockBody))
                 } else {
-                    blocks.append(MarkdownBlockModel(id: blocks.count, kind: .code(language: language), text: body))
+                    blocks.append(MarkdownBlockModel(id: blocks.count, kind: .code(language: language), text: blockBody))
                 }
                 continue
             }
