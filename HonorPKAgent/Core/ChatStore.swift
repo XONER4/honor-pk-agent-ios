@@ -871,7 +871,7 @@ final class ChatStore: ObservableObject {
                 // запрос автоматически повторяется без режима рассуждения, а если и он
                 // ничего не дал — выводится понятное сообщение и кнопка «Повторить».
                 let answerIsEmpty = rawContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                let answerIsFragment = Self.isTooShortToBeAnAnswer(rawContent)
+                let answerIsFragment = Self.needsAnswerRecovery(rawContent)
                 let serverAnomaly = finishReason == "insufficient_system_resource" || finishReason == "aborted"
                 if answerIsEmpty || answerIsFragment || serverAnomaly {
                     self.generationStatus = "Дописываю ответ…"
@@ -893,7 +893,7 @@ final class ChatStore: ObservableObject {
                     } catch {
                         if Task.isCancelled { throw CancellationError() }
                     }
-                    if Self.isTooShortToBeAnAnswer(retryContent) {
+                    if Self.needsAnswerRecovery(retryContent) {
                         do {
                             var streamed = ""
                             for try await delta in client.stream(messages: input, thinking: false,
@@ -918,8 +918,8 @@ final class ChatStore: ObservableObject {
                     // Показываем повтор только если он что-то дал. Иначе сохраняем то,
                     // что уже было: раньше неудачный повтор стирал полный ответ,
                     // который пользователь уже видел.
-                    let retryIsAnswer = !Self.isTooShortToBeAnAnswer(retryContent)
-                    if retryIsAnswer || Self.isTooShortToBeAnAnswer(rawContent) {
+                    let retryIsAnswer = !Self.needsAnswerRecovery(retryContent)
+                    if retryIsAnswer || Self.needsAnswerRecovery(rawContent) {
                         rawContent = retryContent
                         self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = rawContent }
                     }
@@ -1159,6 +1159,25 @@ final class ChatStore: ObservableObject {
     /// Ответ короче этого порога — обрывок, а не ответ.
     static func isTooShortToBeAnAnswer(_ text: String) -> Bool {
         RussianTextPolicy.isTooShortToBeAnAnswer(text)
+    }
+
+    /// Модель вместо ответа объявляет о намерении: «Сначала найду чаты, затем открою нужный»,
+    /// «Без вызова инструмента не могу». Живой тест показал, что такой текст приходит вместо
+    /// результата, и пользователь не получает ответа. Такой ответ считаем незавершённым.
+    static func isToolAnnouncement(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count < 300 else { return false }
+        let lowered = trimmed.lowercased()
+        let markers = ["сначала найду", "сначала проверю", "сейчас найду", "сейчас прочитаю",
+                       "затем открою", "затем прочитаю", "сейчас вызову", "вызову инструмент",
+                       "без вызова инструмента", "let me check", "let me look",
+                       "i will call", "let me read", "i'll check"]
+        return markers.contains { lowered.contains($0) }
+    }
+
+    /// Нужен ли повтор: ответ пуст, оборван или это объявление о действии без самого ответа.
+    static func needsAnswerRecovery(_ text: String) -> Bool {
+        isTooShortToBeAnAnswer(text) || isToolAnnouncement(text)
     }
 
     private func mutateMessage(chatID: UUID, messageID: UUID, update: (inout ChatMessage) -> Void) {
