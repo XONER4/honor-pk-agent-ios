@@ -1,0 +1,5385 @@
+{
+  "schemaVersion": 2,
+  "generatedAtUtc": "2026-09-23T01:21:06.415447+00:00",
+  "product": "Honer AI 10.0",
+  "methodology": {
+    "uniqueKey": "target/suite/method",
+    "latestStatus": "Last completed observation in the chronological run list; repeated executions do not create new unique tests.",
+    "observationSources": "Only explicit XCTest Test Case finished lines in listed logs. Run status is retrieved independently with gh run list.",
+    "important": "Latest pass per unique test is not a claim that all tests passed in one run or against the same commit.",
+    "nonUITargetIncludesLiveIntegration": true,
+    "optionalLogs": "Final iPhone 13 and device layout logs are parsed only when their files exist; only completed Test Case lines create observations.",
+    "layoutCounting": "Mini/Pro device repetitions are stored separately; their six planned executions do not add unique iPhone 13 scenarios.",
+    "sourceFilesChanged": false
+  },
+  "runs": [
+    {
+      "label": "tutorial",
+      "runId": 35802547313,
+      "url": "https://github.com/XONER4/honor-pk-agent-ios/actions/runs/35802547313",
+      "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+      "status": "completed",
+      "conclusion": "success",
+      "createdAt": "2026-09-23T00:33:00Z",
+      "logPath": "work/honer10-ci-2/build-tests.log",
+      "simulatorDestinations": [
+        {
+          "architecture": "arm64",
+          "udid": "6F0F0D3E-7907-448A-B587-F4144080F300",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 11
+        },
+        {
+          "architecture": "x86_64",
+          "udid": "6F0F0D3E-7907-448A-B587-F4144080F300",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 12
+        }
+      ],
+      "testCounts": {
+        "HonorPKAgentTests": {
+          "unique": 0
+        },
+        "HonorPKAgentUITests": {
+          "unique": 1,
+          "passed": 1
+        }
+      },
+      "testResultObservationCount": 1
+    },
+    {
+      "label": "full",
+      "runId": 35802547812,
+      "url": "https://github.com/XONER4/honor-pk-agent-ios/actions/runs/35802547812",
+      "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+      "status": "completed",
+      "conclusion": "failure",
+      "createdAt": "2026-09-23T00:33:00Z",
+      "logPath": "work/honer10-full-logs/build-tests.log",
+      "simulatorDestinations": [
+        {
+          "architecture": "arm64",
+          "udid": "DD3C31A9-7A7B-43A0-BFAB-1AF5EBAE5900",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 11
+        },
+        {
+          "architecture": "x86_64",
+          "udid": "DD3C31A9-7A7B-43A0-BFAB-1AF5EBAE5900",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 12
+        }
+      ],
+      "testCounts": {
+        "HonorPKAgentTests": {
+          "unique": 64,
+          "passed": 64
+        },
+        "HonorPKAgentUITests": {
+          "unique": 25,
+          "failed": 8,
+          "passed": 17
+        }
+      },
+      "testResultObservationCount": 89
+    },
+    {
+      "label": "audit1",
+      "runId": 35803289779,
+      "url": "https://github.com/XONER4/honor-pk-agent-ios/actions/runs/35803289779",
+      "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+      "status": "completed",
+      "conclusion": "failure",
+      "createdAt": "2026-09-23T00:43:27Z",
+      "logPath": "work/honer10-audit1-logs/build-tests.log",
+      "simulatorDestinations": [
+        {
+          "architecture": "arm64",
+          "udid": "297AAF14-3DDA-4669-BDD6-81CB23C9CD1B",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 11
+        },
+        {
+          "architecture": "x86_64",
+          "udid": "297AAF14-3DDA-4669-BDD6-81CB23C9CD1B",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 12
+        }
+      ],
+      "testCounts": {
+        "HonorPKAgentTests": {
+          "unique": 64,
+          "passed": 64
+        },
+        "HonorPKAgentUITests": {
+          "unique": 14,
+          "failed": 6,
+          "passed": 8
+        }
+      },
+      "testResultObservationCount": 78
+    },
+    {
+      "label": "repair",
+      "runId": 35803866790,
+      "url": "https://github.com/XONER4/honor-pk-agent-ios/actions/runs/35803866790",
+      "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+      "status": "completed",
+      "conclusion": "failure",
+      "createdAt": "2026-09-23T00:51:39Z",
+      "logPath": "work/honer10-repair-logs/build-tests.log",
+      "simulatorDestinations": [
+        {
+          "architecture": "arm64",
+          "udid": "DF786A4D-50E1-4BBD-9C8C-CCAEC30A62B5",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 11
+        },
+        {
+          "architecture": "x86_64",
+          "udid": "DF786A4D-50E1-4BBD-9C8C-CCAEC30A62B5",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 12
+        }
+      ],
+      "testCounts": {
+        "HonorPKAgentTests": {
+          "unique": 64,
+          "passed": 64
+        },
+        "HonorPKAgentUITests": {
+          "unique": 14,
+          "failed": 1,
+          "passed": 13
+        }
+      },
+      "testResultObservationCount": 78
+    },
+    {
+      "label": "release",
+      "runId": 35804257124,
+      "url": "https://github.com/XONER4/honor-pk-agent-ios/actions/runs/35804257124",
+      "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+      "status": "completed",
+      "conclusion": "success",
+      "createdAt": "2026-09-23T00:57:14Z",
+      "logPath": "work/honer10-release-logs/build-tests.log",
+      "simulatorDestinations": [
+        {
+          "architecture": "arm64",
+          "udid": "9511E67C-E952-4ECA-85D1-0FAB5A57EB87",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 11
+        },
+        {
+          "architecture": "x86_64",
+          "udid": "9511E67C-E952-4ECA-85D1-0FAB5A57EB87",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 12
+        }
+      ],
+      "testCounts": {
+        "HonorPKAgentTests": {
+          "unique": 64,
+          "passed": 64
+        },
+        "HonorPKAgentUITests": {
+          "unique": 0
+        }
+      },
+      "testResultObservationCount": 64
+    },
+    {
+      "label": "finish",
+      "runId": 35804802762,
+      "url": "https://github.com/XONER4/honor-pk-agent-ios/actions/runs/35804802762",
+      "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+      "status": "completed",
+      "conclusion": "success",
+      "createdAt": "2026-09-23T01:04:49Z",
+      "logPath": "work/honer10-finish-logs/build-tests.log",
+      "simulatorDestinations": [
+        {
+          "architecture": "arm64",
+          "udid": "8301A175-DF93-41A1-A468-22269D98A7FF",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 11
+        },
+        {
+          "architecture": "x86_64",
+          "udid": "8301A175-DF93-41A1-A468-22269D98A7FF",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 12
+        }
+      ],
+      "testCounts": {
+        "HonorPKAgentTests": {
+          "unique": 0
+        },
+        "HonorPKAgentUITests": {
+          "unique": 2,
+          "passed": 2
+        }
+      },
+      "testResultObservationCount": 2
+    },
+    {
+      "label": "archive-polish",
+      "runId": 35805606421,
+      "url": "https://github.com/XONER4/honor-pk-agent-ios/actions/runs/35805606421",
+      "headSha": "9127dbe93c48d6fb4c06af12a8d6cf8616e85520",
+      "status": "completed",
+      "conclusion": "success",
+      "createdAt": "2026-09-23T01:16:19Z",
+      "logPath": "work/honer10-archive-polish-logs/build-tests.log",
+      "simulatorDestinations": [
+        {
+          "architecture": "arm64",
+          "udid": "AEC7942C-379A-4817-A95D-730DA5CA6575",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 11
+        },
+        {
+          "architecture": "x86_64",
+          "udid": "AEC7942C-379A-4817-A95D-730DA5CA6575",
+          "ios": "26.2",
+          "device": "Honor iPhone 13",
+          "logLine": 12
+        }
+      ],
+      "testCounts": {
+        "HonorPKAgentTests": {
+          "unique": 0
+        },
+        "HonorPKAgentUITests": {
+          "unique": 1,
+          "passed": 1
+        }
+      },
+      "testResultObservationCount": 1
+    }
+  ],
+  "summary": {
+    "totalUniqueTests": 91,
+    "targets": {
+      "HonorPKAgentTests": {
+        "uniqueTests": 64,
+        "latestStatusCounts": {
+          "passed": 64
+        },
+        "everPassed": 64,
+        "uniqueTestsBySuite": {
+          "AppSettingsTests": 1,
+          "AttachmentTests": 13,
+          "CompatibilityTests": 2,
+          "Honer10CoreTests": 12,
+          "HonorPKAgentTests": 25,
+          "LiveIntegrationTests": 5,
+          "SpeechTests": 6
+        }
+      },
+      "HonorPKAgentUITests": {
+        "uniqueTests": 27,
+        "latestStatusCounts": {
+          "passed": 27
+        },
+        "everPassed": 27,
+        "uniqueTestsBySuite": {
+          "ChatToolsTests": 5,
+          "FeatureAuditTests": 6,
+          "InterfaceTests": 3,
+          "LiveFeatureTests": 2,
+          "OnboardingTests": 1,
+          "PersonalizationTutorialTests": 1,
+          "SettingsAuditTests": 5,
+          "StabilityAuditTests": 4
+        }
+      }
+    },
+    "layouts": {
+      "plannedDeviceScenarios": 6,
+      "observedUniqueDeviceScenarios": 6,
+      "latestExpectedScenarioStatusCounts": {
+        "passed": 6
+      },
+      "allPlannedPassed": true
+    }
+  },
+  "tests": [
+    {
+      "id": "HonorPKAgentTests/AppSettingsTests/testSystemAppearanceUsesDarkAndOnboardingSurvivesRelaunch",
+      "target": "HonorPKAgentTests",
+      "suite": "AppSettingsTests",
+      "method": "testSystemAppearanceUsesDarkAndOnboardingSurvivesRelaunch",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.006,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 800
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.008,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 807
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.008,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 803
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.006,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 809
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.006,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 809
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/AttachmentTests/testAlreadyCancelledImportDoesNotReturnAnAttachment",
+      "target": "HonorPKAgentTests",
+      "suite": "AttachmentTests",
+      "method": "testAlreadyCancelledImportDoesNotReturnAnAttachment",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.005,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 805
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.006,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 812
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.007,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 808
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.006,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 814
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.006,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 814
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/AttachmentTests/testCancelledVideoImportDoesNotProduceAttachment",
+      "target": "HonorPKAgentTests",
+      "suite": "AttachmentTests",
+      "method": "testCancelledVideoImportDoesNotProduceAttachment",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.136,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 808
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.186,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 815
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.177,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 811
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.145,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 817
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.145,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 817
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/AttachmentTests/testImageImportNormalizesToJPEGAndLimitsPixelDimensions",
+      "target": "HonorPKAgentTests",
+      "suite": "AttachmentTests",
+      "method": "testImageImportNormalizesToJPEGAndLimitsPixelDimensions",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 1.551,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 815
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 1.752,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 822
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 1.549,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 818
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 2.164,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 824
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 2.164,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 824
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/AttachmentTests/testInvalidImageAndEmptyTextReturnUsefulFailures",
+      "target": "HonorPKAgentTests",
+      "suite": "AttachmentTests",
+      "method": "testInvalidImageAndEmptyTextReturnUsefulFailures",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 818
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 825
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 821
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 827
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.004,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 827
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/AttachmentTests/testLongTextIsRejectedWithoutSilentlyTruncatingIt",
+      "target": "HonorPKAgentTests",
+      "suite": "AttachmentTests",
+      "method": "testLongTextIsRejectedWithoutSilentlyTruncatingIt",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 820
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 827
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 823
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 829
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.004,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 829
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/AttachmentTests/testOversizedFileFailsBeforeReadingSparsePayload",
+      "target": "HonorPKAgentTests",
+      "suite": "AttachmentTests",
+      "method": "testOversizedFileFailsBeforeReadingSparsePayload",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.007,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 822
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 829
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 825
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 831
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.003,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 831
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/AttachmentTests/testPDFImportExtractsTextFromEveryPageAndKeepsOriginalPDF",
+      "target": "HonorPKAgentTests",
+      "suite": "AttachmentTests",
+      "method": "testPDFImportExtractsTextFromEveryPageAndKeepsOriginalPDF",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.02,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 824
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.021,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 831
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.013,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 827
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.026,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 833
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.026,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 833
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/AttachmentTests/testTextImportPreservesUnicodeAndSurvivesSourceRemoval",
+      "target": "HonorPKAgentTests",
+      "suite": "AttachmentTests",
+      "method": "testTextImportPreservesUnicodeAndSurvivesSourceRemoval",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 826
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.008,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 833
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 829
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.007,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 835
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.007,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 835
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/AttachmentTests/testUTF16TextFileDecodesWithoutCorruptingCyrillic",
+      "target": "HonorPKAgentTests",
+      "suite": "AttachmentTests",
+      "method": "testUTF16TextFileDecodesWithoutCorruptingCyrillic",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 830
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 837
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 833
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 839
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.004,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 839
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/AttachmentTests/testUnsupportedFileDoesNotBecomeTextAttachment",
+      "target": "HonorPKAgentTests",
+      "suite": "AttachmentTests",
+      "method": "testUnsupportedFileDoesNotBecomeTextAttachment",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 828
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 835
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 831
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 837
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.002,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 837
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/AttachmentTests/testVideoDurationLimitRejectsLongPlayableAsset",
+      "target": "HonorPKAgentTests",
+      "suite": "AttachmentTests",
+      "method": "testVideoDurationLimitRejectsLongPlayableAsset",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.114,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 832
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.051,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 839
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.022,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 835
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.043,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 841
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.043,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 841
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/AttachmentTests/testVideoImportPreservesPlayableOriginalAndSamplesRealFrames",
+      "target": "HonorPKAgentTests",
+      "suite": "AttachmentTests",
+      "method": "testVideoImportPreservesPlayableOriginalAndSamplesRealFrames",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.115,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 838
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.183,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 845
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.087,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 841
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.114,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 847
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.114,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 847
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/AttachmentTests/testVideoSizeLimitRejectsSparseFileBeforeDecoding",
+      "target": "HonorPKAgentTests",
+      "suite": "AttachmentTests",
+      "method": "testVideoSizeLimitRejectsSparseFileBeforeDecoding",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 840
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.014,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 847
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 843
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 849
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.001,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 849
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/CompatibilityTests/testSupportedIPhoneFamilies",
+      "target": "HonorPKAgentTests",
+      "suite": "CompatibilityTests",
+      "method": "testSupportedIPhoneFamilies",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 845
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 852
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 848
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 854
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.001,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 854
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/CompatibilityTests/testUnsupportedDevicesAreExcluded",
+      "target": "HonorPKAgentTests",
+      "suite": "CompatibilityTests",
+      "method": "testUnsupportedDevicesAreExcluded",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 847
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 854
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.0,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 850
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 856
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.001,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 856
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/Honer10CoreTests/testArchiveRestoreAndReloadNeverSelectArchivedConversation",
+      "target": "HonorPKAgentTests",
+      "suite": "Honer10CoreTests",
+      "method": "testArchiveRestoreAndReloadNeverSelectArchivedConversation",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.024,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 852
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.028,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 859
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.022,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 855
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.024,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 861
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.024,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 861
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/Honer10CoreTests/testAsyncHistoryLoadRecoversDataWithoutAllowingEarlySend",
+      "target": "HonorPKAgentTests",
+      "suite": "Honer10CoreTests",
+      "method": "testAsyncHistoryLoadRecoversDataWithoutAllowingEarlySend",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.013,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 854
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.014,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 861
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.012,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 857
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.013,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 863
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.013,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 863
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/Honer10CoreTests/testBriefPersonalizationAddsConcreteAnswerLengthRule",
+      "target": "HonorPKAgentTests",
+      "suite": "Honer10CoreTests",
+      "method": "testBriefPersonalizationAddsConcreteAnswerLengthRule",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.008,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 856
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.009,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 863
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.007,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 859
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.007,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 865
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.007,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 865
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/Honer10CoreTests/testDuckDuckGoResultsDecodeLinksAndSnippets",
+      "target": "HonorPKAgentTests",
+      "suite": "Honer10CoreTests",
+      "method": "testDuckDuckGoResultsDecodeLinksAndSnippets",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 858
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 865
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 861
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 867
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.002,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 867
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/Honer10CoreTests/testExplicitWeatherQueryFetchesEvenWhenSearchToggleIsOff",
+      "target": "HonorPKAgentTests",
+      "suite": "Honer10CoreTests",
+      "method": "testExplicitWeatherQueryFetchesEvenWhenSearchToggleIsOff",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.028,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 860
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.041,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 867
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.037,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 863
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.04,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 869
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.04,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 869
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/Honer10CoreTests/testPageExtractionAndSearchRelevanceRejectBingQuizNoise",
+      "target": "HonorPKAgentTests",
+      "suite": "Honer10CoreTests",
+      "method": "testPageExtractionAndSearchRelevanceRejectBingQuizNoise",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 862
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 869
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 865
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 871
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.004,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 871
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/Honer10CoreTests/testProfileIsIncludedAsDataAndForeignReasoningIsNormalized",
+      "target": "HonorPKAgentTests",
+      "suite": "Honer10CoreTests",
+      "method": "testProfileIsIncludedAsDataAndForeignReasoningIsNormalized",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.012,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 864
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.014,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 871
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.013,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 867
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.013,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 873
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.013,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 873
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/Honer10CoreTests/testRussianIdentityIsFixedForForeignQuestionsAndLongPCContextIsSelective",
+      "target": "HonorPKAgentTests",
+      "suite": "Honer10CoreTests",
+      "method": "testRussianIdentityIsFixedForForeignQuestionsAndLongPCContextIsSelective",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 866
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 873
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 869
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 875
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.003,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 875
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/Honer10CoreTests/testRussianPolicyAllowsCodeAndNamesButDetectsEnglishAndChineseProse",
+      "target": "HonorPKAgentTests",
+      "suite": "Honer10CoreTests",
+      "method": "testRussianPolicyAllowsCodeAndNamesButDetectsEnglishAndChineseProse",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.0,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 868
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 875
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 871
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 877
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.001,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 877
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/Honer10CoreTests/testUnavailableSearchUsesOnlyActuallyReadDiscoveredPages",
+      "target": "HonorPKAgentTests",
+      "suite": "Honer10CoreTests",
+      "method": "testUnavailableSearchUsesOnlyActuallyReadDiscoveredPages",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.013,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 870
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.02,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 877
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.012,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 873
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.006,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 879
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.006,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 879
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/Honer10CoreTests/testVideoUsesFramesOnlyAndBackupRestoresFramesAndSharedCleanup",
+      "target": "HonorPKAgentTests",
+      "suite": "Honer10CoreTests",
+      "method": "testVideoUsesFramesOnlyAndBackupRestoresFramesAndSharedCleanup",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.014,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 872
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.017,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 879
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.023,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 875
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.012,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 881
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.012,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 881
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/Honer10CoreTests/testWeatherIntentAndRussianWeatherDataUseCorrectCityDatesAndUnits",
+      "target": "HonorPKAgentTests",
+      "suite": "Honer10CoreTests",
+      "method": "testWeatherIntentAndRussianWeatherDataUseCorrectCityDatesAndUnits",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.007,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 874
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.007,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 881
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.006,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 877
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.006,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 883
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.006,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 883
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testAsyncArchiveRoundTripRestoresMemoryWithoutDuplicates",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testAsyncArchiveRoundTripRestoresMemoryWithoutDuplicates",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.005,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 879
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.006,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 886
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.01,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 882
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.009,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 888
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.009,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 888
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testDeletingSourceKeepsSharedBranchPhotoUntilLastReferenceDeleted",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testDeletingSourceKeepsSharedBranchPhotoUntilLastReferenceDeleted",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 881
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 888
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 884
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.005,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 890
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.005,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 890
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testDraftRemovalAndNewChatCleanOrphansButPreserveEditedAndBranchedFiles",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testDraftRemovalAndNewChatCleanOrphansButPreserveEditedAndBranchedFiles",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 883
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 890
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 886
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 892
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.004,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 892
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testEditIsNonDestructiveUntilSendAndReplacesFollowingTurns",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testEditIsNonDestructiveUntilSendAndReplacesFollowingTurns",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.013,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 885
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.013,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 892
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.013,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 888
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.015,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 894
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.015,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 894
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testExplicitMemoryIsValidatedEditablePersistentAndPreservedWhenChatsCleared",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testExplicitMemoryIsValidatedEditablePersistentAndPreservedWhenChatsCleared",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.007,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 887
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 894
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 890
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.007,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 896
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.007,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 896
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testForkPreservesSourceAndCopiesOnlyThroughSelectedMessageWithFreshIDs",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testForkPreservesSourceAndCopiesOnlyThroughSelectedMessageWithFreshIDs",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 889
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 896
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 892
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 898
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.002,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 898
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testImportMarksExportedInFlightAnswerInterrupted",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testImportMarksExportedInFlightAnswerInterrupted",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 891
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 898
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 894
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 900
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.002,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 900
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testImportNeverFollowsExternalLocalPaths",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testImportNeverFollowsExternalLocalPaths",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 893
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 900
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 896
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 902
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.002,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 902
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testLegacyArchiveLoadsWithoutMemoryOrBranchMetadata",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testLegacyArchiveLoadsWithoutMemoryOrBranchMetadata",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 895
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 902
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 898
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 904
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.001,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 904
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testMemoryToggleControlsRealRequestInstructionsAndDoesNotExtractReplies",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testMemoryToggleControlsRealRequestInstructionsAndDoesNotExtractReplies",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.023,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 897
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.026,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 904
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.025,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 900
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.027,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 906
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.027,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 906
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testMissingKeyPreservesDraftWithoutCreatingConversation",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testMissingKeyPreservesDraftWithoutCreatingConversation",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 899
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 906
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 902
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 908
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.003,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 908
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testOverCapacityMemoryImportLeavesExistingChatsAndMemoriesUntouched",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testOverCapacityMemoryImportLeavesExistingChatsAndMemoriesUntouched",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 901
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 908
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 904
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 910
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.004,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 910
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testRelaunchMarksPartiallySavedStreamInterrupted",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testRelaunchMarksPartiallySavedStreamInterrupted",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 903
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 910
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 906
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 912
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.003,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 912
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testRequestSendsImageBytesAndDocumentText",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testRequestSendsImageBytesAndDocumentText",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 905
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 912
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 908
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 914
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.004,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 914
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testRequestUsesCurrentModelThinkingAndDoesNotReplayReasoning",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testRequestUsesCurrentModelThinkingAndDoesNotReplayReasoning",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 907
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 914
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 910
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 916
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.002,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 916
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testSSEDecoderAcceptsBOMAndCarriageReturnOnlyFrames",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testSSEDecoderAcceptsBOMAndCarriageReturnOnlyFrames",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.0,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 913
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 920
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 916
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 922
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.001,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 922
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testSSEDecoderFlushesLastEventAtEOF",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testSSEDecoderFlushesLastEventAtEOF",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 915
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 922
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 918
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.003,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 924
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.003,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 924
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testSSEDecoderHandlesSplitUTF8CRLFMultilineAndComments",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testSSEDecoderHandlesSplitUTF8CRLFMultilineAndComments",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.005,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 917
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.004,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 924
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.005,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 920
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.015,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 926
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.015,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 926
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testSearchFailureDoesNotGenerateFabricatedAnswer",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testSearchFailureDoesNotGenerateFabricatedAnswer",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.012,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 909
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.016,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 916
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.025,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 912
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.017,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 918
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.017,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 918
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testSearchParserFiltersUnsafeURLsAndDeduplicates",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testSearchParserFiltersUnsafeURLsAndDeduplicates",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 911
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 918
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 914
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 920
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.001,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 920
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testStopAndNewChatCannotReceiveOldStreamTokens",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testStopAndNewChatCannotReceiveOldStreamTokens",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.051,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 919
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.053,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 926
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.053,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 922
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.052,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 928
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.052,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 928
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testStopFlushesBufferedTokensAndDeletedConversationCannotReturnFromPendingWrites",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testStopFlushesBufferedTokensAndDeletedConversationCannotReturnFromPendingWrites",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.04,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 921
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.042,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 928
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.038,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 924
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.038,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 930
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.038,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 930
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testStreamCompletesAtFinishReasonBeforeLaterTransportFailure",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testStreamCompletesAtFinishReasonBeforeLaterTransportFailure",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.007,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 923
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 930
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 926
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 932
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.002,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 932
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testStreamPersistsContentReasoningAndFeedback",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testStreamPersistsContentReasoningAndFeedback",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.026,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 925
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.015,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 932
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.017,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 928
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.017,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 934
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.017,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 934
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/HonorPKAgentTests/testStreamRejectsTransportFailureBeforeFinishReason",
+      "target": "HonorPKAgentTests",
+      "suite": "HonorPKAgentTests",
+      "method": "testStreamRejectsTransportFailureBeforeFinishReason",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.208,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 930
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.205,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 937
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.202,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 933
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.205,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 939
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.205,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 939
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/LiveIntegrationTests/testLiveEnglishAndChineseQuestionsStayRussian",
+      "target": "HonorPKAgentTests",
+      "suite": "LiveIntegrationTests",
+      "method": "testLiveEnglishAndChineseQuestionsStayRussian",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 4.465,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 941
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 3.819,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 948
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 3.326,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 944
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 3.492,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 950
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 3.492,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 950
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/LiveIntegrationTests/testLiveImageUnderstandingWithNoOCRHint",
+      "target": "HonorPKAgentTests",
+      "suite": "LiveIntegrationTests",
+      "method": "testLiveImageUnderstandingWithNoOCRHint",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 1.143,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 946
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 1.231,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 953
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.929,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 949
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 1.337,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 955
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 1.337,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 955
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/LiveIntegrationTests/testLiveReadSpecificWebPageWithCitation",
+      "target": "HonorPKAgentTests",
+      "suite": "LiveIntegrationTests",
+      "method": "testLiveReadSpecificWebPageWithCitation",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 1.859,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 953
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 2.044,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 960
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 1.452,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 956
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 1.746,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 962
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 1.746,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 962
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/LiveIntegrationTests/testLiveWeatherKlinWithThinking",
+      "target": "HonorPKAgentTests",
+      "suite": "LiveIntegrationTests",
+      "method": "testLiveWeatherKlinWithThinking",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 2.078,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 969
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 2.195,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 976
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 1.868,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 972
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 2.775,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 978
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 2.775,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 978
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/LiveIntegrationTests/testLiveWeatherKlinWithoutThinkingAndAutomaticFreshLookup",
+      "target": "HonorPKAgentTests",
+      "suite": "LiveIntegrationTests",
+      "method": "testLiveWeatherKlinWithoutThinkingAndAutomaticFreshLookup",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 2.701,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 960
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 1.947,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 967
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 3.171,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 963
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 2.769,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 969
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 2.769,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 969
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/SpeechTests/testCancelAndFinishWhileIdleReturnNoStaleWordsOrRecordingState",
+      "target": "HonorPKAgentTests",
+      "suite": "SpeechTests",
+      "method": "testCancelAndFinishWhileIdleReturnNoStaleWordsOrRecordingState",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.197,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 975
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.147,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 982
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.101,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 978
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.143,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 984
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.143,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 984
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/SpeechTests/testSanitizerDoesNotReadCodeFencesOrPrivateCitationMarkers",
+      "target": "HonorPKAgentTests",
+      "suite": "SpeechTests",
+      "method": "testSanitizerDoesNotReadCodeFencesOrPrivateCitationMarkers",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 977
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 984
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 980
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 986
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.001,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 986
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/SpeechTests/testSanitizerKeepsNamedLinkLabelsButOmitsNumericCitationsAndURLs",
+      "target": "HonorPKAgentTests",
+      "suite": "SpeechTests",
+      "method": "testSanitizerKeepsNamedLinkLabelsButOmitsNumericCitationsAndURLs",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 979
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 986
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 982
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 988
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.001,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 988
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/SpeechTests/testSanitizerOmitsEmojiFamiliesFlagsAndKeycapsButPreservesNumbers",
+      "target": "HonorPKAgentTests",
+      "suite": "SpeechTests",
+      "method": "testSanitizerOmitsEmojiFamiliesFlagsAndKeycapsButPreservesNumbers",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 981
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 988
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 984
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 990
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.001,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 990
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/SpeechTests/testSanitizerPreservesPlainProseAndMathematicalValues",
+      "target": "HonorPKAgentTests",
+      "suite": "SpeechTests",
+      "method": "testSanitizerPreservesPlainProseAndMathematicalValues",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.006,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 983
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.002,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 990
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.001,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 986
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.049,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 992
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.049,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 992
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentTests/SpeechTests/testVoiceSelectionUsesOnlyAvailableLanguageAndHighestQualityFallback",
+      "target": "HonorPKAgentTests",
+      "suite": "SpeechTests",
+      "method": "testVoiceSelectionUsesOnlyAvailableLanguageAndHighestQualityFallback",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 0.132,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 999
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 0.199,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 1006
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 0.074,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 1002
+        },
+        {
+          "runId": 35804257124,
+          "runLabel": "release",
+          "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+          "status": "passed",
+          "durationSeconds": 0.115,
+          "logPath": "work/honer10-release-logs/build-tests.log",
+          "logLine": 1008
+        }
+      ],
+      "latest": {
+        "runId": 35804257124,
+        "runLabel": "release",
+        "headSha": "94a4ea1137a77428d0567f050bfd4501ddb8c4de",
+        "status": "passed",
+        "durationSeconds": 0.115,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 1008
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/ChatToolsTests/testArchiveMovesConversationAndRestorePreservesItsMessages",
+      "target": "HonorPKAgentUITests",
+      "suite": "ChatToolsTests",
+      "method": "testArchiveMovesConversationAndRestorePreservesItsMessages",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "failed",
+          "durationSeconds": 8.716,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 1055
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "failed",
+          "durationSeconds": 8.873,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 1062
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "failed",
+          "durationSeconds": 20.227,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 1101
+        },
+        {
+          "runId": 35804802762,
+          "runLabel": "finish",
+          "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+          "status": "passed",
+          "durationSeconds": 34.849,
+          "logPath": "work/honer10-finish-logs/build-tests.log",
+          "logLine": 933
+        },
+        {
+          "runId": 35805606421,
+          "runLabel": "archive-polish",
+          "headSha": "9127dbe93c48d6fb4c06af12a8d6cf8616e85520",
+          "status": "passed",
+          "durationSeconds": 36.832,
+          "logPath": "work/honer10-archive-polish-logs/build-tests.log",
+          "logLine": 974
+        }
+      ],
+      "latest": {
+        "runId": 35805606421,
+        "runLabel": "archive-polish",
+        "headSha": "9127dbe93c48d6fb4c06af12a8d6cf8616e85520",
+        "status": "passed",
+        "durationSeconds": 36.832,
+        "logPath": "work/honer10-archive-polish-logs/build-tests.log",
+        "logLine": 974
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/ChatToolsTests/testConversationMenuPinAndFindNavigateActualMessages",
+      "target": "HonorPKAgentUITests",
+      "suite": "ChatToolsTests",
+      "method": "testConversationMenuPinAndFindNavigateActualMessages",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "failed",
+          "durationSeconds": 8.732,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 1100
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "failed",
+          "durationSeconds": 9.028,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 1107
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 37.825,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 1287
+        }
+      ],
+      "latest": {
+        "runId": 35803866790,
+        "runLabel": "repair",
+        "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+        "status": "passed",
+        "durationSeconds": 37.825,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 1287
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/ChatToolsTests/testHoldVoiceSwipeCancelDiscardsAndReleaseSendsFinalTranscript",
+      "target": "HonorPKAgentUITests",
+      "suite": "ChatToolsTests",
+      "method": "testHoldVoiceSwipeCancelDiscardsAndReleaseSendsFinalTranscript",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "failed",
+          "durationSeconds": 28.032,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 1231
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "failed",
+          "durationSeconds": 28.714,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 1238
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 21.167,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 1398
+        }
+      ],
+      "latest": {
+        "runId": 35803866790,
+        "runLabel": "repair",
+        "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+        "status": "passed",
+        "durationSeconds": 21.167,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 1398
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/ChatToolsTests/testUploadedFilesOpenOriginalAndSourceDetailsExposeReadPage",
+      "target": "HonorPKAgentUITests",
+      "suite": "ChatToolsTests",
+      "method": "testUploadedFilesOpenOriginalAndSourceDetailsExposeReadPage",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "failed",
+          "durationSeconds": 8.733,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 1276
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "failed",
+          "durationSeconds": 8.774,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 1283
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 22.69,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 1507
+        },
+        {
+          "runId": 35804802762,
+          "runLabel": "finish",
+          "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+          "status": "passed",
+          "durationSeconds": 22.081,
+          "logPath": "work/honer10-finish-logs/build-tests.log",
+          "logLine": 1042
+        }
+      ],
+      "latest": {
+        "runId": 35804802762,
+        "runLabel": "finish",
+        "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+        "status": "passed",
+        "durationSeconds": 22.081,
+        "logPath": "work/honer10-finish-logs/build-tests.log",
+        "logLine": 1042
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/ChatToolsTests/testVoiceModePreservesDraftAndDeleteRequiresConfirmation",
+      "target": "HonorPKAgentUITests",
+      "suite": "ChatToolsTests",
+      "method": "testVoiceModePreservesDraftAndDeleteRequiresConfirmation",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "failed",
+          "durationSeconds": 13.953,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 1356
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "failed",
+          "durationSeconds": 13.772,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 1363
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 27.16,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 1642
+        }
+      ],
+      "latest": {
+        "runId": 35803866790,
+        "runLabel": "repair",
+        "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+        "status": "passed",
+        "durationSeconds": 27.16,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 1642
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/FeatureAuditTests/testBranchPreservesOriginalAndReturnsToParent",
+      "target": "HonorPKAgentUITests",
+      "suite": "FeatureAuditTests",
+      "method": "testBranchPreservesOriginalAndReturnsToParent",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 22.295,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 1442
+        }
+      ],
+      "latest": {
+        "runId": 35802547812,
+        "runLabel": "full",
+        "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+        "status": "passed",
+        "durationSeconds": 22.295,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 1442
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/FeatureAuditTests/testEditCanBeCancelledOrSubmittedAndVoiceRemainsAvailable",
+      "target": "HonorPKAgentUITests",
+      "suite": "FeatureAuditTests",
+      "method": "testEditCanBeCancelledOrSubmittedAndVoiceRemainsAvailable",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 25.189,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 1581
+        }
+      ],
+      "latest": {
+        "runId": 35802547812,
+        "runLabel": "full",
+        "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+        "status": "passed",
+        "durationSeconds": 25.189,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 1581
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/FeatureAuditTests/testFeedbackReasoningSelectionAndCopyActions",
+      "target": "HonorPKAgentUITests",
+      "suite": "FeatureAuditTests",
+      "method": "testFeedbackReasoningSelectionAndCopyActions",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "failed",
+          "durationSeconds": 16.319,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 1658
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 22.482,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 1754
+        }
+      ],
+      "latest": {
+        "runId": 35803866790,
+        "runLabel": "repair",
+        "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+        "status": "passed",
+        "durationSeconds": 22.482,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 1754
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/FeatureAuditTests/testHistoryEllipsisRenamePinContentSearchAndBulkDelete",
+      "target": "HonorPKAgentUITests",
+      "suite": "FeatureAuditTests",
+      "method": "testHistoryEllipsisRenamePinContentSearchAndBulkDelete",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 39.891,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 1992
+        }
+      ],
+      "latest": {
+        "runId": 35802547812,
+        "runLabel": "full",
+        "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+        "status": "passed",
+        "durationSeconds": 39.891,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 1992
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/FeatureAuditTests/testLargeFontMessageMenuStillReachesNewActions",
+      "target": "HonorPKAgentUITests",
+      "suite": "FeatureAuditTests",
+      "method": "testLargeFontMessageMenuStillReachesNewActions",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 22.128,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 2097
+        }
+      ],
+      "latest": {
+        "runId": 35802547812,
+        "runLabel": "full",
+        "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+        "status": "passed",
+        "durationSeconds": 22.128,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 2097
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/FeatureAuditTests/testRememberRequiresSaveAndMemoryCanBeEditedDisabledAndDeleted",
+      "target": "HonorPKAgentUITests",
+      "suite": "FeatureAuditTests",
+      "method": "testRememberRequiresSaveAndMemoryCanBeEditedDisabledAndDeleted",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 61.484,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 2386
+        }
+      ],
+      "latest": {
+        "runId": 35802547812,
+        "runLabel": "full",
+        "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+        "status": "passed",
+        "durationSeconds": 61.484,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 2386
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/InterfaceTests/testConversationHistoryAndSettings",
+      "target": "HonorPKAgentUITests",
+      "suite": "InterfaceTests",
+      "method": "testConversationHistoryAndSettings",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "failed",
+          "durationSeconds": 20.074,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 2495
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 18.665,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 1850
+        }
+      ],
+      "latest": {
+        "runId": 35803866790,
+        "runLabel": "repair",
+        "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+        "status": "passed",
+        "durationSeconds": 18.665,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 1850
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/InterfaceTests/testLiveDeepSeekRoundTrip",
+      "target": "HonorPKAgentUITests",
+      "suite": "InterfaceTests",
+      "method": "testLiveDeepSeekRoundTrip",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 9.559,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 2538
+        }
+      ],
+      "latest": {
+        "runId": 35802547812,
+        "runLabel": "full",
+        "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+        "status": "passed",
+        "durationSeconds": 9.559,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 2538
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/InterfaceTests/testWelcomeComposerAndAttachments",
+      "target": "HonorPKAgentUITests",
+      "suite": "InterfaceTests",
+      "method": "testWelcomeComposerAndAttachments",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "failed",
+          "durationSeconds": 9.916,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 2768
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 11.183,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 1903
+        }
+      ],
+      "latest": {
+        "runId": 35803866790,
+        "runLabel": "repair",
+        "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+        "status": "passed",
+        "durationSeconds": 11.183,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 1903
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/LiveFeatureTests/testLiveReasoningMemoryAndFollowUp",
+      "target": "HonorPKAgentUITests",
+      "suite": "LiveFeatureTests",
+      "method": "testLiveReasoningMemoryAndFollowUp",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 27.454,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 2922
+        }
+      ],
+      "latest": {
+        "runId": 35802547812,
+        "runLabel": "full",
+        "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+        "status": "passed",
+        "durationSeconds": 27.454,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 2922
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/LiveFeatureTests/testLiveSearchProvidesOpenableSources",
+      "target": "HonorPKAgentUITests",
+      "suite": "LiveFeatureTests",
+      "method": "testLiveSearchProvidesOpenableSources",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 17.759,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 2994
+        }
+      ],
+      "latest": {
+        "runId": 35802547812,
+        "runLabel": "full",
+        "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+        "status": "passed",
+        "durationSeconds": 17.759,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 2994
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/OnboardingTests/testFirstLaunchNicknamePersistsAndIsEditable",
+      "target": "HonorPKAgentUITests",
+      "suite": "OnboardingTests",
+      "method": "testFirstLaunchNicknamePersistsAndIsEditable",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 22.91,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 3116
+        }
+      ],
+      "latest": {
+        "runId": 35802547812,
+        "runLabel": "full",
+        "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+        "status": "passed",
+        "durationSeconds": 22.91,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 3116
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/PersonalizationTutorialTests/testRecordRealPersonalization",
+      "target": "HonorPKAgentUITests",
+      "suite": "PersonalizationTutorialTests",
+      "method": "testRecordRealPersonalization",
+      "observations": [
+        {
+          "runId": 35802547313,
+          "runLabel": "tutorial",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 26.219,
+          "logPath": "work/honer10-ci-2/build-tests.log",
+          "logLine": 914
+        },
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 22.957,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 3225
+        }
+      ],
+      "latest": {
+        "runId": 35802547812,
+        "runLabel": "full",
+        "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+        "status": "passed",
+        "durationSeconds": 22.957,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 3225
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/SettingsAuditTests/testAppearanceFontVoiceAndAboutControls",
+      "target": "HonorPKAgentUITests",
+      "suite": "SettingsAuditTests",
+      "method": "testAppearanceFontVoiceAndAboutControls",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 29.394,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 3408
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 30.581,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 1546
+        }
+      ],
+      "latest": {
+        "runId": 35803289779,
+        "runLabel": "audit1",
+        "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+        "status": "passed",
+        "durationSeconds": 30.581,
+        "logPath": "work/honer10-audit1-logs/build-tests.log",
+        "logLine": 1546
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/SettingsAuditTests/testBundledPersonalizationVideoOpensAndCloses",
+      "target": "HonorPKAgentUITests",
+      "suite": "SettingsAuditTests",
+      "method": "testBundledPersonalizationVideoOpensAndCloses",
+      "observations": [
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 13.298,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 1609
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 13.007,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 1969
+        }
+      ],
+      "latest": {
+        "runId": 35803866790,
+        "runLabel": "repair",
+        "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+        "status": "passed",
+        "durationSeconds": 13.007,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 1969
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/SettingsAuditTests/testDataExportImportPickerAndDeleteConfirmation",
+      "target": "HonorPKAgentUITests",
+      "suite": "SettingsAuditTests",
+      "method": "testDataExportImportPickerAndDeleteConfirmation",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 26.496,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 3520
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 27.201,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 1718
+        }
+      ],
+      "latest": {
+        "runId": 35803289779,
+        "runLabel": "audit1",
+        "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+        "status": "passed",
+        "durationSeconds": 27.201,
+        "logPath": "work/honer10-audit1-logs/build-tests.log",
+        "logLine": 1718
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/SettingsAuditTests/testEnglishSettingsAndChatMenuRemainUsable",
+      "target": "HonorPKAgentUITests",
+      "suite": "SettingsAuditTests",
+      "method": "testEnglishSettingsAndChatMenuRemainUsable",
+      "observations": [
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "failed",
+          "durationSeconds": 26.401,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 1903
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 27.494,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 2157
+        }
+      ],
+      "latest": {
+        "runId": 35803866790,
+        "runLabel": "repair",
+        "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+        "status": "passed",
+        "durationSeconds": 27.494,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 2157
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/SettingsAuditTests/testProfilePersonalizationAndLanguagePersist",
+      "target": "HonorPKAgentUITests",
+      "suite": "SettingsAuditTests",
+      "method": "testProfilePersonalizationAndLanguagePersist",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 35.521,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 3718
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 35.907,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 2101
+        }
+      ],
+      "latest": {
+        "runId": 35803289779,
+        "runLabel": "audit1",
+        "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+        "status": "passed",
+        "durationSeconds": 35.907,
+        "logPath": "work/honer10-audit1-logs/build-tests.log",
+        "logLine": 2101
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/StabilityAuditTests/testLargeSavedHistoryRemainsNavigable",
+      "target": "HonorPKAgentUITests",
+      "suite": "StabilityAuditTests",
+      "method": "testLargeSavedHistoryRemainsNavigable",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 20.593,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 3781
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 21.556,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 2164
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 19.917,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 2220
+        }
+      ],
+      "latest": {
+        "runId": 35803866790,
+        "runLabel": "repair",
+        "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+        "status": "passed",
+        "durationSeconds": 19.917,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 2220
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/StabilityAuditTests/testLaunchPerformanceWithSavedHistory",
+      "target": "HonorPKAgentUITests",
+      "suite": "StabilityAuditTests",
+      "method": "testLaunchPerformanceWithSavedHistory",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 27.12,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 3828
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 27.832,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 2211
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 26.246,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 2267
+        }
+      ],
+      "latest": {
+        "runId": 35803866790,
+        "runLabel": "repair",
+        "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+        "status": "passed",
+        "durationSeconds": 26.246,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 2267
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/StabilityAuditTests/testOfflineErrorThenRetryRecovers",
+      "target": "HonorPKAgentUITests",
+      "suite": "StabilityAuditTests",
+      "method": "testOfflineErrorThenRetryRecovers",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 10.145,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 3876
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 10.676,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 2259
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 10.249,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 2315
+        }
+      ],
+      "latest": {
+        "runId": 35803866790,
+        "runLabel": "repair",
+        "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+        "status": "passed",
+        "durationSeconds": 10.249,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 2315
+      },
+      "everPassed": true
+    },
+    {
+      "id": "HonorPKAgentUITests/StabilityAuditTests/testStopStreamingAndRetry",
+      "target": "HonorPKAgentUITests",
+      "suite": "StabilityAuditTests",
+      "method": "testStopStreamingAndRetry",
+      "observations": [
+        {
+          "runId": 35802547812,
+          "runLabel": "full",
+          "headSha": "864a98d73d17d3ef206c108b55307295c07f86a3",
+          "status": "passed",
+          "durationSeconds": 11.504,
+          "logPath": "work/honer10-full-logs/build-tests.log",
+          "logLine": 3933
+        },
+        {
+          "runId": 35803289779,
+          "runLabel": "audit1",
+          "headSha": "4afeaa008ec9645f554c5538a31dcd22def5be15",
+          "status": "passed",
+          "durationSeconds": 11.933,
+          "logPath": "work/honer10-audit1-logs/build-tests.log",
+          "logLine": 2316
+        },
+        {
+          "runId": 35803866790,
+          "runLabel": "repair",
+          "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+          "status": "passed",
+          "durationSeconds": 11.566,
+          "logPath": "work/honer10-repair-logs/build-tests.log",
+          "logLine": 2372
+        }
+      ],
+      "latest": {
+        "runId": 35803866790,
+        "runLabel": "repair",
+        "headSha": "23240d81e2067a0ce7d714632d698f55bb4da403",
+        "status": "passed",
+        "durationSeconds": 11.566,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 2372
+      },
+      "everPassed": true
+    }
+  ],
+  "layoutRuns": [
+    {
+      "device": "iPhone 13 mini",
+      "runId": 35804802762,
+      "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+      "logPath": "work/honer10-finish-logs/build-iPhone-13-mini.log",
+      "simulatorDestinations": [
+        {
+          "architecture": "arm64",
+          "udid": "17AA9FC5-0D62-418B-A269-E1245C7B0885",
+          "ios": "26.2",
+          "device": "Honor iPhone-13-mini",
+          "logLine": 11
+        },
+        {
+          "architecture": "x86_64",
+          "udid": "17AA9FC5-0D62-418B-A269-E1245C7B0885",
+          "ios": "26.2",
+          "device": "Honor iPhone-13-mini",
+          "logLine": 12
+        }
+      ],
+      "testCounts": {
+        "uniqueDeviceScenarios": 3,
+        "passed": 3
+      }
+    },
+    {
+      "device": "iPhone 16 Pro",
+      "runId": 35804802762,
+      "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+      "logPath": "work/honer10-finish-logs/build-iPhone-16-Pro.log",
+      "simulatorDestinations": [
+        {
+          "architecture": "arm64",
+          "udid": "7CA0D02C-EF79-4D26-9943-11146508868A",
+          "ios": "26.2",
+          "device": "Honor iPhone-16-Pro",
+          "logLine": 11
+        },
+        {
+          "architecture": "x86_64",
+          "udid": "7CA0D02C-EF79-4D26-9943-11146508868A",
+          "ios": "26.2",
+          "device": "Honor iPhone-16-Pro",
+          "logLine": 12
+        }
+      ],
+      "testCounts": {
+        "uniqueDeviceScenarios": 3,
+        "passed": 3
+      }
+    }
+  ],
+  "layoutTests": [
+    {
+      "id": "iPhone 13 mini/HonorPKAgentUITests/FeatureAuditTests/testLargeFontMessageMenuStillReachesNewActions",
+      "device": "iPhone 13 mini",
+      "testId": "HonorPKAgentUITests/FeatureAuditTests/testLargeFontMessageMenuStillReachesNewActions",
+      "observations": [
+        {
+          "runId": 35804802762,
+          "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+          "status": "passed",
+          "durationSeconds": 27.204,
+          "logPath": "work/honer10-finish-logs/build-iPhone-13-mini.log",
+          "logLine": 122
+        }
+      ],
+      "latest": {
+        "runId": 35804802762,
+        "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+        "status": "passed",
+        "durationSeconds": 27.204,
+        "logPath": "work/honer10-finish-logs/build-iPhone-13-mini.log",
+        "logLine": 122
+      }
+    },
+    {
+      "id": "iPhone 13 mini/HonorPKAgentUITests/InterfaceTests/testConversationHistoryAndSettings",
+      "device": "iPhone 13 mini",
+      "testId": "HonorPKAgentUITests/InterfaceTests/testConversationHistoryAndSettings",
+      "observations": [
+        {
+          "runId": 35804802762,
+          "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+          "status": "passed",
+          "durationSeconds": 17.981,
+          "logPath": "work/honer10-finish-logs/build-iPhone-13-mini.log",
+          "logLine": 218
+        }
+      ],
+      "latest": {
+        "runId": 35804802762,
+        "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+        "status": "passed",
+        "durationSeconds": 17.981,
+        "logPath": "work/honer10-finish-logs/build-iPhone-13-mini.log",
+        "logLine": 218
+      }
+    },
+    {
+      "id": "iPhone 13 mini/HonorPKAgentUITests/InterfaceTests/testWelcomeComposerAndAttachments",
+      "device": "iPhone 13 mini",
+      "testId": "HonorPKAgentUITests/InterfaceTests/testWelcomeComposerAndAttachments",
+      "observations": [
+        {
+          "runId": 35804802762,
+          "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+          "status": "passed",
+          "durationSeconds": 11.269,
+          "logPath": "work/honer10-finish-logs/build-iPhone-13-mini.log",
+          "logLine": 271
+        }
+      ],
+      "latest": {
+        "runId": 35804802762,
+        "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+        "status": "passed",
+        "durationSeconds": 11.269,
+        "logPath": "work/honer10-finish-logs/build-iPhone-13-mini.log",
+        "logLine": 271
+      }
+    },
+    {
+      "id": "iPhone 16 Pro/HonorPKAgentUITests/FeatureAuditTests/testLargeFontMessageMenuStillReachesNewActions",
+      "device": "iPhone 16 Pro",
+      "testId": "HonorPKAgentUITests/FeatureAuditTests/testLargeFontMessageMenuStillReachesNewActions",
+      "observations": [
+        {
+          "runId": 35804802762,
+          "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+          "status": "passed",
+          "durationSeconds": 39.43,
+          "logPath": "work/honer10-finish-logs/build-iPhone-16-Pro.log",
+          "logLine": 123
+        }
+      ],
+      "latest": {
+        "runId": 35804802762,
+        "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+        "status": "passed",
+        "durationSeconds": 39.43,
+        "logPath": "work/honer10-finish-logs/build-iPhone-16-Pro.log",
+        "logLine": 123
+      }
+    },
+    {
+      "id": "iPhone 16 Pro/HonorPKAgentUITests/InterfaceTests/testConversationHistoryAndSettings",
+      "device": "iPhone 16 Pro",
+      "testId": "HonorPKAgentUITests/InterfaceTests/testConversationHistoryAndSettings",
+      "observations": [
+        {
+          "runId": 35804802762,
+          "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+          "status": "passed",
+          "durationSeconds": 18.649,
+          "logPath": "work/honer10-finish-logs/build-iPhone-16-Pro.log",
+          "logLine": 219
+        }
+      ],
+      "latest": {
+        "runId": 35804802762,
+        "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+        "status": "passed",
+        "durationSeconds": 18.649,
+        "logPath": "work/honer10-finish-logs/build-iPhone-16-Pro.log",
+        "logLine": 219
+      }
+    },
+    {
+      "id": "iPhone 16 Pro/HonorPKAgentUITests/InterfaceTests/testWelcomeComposerAndAttachments",
+      "device": "iPhone 16 Pro",
+      "testId": "HonorPKAgentUITests/InterfaceTests/testWelcomeComposerAndAttachments",
+      "observations": [
+        {
+          "runId": 35804802762,
+          "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+          "status": "passed",
+          "durationSeconds": 11.785,
+          "logPath": "work/honer10-finish-logs/build-iPhone-16-Pro.log",
+          "logLine": 272
+        }
+      ],
+      "latest": {
+        "runId": 35804802762,
+        "headSha": "b7a99d3b675dd364e306f53ebb38b49cb7f33fac",
+        "status": "passed",
+        "durationSeconds": 11.785,
+        "logPath": "work/honer10-finish-logs/build-iPhone-16-Pro.log",
+        "logLine": 272
+      }
+    }
+  ],
+  "pending": {
+    "testsWithoutLatestPass": [],
+    "deviceLayoutEvidenceMissing": [],
+    "layoutTestsWithoutLatestPass": [],
+    "physicalDevice": [
+      "owner certificate signing and sideload",
+      "physical camera and microphone",
+      "audio routing and mobile network"
+    ]
+  },
+  "measurements": {
+    "liveLatencyAllObservations": [
+      {
+        "runId": 35802547812,
+        "scenario": "testLiveEnglishAndChineseQuestionsStayRussian/English",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveEnglishAndChineseQuestionsStayRussian",
+        "thinking": true,
+        "searchToggle": false,
+        "elapsedSeconds": 2.4860479831695557,
+        "sourceCount": 0,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 937
+      },
+      {
+        "runId": 35802547812,
+        "scenario": "testLiveEnglishAndChineseQuestionsStayRussian/Chinese",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveEnglishAndChineseQuestionsStayRussian",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 1.9755460023880005,
+        "sourceCount": 0,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 940
+      },
+      {
+        "runId": 35802547812,
+        "scenario": "testLiveImageUnderstandingWithNoOCRHint",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveImageUnderstandingWithNoOCRHint",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 1.1357349157333374,
+        "sourceCount": 0,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 945
+      },
+      {
+        "runId": 35802547812,
+        "scenario": "testLiveReadSpecificWebPageWithCitation",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveReadSpecificWebPageWithCitation",
+        "thinking": false,
+        "searchToggle": true,
+        "elapsedSeconds": 1.8566089868545532,
+        "sourceCount": 1,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 952
+      },
+      {
+        "runId": 35802547812,
+        "scenario": "testLiveWeatherKlinWithoutThinkingAndAutomaticFreshLookup",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveWeatherKlinWithoutThinkingAndAutomaticFreshLookup",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 2.6994529962539673,
+        "sourceCount": 1,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 959
+      },
+      {
+        "runId": 35802547812,
+        "scenario": "testLiveWeatherKlinWithThinking",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveWeatherKlinWithThinking",
+        "thinking": true,
+        "searchToggle": true,
+        "elapsedSeconds": 2.075532078742981,
+        "sourceCount": 1,
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 968
+      },
+      {
+        "runId": 35803289779,
+        "scenario": "testLiveEnglishAndChineseQuestionsStayRussian/English",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveEnglishAndChineseQuestionsStayRussian",
+        "thinking": true,
+        "searchToggle": false,
+        "elapsedSeconds": 2.3732999563217163,
+        "sourceCount": 0,
+        "logPath": "work/honer10-audit1-logs/build-tests.log",
+        "logLine": 944
+      },
+      {
+        "runId": 35803289779,
+        "scenario": "testLiveEnglishAndChineseQuestionsStayRussian/Chinese",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveEnglishAndChineseQuestionsStayRussian",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 1.4411429166793823,
+        "sourceCount": 0,
+        "logPath": "work/honer10-audit1-logs/build-tests.log",
+        "logLine": 947
+      },
+      {
+        "runId": 35803289779,
+        "scenario": "testLiveImageUnderstandingWithNoOCRHint",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveImageUnderstandingWithNoOCRHint",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 1.223829984664917,
+        "sourceCount": 0,
+        "logPath": "work/honer10-audit1-logs/build-tests.log",
+        "logLine": 952
+      },
+      {
+        "runId": 35803289779,
+        "scenario": "testLiveReadSpecificWebPageWithCitation",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveReadSpecificWebPageWithCitation",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 2.042464017868042,
+        "sourceCount": 1,
+        "logPath": "work/honer10-audit1-logs/build-tests.log",
+        "logLine": 959
+      },
+      {
+        "runId": 35803289779,
+        "scenario": "testLiveWeatherKlinWithoutThinkingAndAutomaticFreshLookup",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveWeatherKlinWithoutThinkingAndAutomaticFreshLookup",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 1.9437379837036133,
+        "sourceCount": 1,
+        "logPath": "work/honer10-audit1-logs/build-tests.log",
+        "logLine": 966
+      },
+      {
+        "runId": 35803289779,
+        "scenario": "testLiveWeatherKlinWithThinking",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveWeatherKlinWithThinking",
+        "thinking": true,
+        "searchToggle": true,
+        "elapsedSeconds": 2.1918840408325195,
+        "sourceCount": 1,
+        "logPath": "work/honer10-audit1-logs/build-tests.log",
+        "logLine": 975
+      },
+      {
+        "runId": 35803866790,
+        "scenario": "testLiveEnglishAndChineseQuestionsStayRussian/English",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveEnglishAndChineseQuestionsStayRussian",
+        "thinking": true,
+        "searchToggle": false,
+        "elapsedSeconds": 2.0802969932556152,
+        "sourceCount": 0,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 940
+      },
+      {
+        "runId": 35803866790,
+        "scenario": "testLiveEnglishAndChineseQuestionsStayRussian/Chinese",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveEnglishAndChineseQuestionsStayRussian",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 1.2424139976501465,
+        "sourceCount": 0,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 943
+      },
+      {
+        "runId": 35803866790,
+        "scenario": "testLiveImageUnderstandingWithNoOCRHint",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveImageUnderstandingWithNoOCRHint",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 0.9218320846557617,
+        "sourceCount": 0,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 948
+      },
+      {
+        "runId": 35803866790,
+        "scenario": "testLiveReadSpecificWebPageWithCitation",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveReadSpecificWebPageWithCitation",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 1.4488229751586914,
+        "sourceCount": 1,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 955
+      },
+      {
+        "runId": 35803866790,
+        "scenario": "testLiveWeatherKlinWithoutThinkingAndAutomaticFreshLookup",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveWeatherKlinWithoutThinkingAndAutomaticFreshLookup",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 3.1683380603790283,
+        "sourceCount": 1,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 962
+      },
+      {
+        "runId": 35803866790,
+        "scenario": "testLiveWeatherKlinWithThinking",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveWeatherKlinWithThinking",
+        "thinking": true,
+        "searchToggle": true,
+        "elapsedSeconds": 1.8664929866790771,
+        "sourceCount": 1,
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 971
+      },
+      {
+        "runId": 35804257124,
+        "scenario": "testLiveEnglishAndChineseQuestionsStayRussian/English",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveEnglishAndChineseQuestionsStayRussian",
+        "thinking": true,
+        "searchToggle": false,
+        "elapsedSeconds": 1.853044033050537,
+        "sourceCount": 0,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 946
+      },
+      {
+        "runId": 35804257124,
+        "scenario": "testLiveEnglishAndChineseQuestionsStayRussian/Chinese",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveEnglishAndChineseQuestionsStayRussian",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 1.6355810165405273,
+        "sourceCount": 0,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 949
+      },
+      {
+        "runId": 35804257124,
+        "scenario": "testLiveImageUnderstandingWithNoOCRHint",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveImageUnderstandingWithNoOCRHint",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 1.3306130170822144,
+        "sourceCount": 0,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 954
+      },
+      {
+        "runId": 35804257124,
+        "scenario": "testLiveReadSpecificWebPageWithCitation",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveReadSpecificWebPageWithCitation",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 1.7438949346542358,
+        "sourceCount": 1,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 961
+      },
+      {
+        "runId": 35804257124,
+        "scenario": "testLiveWeatherKlinWithoutThinkingAndAutomaticFreshLookup",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveWeatherKlinWithoutThinkingAndAutomaticFreshLookup",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 2.766784906387329,
+        "sourceCount": 1,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 968
+      },
+      {
+        "runId": 35804257124,
+        "scenario": "testLiveWeatherKlinWithThinking",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveWeatherKlinWithThinking",
+        "thinking": true,
+        "searchToggle": true,
+        "elapsedSeconds": 2.7730560302734375,
+        "sourceCount": 1,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 977
+      }
+    ],
+    "liveLatencyLatestByScenario": [
+      {
+        "runId": 35804257124,
+        "scenario": "testLiveEnglishAndChineseQuestionsStayRussian/Chinese",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveEnglishAndChineseQuestionsStayRussian",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 1.6355810165405273,
+        "sourceCount": 0,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 949
+      },
+      {
+        "runId": 35804257124,
+        "scenario": "testLiveEnglishAndChineseQuestionsStayRussian/English",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveEnglishAndChineseQuestionsStayRussian",
+        "thinking": true,
+        "searchToggle": false,
+        "elapsedSeconds": 1.853044033050537,
+        "sourceCount": 0,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 946
+      },
+      {
+        "runId": 35804257124,
+        "scenario": "testLiveImageUnderstandingWithNoOCRHint",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveImageUnderstandingWithNoOCRHint",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 1.3306130170822144,
+        "sourceCount": 0,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 954
+      },
+      {
+        "runId": 35804257124,
+        "scenario": "testLiveReadSpecificWebPageWithCitation",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveReadSpecificWebPageWithCitation",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 1.7438949346542358,
+        "sourceCount": 1,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 961
+      },
+      {
+        "runId": 35804257124,
+        "scenario": "testLiveWeatherKlinWithThinking",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveWeatherKlinWithThinking",
+        "thinking": true,
+        "searchToggle": true,
+        "elapsedSeconds": 2.7730560302734375,
+        "sourceCount": 1,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 977
+      },
+      {
+        "runId": 35804257124,
+        "scenario": "testLiveWeatherKlinWithoutThinkingAndAutomaticFreshLookup",
+        "testId": "HonorPKAgentTests/LiveIntegrationTests/testLiveWeatherKlinWithoutThinkingAndAutomaticFreshLookup",
+        "thinking": false,
+        "searchToggle": false,
+        "elapsedSeconds": 2.766784906387329,
+        "sourceCount": 1,
+        "logPath": "work/honer10-release-logs/build-tests.log",
+        "logLine": 968
+      }
+    ],
+    "largeHistoryLaunchAllObservations": [
+      {
+        "runId": 35802547812,
+        "testId": "HonorPKAgentUITests/StabilityAuditTests/testLaunchPerformanceWithSavedHistory",
+        "chatCount": 500,
+        "largestConversationMessages": 400,
+        "metric": "ApplicationFirstFramePresentationResponsive",
+        "averageSeconds": 1.491,
+        "relativeStandardDeviationPercent": 0.438,
+        "samplesSeconds": [
+          1.497403,
+          1.494188,
+          1.482207
+        ],
+        "logPath": "work/honer10-full-logs/build-tests.log",
+        "logLine": 3826
+      },
+      {
+        "runId": 35803289779,
+        "testId": "HonorPKAgentUITests/StabilityAuditTests/testLaunchPerformanceWithSavedHistory",
+        "chatCount": 500,
+        "largestConversationMessages": 400,
+        "metric": "ApplicationFirstFramePresentationResponsive",
+        "averageSeconds": 1.593,
+        "relativeStandardDeviationPercent": 3.73,
+        "samplesSeconds": [
+          1.672576,
+          1.530374,
+          1.574839
+        ],
+        "logPath": "work/honer10-audit1-logs/build-tests.log",
+        "logLine": 2209
+      },
+      {
+        "runId": 35803866790,
+        "testId": "HonorPKAgentUITests/StabilityAuditTests/testLaunchPerformanceWithSavedHistory",
+        "chatCount": 500,
+        "largestConversationMessages": 400,
+        "metric": "ApplicationFirstFramePresentationResponsive",
+        "averageSeconds": 1.381,
+        "relativeStandardDeviationPercent": 0.886,
+        "samplesSeconds": [
+          1.363708,
+          1.39234,
+          1.385624
+        ],
+        "logPath": "work/honer10-repair-logs/build-tests.log",
+        "logLine": 2265
+      }
+    ],
+    "largeHistoryLaunchLatest": {
+      "runId": 35803866790,
+      "testId": "HonorPKAgentUITests/StabilityAuditTests/testLaunchPerformanceWithSavedHistory",
+      "chatCount": 500,
+      "largestConversationMessages": 400,
+      "metric": "ApplicationFirstFramePresentationResponsive",
+      "averageSeconds": 1.381,
+      "relativeStandardDeviationPercent": 0.886,
+      "samplesSeconds": [
+        1.363708,
+        1.39234,
+        1.385624
+      ],
+      "logPath": "work/honer10-repair-logs/build-tests.log",
+      "logLine": 2265
+    },
+    "caveat": "Single CI request per live scenario/run; launch metric has three repetitions per run. Not a guarantee of physical iPhone or mobile-network latency."
+  }
+}
