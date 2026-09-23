@@ -41,20 +41,45 @@ enum HonerIdentity {
 }
 
 enum RussianTextPolicy {
+    private static let codeAndURLs = try! NSRegularExpression(pattern: "(?s)```.*?```|`[^`]*`|https?://\\S+")
+    private static let markdownLinks = try! NSRegularExpression(pattern: "\\[[^]]*\\]\\([^)]*\\)")
+    private static let brandNames = try! NSRegularExpression(pattern: "(?i)\\b(?:Honer\\s+AI|Honor\\s+AI|Honer\\s+PK\\s+Agent|Honor\\s+PC\\s+Agent|DeepSeek|OpenAI)\\b")
+    private static let latinWords = try! NSRegularExpression(pattern: "[A-Za-z]+")
+    private static let shortEnglishPhrases: Set<String> = ["hello", "hi", "hey", "hello there", "good morning", "good evening", "good night", "thank you", "thanks", "yes", "no", "of course", "sure"]
+
     static func holdWhileStreaming(_ text: String) -> Bool {
-        let letters = text.unicodeScalars.filter { CharacterSet.letters.contains($0) }
-        let hasRussian = letters.contains { (0x0400...0x04ff).contains(Int($0.value)) }
-        return (!letters.isEmpty && !hasRussian) || needsNormalization(text)
+        var hasLetters = false
+        var hasRussian = false
+        for scalar in text.unicodeScalars where CharacterSet.letters.contains(scalar) {
+            hasLetters = true
+            if (0x0400...0x04ff).contains(Int(scalar.value)) { hasRussian = true; break }
+        }
+        return (hasLetters && !hasRussian) || needsNormalization(text)
     }
 
     /// Code blocks, URLs and names can remain in the original language; detect foreign natural prose.
     static func needsNormalization(_ text: String) -> Bool {
-        var prose = text.replacingOccurrences(of: "(?s)```.*?```|`[^`]*`|https?://\\S+", with: "", options: .regularExpression)
-        prose = prose.replacingOccurrences(of: "\\[[^]]*\\]\\([^)]*\\)", with: "", options: .regularExpression)
-        let letters = prose.unicodeScalars.filter { CharacterSet.letters.contains($0) }
-        guard letters.count >= 16 else { return false }
-        let russian = letters.filter { (0x0400...0x04ff).contains(Int($0.value)) }.count
-        return Double(russian) / Double(letters.count) < 0.3
+        var prose = codeAndURLs.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        prose = markdownLinks.stringByReplacingMatches(in: prose, range: NSRange(prose.startIndex..., in: prose), withTemplate: "")
+        prose = brandNames.stringByReplacingMatches(in: prose, range: NSRange(prose.startIndex..., in: prose), withTemplate: "")
+        var letters = 0
+        var russian = 0
+        var cjk = 0
+        for scalar in prose.unicodeScalars where CharacterSet.letters.contains(scalar) {
+            letters += 1
+            let value = Int(scalar.value)
+            if (0x0400...0x04ff).contains(value) { russian += 1 }
+            if (0x3400...0x9fff).contains(value) || (0xf900...0xfaff).contains(value) || (0x20000...0x2fa1f).contains(value) { cjk += 1 }
+        }
+        guard letters > 0, Double(russian) / Double(letters) < 0.3 else { return false }
+        if cjk >= 2 { return true }
+        let trimmed = prose.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).lowercased()
+        if shortEnglishPhrases.contains(trimmed) { return true }
+        // A plain code identifier remains verbatim; prose containing several words is translated.
+        if !prose.contains(where: \.isWhitespace), prose.contains("_"),
+           prose.range(of: "^[A-Za-z_][A-Za-z0-9_]*$", options: .regularExpression) != nil { return false }
+        if letters >= 16 { return true }
+        return letters >= 8 && latinWords.numberOfMatches(in: prose, range: NSRange(prose.startIndex..., in: prose)) >= 2
     }
 }
 
@@ -190,6 +215,7 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
                     let request = try makeRequest(messages: messages, thinking: thinking,
                                                   systemInstruction: systemInstruction, searchContext: searchContext)
                     let (bytes, response) = try await session.bytes(for: request)
+                    defer { bytes.task.cancel() }
                     guard let http = response as? HTTPURLResponse else { throw HonorError.invalidResponse }
                     guard (200..<300).contains(http.statusCode) else {
                         var data = Data()

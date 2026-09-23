@@ -51,15 +51,15 @@ struct WebSearchClient: WebSearching {
     private func bingResults(_ query: String) async -> [WebSource] {
         var components = URLComponents(string: "https://www.bing.com/search")!
         components.queryItems = [URLQueryItem(name: "q", value: String(query.prefix(400))), URLQueryItem(name: "format", value: "rss"), URLQueryItem(name: "setlang", value: "ru-RU")]
-        guard let data = try? await fetch(components.url!, maximumBytes: 1_500_000) else { return [] }
-        return RSSResultsParser.parse(data)
+        guard let document = try? await fetch(components.url!, maximumBytes: 1_500_000) else { return [] }
+        return RSSResultsParser.parse(document.data)
     }
 
     private func duckDuckGoResults(_ query: String) async -> [WebSource] {
         var components = URLComponents(string: "https://html.duckduckgo.com/html/")!
         components.queryItems = [URLQueryItem(name: "q", value: String(query.prefix(400))), URLQueryItem(name: "kl", value: "ru-ru")]
-        guard let data = try? await fetch(components.url!, maximumBytes: 1_500_000),
-              let html = String(data: data, encoding: .utf8) else { return [] }
+        guard let document = try? await fetch(components.url!, maximumBytes: 1_500_000),
+              let html = String(data: document.data, encoding: .utf8) else { return [] }
         return WebPageText.searchResults(html)
     }
 
@@ -68,11 +68,12 @@ struct WebSearchClient: WebSearching {
             for (index, source) in sources.prefix(limit).enumerated() {
                 group.addTask {
                     var source = source
-                    if let data = try? await fetch(source.url, maximumBytes: 1_500_000, timeout: timeout),
-                       let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .windowsCP1251) {
+                    if let document = try? await fetch(source.url, maximumBytes: 1_500_000, timeout: timeout),
+                       let html = String(data: document.data, encoding: .utf8) ?? String(data: document.data, encoding: .windowsCP1251) {
                         let text = WebPageText.extract(html)
                         if text.count >= 100 && !WebPageText.looksLikeChallenge(text) {
                             source.content = String(text.prefix(9000)); source.fetchedAt = Date()
+                            source.url = document.url
                             if let title = WebPageText.title(html) { source.title = title }
                         }
                     }
@@ -81,11 +82,12 @@ struct WebSearchClient: WebSearching {
             }
             var result = sources
             for await (index, source) in group { result[index] = source }
-            return result
+            var seen = Set<String>()
+            return result.filter { seen.insert($0.url.absoluteString).inserted }
         }
     }
 
-    private func fetch(_ url: URL, maximumBytes: Int, timeout: TimeInterval = 10) async throws -> Data {
+    private func fetch(_ url: URL, maximumBytes: Int, timeout: TimeInterval = 10) async throws -> (data: Data, url: URL) {
         guard WebPageText.isPublicWebURL(url) else { throw HonorError.searchUnavailable }
         var request = URLRequest(url: url)
         request.timeoutInterval = timeout
@@ -101,7 +103,7 @@ struct WebSearchClient: WebSearching {
             data.append(byte)
             if data.count >= maximumBytes { break }
         }
-        return data
+        return (data, response.url ?? url)
     }
 
     static func context(_ sources: [WebSource]) -> String {

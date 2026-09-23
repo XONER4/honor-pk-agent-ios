@@ -1,6 +1,56 @@
 import XCTest
 
 final class SettingsAuditTests: HonorAuditCase {
+    func testEnglishSettingsAndChatMenuRemainUsable() {
+        let app = launch(["-UITestDemo"])
+        settings(app)
+        openSettingsRow("settings.language", app: app)
+        app.buttons["language.en"].tap()
+        back(app)
+        XCTAssertTrue(app.navigationBars["Settings"].exists)
+        capture("34-english-settings")
+        openSettingsRow("settings.font", app: app)
+        XCTAssertTrue(app.navigationBars["Font size"].exists)
+        app.buttons["font.reset"].tap()
+        back(app)
+        openSettingsRow("settings.personalization", app: app)
+        XCTAssertTrue(app.navigationBars["Personalization"].exists)
+        XCTAssertTrue(app.textViews["personalization.instructions"].exists)
+        back(app)
+        openSettingsRow("settings.memory", app: app)
+        XCTAssertTrue(app.buttons["memory.add"].exists)
+        back(app)
+        openSettingsRow("settings.voice", app: app)
+        XCTAssertTrue(app.navigationBars["Voice"].exists)
+        XCTAssertTrue(app.buttons["voice.preview"].exists)
+        back(app)
+        openSettingsRow("settings.about", app: app)
+        XCTAssertTrue(app.navigationBars["About"].exists)
+        back(app)
+        app.buttons["settings.close"].tap()
+        app.buttons["chat.tools"].tap()
+        XCTAssertTrue(app.buttons["chat.tools.find"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["chat.tools.find"].label.contains("Find"))
+        app.buttons["chat.tools.find"].tap()
+        XCTAssertTrue(app.textFields["chat.find.field"].waitForExistence(timeout: 5))
+        app.buttons["chat.find.close"].tap()
+        capture("35-english-chat")
+    }
+
+    func testBundledPersonalizationVideoOpensAndCloses() {
+        let app = launch()
+        settings(app)
+        openSettingsRow("settings.personalization", app: app)
+        let video = app.buttons["personalization.video"]
+        for _ in 0..<4 where !video.isHittable { app.swipeUp() }
+        XCTAssertTrue(video.exists)
+        video.tap()
+        XCTAssertTrue(element(app, "personalization.video.player").waitForExistence(timeout: 8))
+        capture("36-personalization-video-player")
+        app.buttons["personalization.video.close"].tap()
+        XCTAssertTrue(app.textViews["personalization.instructions"].waitForExistence(timeout: 5))
+    }
+
     func testProfilePersonalizationAndLanguagePersist() {
         let app = launch(["-UITestDemo"])
         settings(app)

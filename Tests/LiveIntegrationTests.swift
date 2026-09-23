@@ -58,7 +58,7 @@ final class LiveIntegrationTests: XCTestCase {
     }
 
     func testLiveReadSpecificWebPageWithCitation() async throws {
-        let result = try await answer("Прочитай https://support.apple.com/en-us/111872 и скажи, какая диагональ экрана iPhone 13. Дай ссылку на эту страницу.", thinking: false, search: true)
+        let result = try await answer("Прочитай https://support.apple.com/en-us/111872 и скажи, какая диагональ экрана iPhone 13. Дай ссылку на эту страницу.", thinking: false, search: false)
         XCTAssertTrue(result.sources.contains { $0.url.host == "support.apple.com" && !($0.content ?? "").isEmpty })
         XCTAssertTrue(result.content.contains("6,1") || result.content.contains("6.1"))
     }

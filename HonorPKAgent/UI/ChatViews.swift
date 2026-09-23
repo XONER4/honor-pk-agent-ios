@@ -908,6 +908,7 @@ private struct MessageRow: View, Equatable {
             if !message.content.isEmpty {
                 MarkdownMessage(content: message.content, fontSize: 17 * settings.fontScale * dynamicScale,
                                 sources: message.sources, findQuery: findQuery, onCopy: onCopy)
+                    .equatable()
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel(message.content)
                     .accessibilityIdentifier("message.content." + message.id.uuidString)
@@ -1436,12 +1437,17 @@ private struct SelectableTextView: UIViewRepresentable {
 }
 
 /// Inline Markdown and fenced code without a web view or remote renderer.
-private struct MarkdownMessage: View {
+private struct MarkdownMessage: View, Equatable {
     let content: String
     let fontSize: Double
     let sources: [WebSource]
     let findQuery: String
     let onCopy: (String) -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.content == rhs.content && lhs.fontSize == rhs.fontSize &&
+        lhs.sources == rhs.sources && lhs.findQuery == rhs.findQuery
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1531,9 +1537,12 @@ private func highlighted(_ value: AttributedString, query: String) -> Attributed
     return result
 }
 
+private enum CitationPattern {
+    static let expression = try? NSRegularExpression(pattern: #"(?<!!)\[(\d+)\](?!\()"#)
+}
+
 private func linkedCitations(_ content: String, sources: [WebSource]) -> String {
-    guard !sources.isEmpty,
-          let expression = try? NSRegularExpression(pattern: #"(?<!!)\[(\d+)\](?!\()"#) else { return content }
+    guard !sources.isEmpty, let expression = CitationPattern.expression else { return content }
     var result = content
     let matches = expression.matches(in: content, range: NSRange(content.startIndex..., in: content))
     for match in matches.reversed() {

@@ -357,7 +357,7 @@ final class ChatStore: ObservableObject {
         isGenerating = true
         let thinking = reasoningEnabled
         let query = input.last(where: { $0.role == .user })?.content ?? ""
-        let searching = searchEnabled || WeatherIntent.location(in: query) != nil
+        let searching = searchEnabled || WeatherIntent.location(in: query) != nil || !WebPageText.urls(in: query).isEmpty
         let recentContext = input.suffix(4).map { String($0.content.prefix(1500)) }.joined(separator: "\n")
         let instruction = effectiveSystemInstruction + HonerIdentity.context(for: query, recentContext: recentContext)
         let client = injectedClient ?? DeepSeekClient(configuration: configuration)
@@ -393,11 +393,13 @@ final class ChatStore: ObservableObject {
                 @MainActor func flush() {
                     guard !pendingContent.isEmpty || !pendingReasoning.isEmpty else { return }
                     let seconds = firstReasoningAt.map { max(1, Int((reasoningEndedAt ?? Date()).timeIntervalSince($0).rounded())) } ?? 0
+                    let contentChanged = !pendingContent.isEmpty
+                    let reasoningChanged = !pendingReasoning.isEmpty
                     rawContent += pendingContent
                     rawReasoning += pendingReasoning
                     self.mutateMessage(chatID: chatID, messageID: response.id) {
-                        $0.content = russianNormalizer != nil && RussianTextPolicy.holdWhileStreaming(rawContent) ? "" : rawContent
-                        $0.reasoning = russianNormalizer != nil && RussianTextPolicy.holdWhileStreaming(rawReasoning) ? "" : rawReasoning
+                        if contentChanged { $0.content = russianNormalizer != nil && RussianTextPolicy.holdWhileStreaming(rawContent) ? "" : rawContent }
+                        if reasoningChanged { $0.reasoning = russianNormalizer != nil && RussianTextPolicy.holdWhileStreaming(rawReasoning) ? "" : rawReasoning }
                         $0.reasoningSeconds = seconds
                     }
                     pendingContent = ""; pendingReasoning = ""; lastPublished = Date()
@@ -414,7 +416,7 @@ final class ChatStore: ObservableObject {
                         if !delta.reasoning.isEmpty, firstReasoningAt == nil { firstReasoningAt = Date() }
                         if !delta.content.isEmpty {
                             if firstReasoningAt != nil && reasoningEndedAt == nil { reasoningEndedAt = Date() }
-                            self.generationStatus = "Отвечаю…"
+                            if self.generationStatus != "Отвечаю…" { self.generationStatus = "Отвечаю…" }
                         }
                         pendingContent += delta.content
                         pendingReasoning += delta.reasoning
@@ -429,18 +431,20 @@ final class ChatStore: ObservableObject {
                 }
                 guard self.activeRunID == runID else { return }
                 if let russianNormalizer {
+                    let normalizeContent = RussianTextPolicy.needsNormalization(rawContent)
+                    let normalizeReasoning = RussianTextPolicy.needsNormalization(rawReasoning)
                     self.mutateMessage(chatID: chatID, messageID: response.id) {
-                        if !RussianTextPolicy.needsNormalization(rawContent) { $0.content = rawContent }
-                        if !RussianTextPolicy.needsNormalization(rawReasoning) { $0.reasoning = rawReasoning }
+                        if !normalizeContent { $0.content = rawContent }
+                        if !normalizeReasoning { $0.reasoning = rawReasoning }
                     }
-                    if RussianTextPolicy.needsNormalization(rawContent) {
+                    if normalizeContent {
                         self.generationStatus = "Перевожу ответ на русский…"
                         let translated = try await russianNormalizer.normalizeRussian(rawContent, reasoning: false)
                         try Task.checkCancellation()
                         guard self.activeRunID == runID else { return }
                         self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = translated }
                     }
-                    if RussianTextPolicy.needsNormalization(rawReasoning) {
+                    if normalizeReasoning {
                         self.generationStatus = "Перевожу описание рассуждения…"
                         do {
                             let translated = try await russianNormalizer.normalizeRussian(rawReasoning, reasoning: true)

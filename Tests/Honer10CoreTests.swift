@@ -59,6 +59,8 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertTrue(pc.contains("PowerShell"))
         XCTAssertTrue(pc.contains("закрыто"))
         XCTAssertTrue(pc.contains("Мобильное Honer AI не заявляет управление компьютером"))
+        XCTAssertTrue(HonerIdentity.context(for: "Что ещё создал твой разработчик?").contains("PowerShell"))
+        XCTAssertTrue(HonerIdentity.context(for: "Какие у него функции?", recentContext: "Владислав создал Honer PK Agent.").contains("PowerShell"))
     }
 
     @MainActor
@@ -80,6 +82,14 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertTrue(RussianTextPolicy.needsNormalization("冰吸收热量后分子运动加剧，最终从固态转变为液态，这是熔化。"))
         XCTAssertFalse(RussianTextPolicy.needsNormalization("Вот пример на Swift:\n```swift\nlet text = \"Hello world\"\nprint(text)\n```"))
         XCTAssertFalse(RussianTextPolicy.needsNormalization("Honer AI отвечает на русском языке и использует DeepSeek."))
+        XCTAssertTrue(RussianTextPolicy.needsNormalization("你好，我可以帮助你。"))
+        XCTAssertTrue(RussianTextPolicy.needsNormalization("Hello there!"))
+        XCTAssertTrue(RussianTextPolicy.needsNormalization("Hello!"))
+        XCTAssertTrue(RussianTextPolicy.needsNormalization("Let me help."))
+        XCTAssertFalse(RussianTextPolicy.needsNormalization("Honer AI"))
+        XCTAssertFalse(RussianTextPolicy.needsNormalization("DeepSeek"))
+        XCTAssertFalse(RussianTextPolicy.needsNormalization("HONOR_TEST_OK"))
+        XCTAssertFalse(RussianTextPolicy.needsNormalization("```swift\nlet greeting = \"Hello there!\"\n```"))
     }
 
     func testWeatherIntentAndRussianWeatherDataUseCorrectCityDatesAndUnits() throws {
@@ -110,6 +120,10 @@ final class Honer10CoreTests: XCTestCase {
         store.draft = "Что такое лёд?"; store.send()
         try await idle(store)
         XCTAssertEqual(search.queries.count, 1)
+        store.draft = "Прочитай https://example.com/ice и объясни вывод."; store.send()
+        try await idle(store)
+        XCTAssertEqual(search.queries.count, 2)
+        XCTAssertTrue(search.queries.last?.contains("https://example.com/ice") == true)
     }
 
     func testPageExtractionAndSearchRelevanceRejectBingQuizNoise() {
@@ -124,6 +138,7 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertEqual(SearchRelevance.score(source: noise, query: "погода Клин"), 0)
         let good = WebSource(title: "Клин: прогноз погоды", url: URL(string: "https://example.com/klin")!, snippet: "Погода в Клину сегодня")
         XCTAssertGreaterThan(SearchRelevance.score(source: good, query: "погода Клин"), 0)
+        XCTAssertEqual(SearchRelevance.compactQuery("Find Apple's iPhone 13 technical specifications. Give the display size in one sentence."), "Apple's iPhone 13 technical specifications")
         let source = WebSource(title: "Прочитано", url: good.url, snippet: "Выдержка", content: "Полный извлечённый текст", fetchedAt: Date(timeIntervalSince1970: 0))
         let context = WebSearchClient.context([good, source])
         XCTAssertTrue(context.contains("[1]")); XCTAssertTrue(context.contains("[2]"))
