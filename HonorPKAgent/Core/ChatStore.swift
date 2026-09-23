@@ -442,7 +442,8 @@ final class ChatStore: ObservableObject {
         statistics = UsageStatistics(firstLaunch: firstLaunch)
     }
 
-    /// Автоудаление чатов по сроку хранения (настройка в разделе «Данные»).    func purgeOldChats(olderThan days: Int) {
+    /// Автоудаление чатов по сроку хранения (настройка в разделе «Данные»).
+    func purgeOldChats(olderThan days: Int) {
         guard days > 0 else { return }
         let threshold = Date().addingTimeInterval(-Double(days) * 86_400)
         // Закреплённые чаты автоудаление не трогает.
