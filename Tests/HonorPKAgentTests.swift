@@ -439,6 +439,26 @@ final class HonorPKAgentTests: XCTestCase {
     }
 
     @MainActor
+    func testEmptyAnswerNeverLeavesTheChatSilent() async throws {
+        // Клиент, который вообще ничего не отдаёт: раньше в чате не появлялось
+        // ни текста, ни ошибки — пользователь видел пустоту и «молчание».
+        let client = ImmediateClient(events: [.init(finishReason: "stop")])
+        let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"),
+                              client: client, storageURL: temporaryHistory())
+        store.reasoningEnabled = true
+        store.draft = "Ку"
+        store.send()
+        try await waitUntilIdle(store)
+        let answer = try XCTUnwrap(store.messages.last)
+        XCTAssertTrue(answer.role == .assistant)
+        let hasText = answer.content.count > 3
+        let hasError = !(answer.error ?? "").isEmpty
+        XCTAssertTrue(hasText || hasError,
+                      "Пустой ответ обязан показать сообщение: content=[\(answer.content)] error=[\(answer.error ?? "nil")]")
+        XCTAssertTrue(store.errorMessage != nil || hasError || hasText)
+    }
+
+    @MainActor
     private func waitUntilIdle(_ store: ChatStore) async throws {
         // Раннер в CI медленный: генерация может занять секунды, поэтому ждём до 30 с.
         for _ in 0..<600 {

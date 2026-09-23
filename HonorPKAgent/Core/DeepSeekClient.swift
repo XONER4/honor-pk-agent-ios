@@ -468,11 +468,14 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
         var request = try makeRequest(messages: messages, thinking: thinking,
                                       systemInstruction: systemInstruction,
                                       searchContext: searchContext, tools: nil)
-        // Поток в этом запросе не нужен: снимаем флаг и заголовок.
-        if var body = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any] {
-            body["stream"] = false
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        // Поток в этом запросе не нужен: снимаем флаг. Тело запроса строим мы сами
+        // и только что его разобрали, поэтому здесь не может быть «тихого» пропуска:
+        // если разбор не удался — это ошибка, а не молчание.
+        guard var body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any] else {
+            throw HonorError.invalidResponse
         }
+        body["stream"] = false
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
