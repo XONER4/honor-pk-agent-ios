@@ -667,7 +667,8 @@ private struct StatisticsSettingsPage: View {
     }
 }
 
-private struct AboutSettingsPage: View {    @EnvironmentObject private var settings: AppSettings
+private struct AboutSettingsPage: View {
+    @EnvironmentObject private var settings: AppSettings
     var body: some View {
         Form {
             Section {

@@ -43,8 +43,9 @@ Get-ChildItem $root -Recurse -Filter '*.swift' | ForEach-Object {
             Write-Output "GLUED COMMENT: $($_.Name):$($k + 1)"
             $script:problems++
         }
-        # property named 'body' inside a View conflicts with View.body
-        if ($lines[$k] -match '^\s+(let|var)\s+body\s*:' -and $lines[$k] -notmatch 'var\s+body\s*:\s*some\s+View') {
+        # property named 'body' inside a View conflicts with View.body (Scene.body is fine)
+        if ($lines[$k] -match '^\s+(let|var)\s+body\s*:' -and
+            $lines[$k] -notmatch 'var\s+body\s*:\s*some\s+(View|Scene)') {
             Write-Output "RESERVED NAME: $($_.Name):$($k + 1)"
             $script:problems++
         }
