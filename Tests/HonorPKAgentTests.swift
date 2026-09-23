@@ -448,13 +448,17 @@ final class HonorPKAgentTests: XCTestCase {
         XCTFail("Generation did not finish")
     }
 
-    /// Ждёт появления потока у тестового клиента. 250 мс не хватало: задача
-    /// генерации на загруженном раннере не успевала дойти до вызова клиента.
+    /// Ждёт появления потока у тестового клиента.
+    /// Раньше здесь было 250 мс: на загруженном раннере задача генерации не успевала
+    /// дойти до вызова клиента, и тест падал по таймауту, а не по существу.
     @MainActor
     private func waitForContinuation(_ client: ControlledClient, count: Int = 1,
                                      file: StaticString = #filePath, line: UInt = #line) async throws {
-        for _ in 0..<200 {
+        for attempt in 0..<400 {
             if client.continuations.count >= count { return }
+            // Каждые 20 попыток уступаем планировщику без задержки: так задача
+            // генерации получает главный актор, даже если он был занят.
+            if attempt.isMultiple(of: 20) { await Task.yield() }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         XCTFail("Continuation did not appear: have \(client.continuations.count), want \(count)",
