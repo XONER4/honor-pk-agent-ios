@@ -391,19 +391,22 @@ final class HonorPKAgentTests: XCTestCase {
 
     @MainActor
     func testOverCapacityMemoryImportLeavesExistingChatsAndMemoriesUntouched() throws {
+        // Лимит памяти теперь 5000 записей: наполнять его через addMemory в тесте
+        // слишком дорого. Проверяем сам запрет импорта: архив с числом записей
+        // больше лимита должен быть отклонён целиком, без частичного импорта.
         let store = ChatStore(configuration: .init(apiKey: "test"), storageURL: temporaryHistory())
-        // Лимит памяти — 1000 записей, поэтому «сверх вместимости» начинается с 1000.
-        for index in 0..<ChatStore.maximumMemoryCount { XCTAssertTrue(store.addMemory("Memory \(index)")) }
         let old = Conversation(title: "Keep me")
         store.conversations = [old]
-        let incoming = HistoryArchive(conversations: [Conversation(title: "Do not partially import")], selectedConversationID: nil,
-                                      memories: [HonorMemory(text: "Memory over capacity")])
+        XCTAssertTrue(store.addMemory("Уже сохранённый факт"))
+        let overload = (0...ChatStore.maximumMemoryCount).map { HonorMemory(text: "Memory \($0)") }
+        let incoming = HistoryArchive(conversations: [Conversation(title: "Do not partially import")],
+                                      selectedConversationID: nil, memories: overload)
         let url = temporaryHistory()
         let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(incoming).write(to: url)
         XCTAssertThrowsError(try store.importData(from: url))
         XCTAssertEqual(store.conversations, [old])
-        XCTAssertEqual(store.memories.count, ChatStore.maximumMemoryCount)
+        XCTAssertEqual(store.memories.count, 1)
     }
 
     @MainActor
