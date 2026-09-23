@@ -2,7 +2,7 @@ import Foundation
 
 enum MessageRole: String, Codable, Sendable { case user, assistant }
 enum MessageFeedback: String, Codable, Sendable { case like, dislike }
-enum AttachmentKind: String, Codable, Sendable { case image, document, text, video }
+enum AttachmentKind: String, Codable, Sendable { case image, document, text, video, sticker }
 
 struct MessageAttachment: Identifiable, Codable, Equatable, Sendable {
     var id: UUID = UUID()

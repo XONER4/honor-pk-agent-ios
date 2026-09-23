@@ -25,6 +25,8 @@ struct ChatRootView: View {
     @State private var sourceSheet: SourceSelection?
     /// Панель «Информация о чате» (пункт 38 ТЗ).
     @State private var chatInfoOpen = false
+    /// Панель стикеров (пункт 39 ТЗ).
+    @State private var stickersOpen = false
     @State private var deleteChatConfirmation = false
     @State private var findOpen = false
     /// Запрос на переход к сообщению по линиям навигации справа.
@@ -177,6 +179,13 @@ struct ChatRootView: View {
         .sheet(isPresented: $chatInfoOpen) {
             ChatInfoSheet(store: store, settings: settings)
                 .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $stickersOpen) {
+            StickerPickerView { sticker in
+                // Стикер уходит отдельным сообщением-вложением (пункт 39).
+                store.attachments.append(MessageAttachment(name: sticker, kind: .sticker))
+            }
+            .presentationDetents([.medium]).presentationDragIndicator(.visible)
         }
         .sheet(item: $sourceSheet) { selection in
             SourceDetailsSheet(selection: selection, settings: settings)
@@ -550,6 +559,16 @@ struct ChatRootView: View {
                     if focused && attachmentsOpen { animate { attachmentsOpen = false } }
                 }
                 if store.canSend { voiceButton }
+                Button {
+                    composerFocused = false
+                    cancelVoice()
+                    stickersOpen = true
+                } label: {
+                    Image(systemName: "face.smiling")
+                        .font(.system(size: 24, weight: .regular)).frame(width: 40, height: 44)
+                }
+                .accessibilityLabel(text("Стикеры", "Stickers"))
+                .accessibilityIdentifier("composer.stickers")
               }
             }
             HStack(spacing: 5) {
@@ -1180,10 +1199,23 @@ private struct MessageRow: View, Equatable {
 
     private var attachmentLabels: some View {
         ForEach(message.attachments) { attachment in
-            Button { onAttachment(attachment) } label: {
-                Label(attachment.name, systemImage: attachmentSymbol(attachment))
-                    .font(.system(size: 12)).foregroundStyle(HonorTheme.accent).lineLimit(2).frame(minHeight: 32)
-            }.buttonStyle(.plain).accessibilityIdentifier("message.attachment." + attachment.id.uuidString)
+            if attachment.kind == .sticker {
+                // Стикер рисуется крупно, без рамки и без имени файла (пункт 39).
+                Button { onAttachment(attachment) } label: {
+                    Text(attachment.name)
+                        .font(.system(size: 54))
+                        .frame(minWidth: 64, minHeight: 64)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(text("Стикер \(attachment.name)", "Sticker \(attachment.name)"))
+                .accessibilityIdentifier("message.sticker." + attachment.id.uuidString)
+            } else {
+                Button { onAttachment(attachment) } label: {
+                    Label(attachment.name, systemImage: attachmentSymbol(attachment))
+                        .font(.system(size: 12)).foregroundStyle(HonorTheme.accent).lineLimit(2).frame(minHeight: 32)
+                }.buttonStyle(.plain).accessibilityIdentifier("message.attachment." + attachment.id.uuidString)
+            }
         }
     }
 
@@ -1931,6 +1963,7 @@ func attachmentSymbol(_ attachment: MessageAttachment) -> String {
     case .video: return "play.rectangle"
     case .document: return "doc"
     case .text: return "doc.text"
+    case .sticker: return "face.smiling"
     }
 }
 
@@ -2119,7 +2152,21 @@ private struct AttachmentPreviewSheet: View {
     var body: some View {
         NavigationStack {
             Group {
-                if attachment.kind == .video, let url = attachment.resolvedURL {
+                if attachment.kind == .sticker {
+                    // Стикер — крупный эмодзи, файла у него нет.
+                    VStack(spacing: 14) {
+                        Text(attachment.name).font(.system(size: 120))
+                        Button {
+                            UIPasteboard.general.string = attachment.name
+                        } label: {
+                            Label(settings.text("Копировать", "Copy"), systemImage: "square.on.square")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(HonorTheme.accent)
+                        .accessibilityIdentifier("attachment.preview.copySticker")
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if attachment.kind == .video, let url = attachment.resolvedURL {
                     // Видео со звуком: плеер хранится в состоянии, иначе он
                     // пересоздавался на каждой перерисовке и воспроизведение срывалось.
                     MediaPreviewPlayer(url: url)
