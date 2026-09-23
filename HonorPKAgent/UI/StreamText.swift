@@ -888,8 +888,8 @@ struct CodeBlockView: View {
     }
 }
 
-/// Таблица GFM с выравниванием столбцов, горизонтальным скроллом и копированием
-/// в Markdown / TSV / CSV.
+/// Таблица GFM с выравниванием столбцов, сортировкой, фильтром по строкам,
+/// строкой итогов, горизонтальным скроллом и копированием в Markdown / TSV / CSV.
 struct MarkdownTableView: View {
     let headers: [String]
     let alignments: [TableAlignment]
@@ -898,22 +898,102 @@ struct MarkdownTableView: View {
     let findQuery: String
 
     @State private var copied: String?
+    @State private var sortColumn: Int?
+    @State private var sortAscending = true
+    @State private var filter = ""
+    @State private var showTotals = false
 
     private var columnCount: Int { max(headers.count, rows.map(\.count).max() ?? 0) }
 
+    /// Строки после фильтра и сортировки.
+    private var visibleRows: [[String]] {
+        var result = rows
+        let query = filter.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !query.isEmpty {
+            result = result.filter { row in
+                row.contains { $0.localizedCaseInsensitiveContains(query) }
+            }
+        }
+        if let column = sortColumn {
+            result.sort { lhs, rhs in
+                let left = column < lhs.count ? lhs[column] : ""
+                let right = column < rhs.count ? rhs[column] : ""
+                // Числа сравниваем как числа, иначе как текст.
+                if let a = Double(left.replacingOccurrences(of: ",", with: ".")),
+                   let b = Double(right.replacingOccurrences(of: ",", with: ".")) {
+                    return sortAscending ? a < b : a > b
+                }
+                let order = left.localizedStandardCompare(right)
+                return sortAscending ? order == .orderedAscending : order == .orderedDescending
+            }
+        }
+        return result
+    }
+
+    /// Есть ли в столбце числа — тогда показываем итоги.
+    private var numericColumns: [Int] {
+        (0..<columnCount).filter { column in
+            let values = visibleRows.compactMap { row -> Double? in
+                guard column < row.count else { return nil }
+                let cleaned = row[column]
+                    .replacingOccurrences(of: " ", with: "")
+                    .replacingOccurrences(of: ",", with: ".")
+                    .replacingOccurrences(of: "₽", with: "")
+                    .replacingOccurrences(of: "%", with: "")
+                return Double(cleaned)
+            }
+            return values.count >= 2 && values.count == visibleRows.count
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if !headers.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12)).foregroundStyle(HonorTheme.secondary)
+                    TextField("Фильтр по строкам", text: $filter)
+                        .font(.system(size: 12))
+                        .textFieldStyle(.plain)
+                        .accessibilityIdentifier("table.filter")
+                    if !filter.isEmpty {
+                        Button { filter = "" } label: {
+                            Image(systemName: "xmark.circle.fill").font(.system(size: 13))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(HonorTheme.secondary)
+                    }
+                    if !numericColumns.isEmpty {
+                        Button { showTotals.toggle() } label: {
+                            Image(systemName: showTotals ? "sum.circle.fill" : "sum.circle")
+                                .font(.system(size: 15))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(showTotals ? HonorTheme.accent : HonorTheme.secondary)
+                        .accessibilityLabel("Итоги по столбцам")
+                    }
+                }
+                .padding(.horizontal, 10)
+                .frame(minHeight: 32)
+                .background(HonorTheme.surface, in: Capsule())
+                .overlay(Capsule().stroke(HonorTheme.divider, lineWidth: 0.6))
+            }
+
             ScrollView(.horizontal, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 0) {
                     if !headers.isEmpty {
-                        row(headers, isHeader: true)
+                        headerRow
                         Rectangle().fill(HonorTheme.divider).frame(height: 1)
                     }
-                    ForEach(Array(rows.enumerated()), id: \.offset) { index, cells in
+                    ForEach(Array(visibleRows.enumerated()), id: \.offset) { index, cells in
                         row(cells, isHeader: false)
-                        if index < rows.count - 1 {
+                        if index < visibleRows.count - 1 {
                             Rectangle().fill(HonorTheme.divider.opacity(0.5)).frame(height: 0.5)
                         }
+                    }
+                    if showTotals && !numericColumns.isEmpty {
+                        Rectangle().fill(HonorTheme.divider).frame(height: 1)
+                        totalsRow
                     }
                 }
                 .background(HonorTheme.surface)
@@ -925,12 +1005,95 @@ struct MarkdownTableView: View {
                 copyButton("Markdown", value: asMarkdown)
                 copyButton("TSV", value: asTSV)
                 copyButton("CSV", value: asCSV)
+                if !filter.isEmpty {
+                    Text("найдено \(visibleRows.count) из \(rows.count)")
+                        .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
+                }
                 if let copied {
                     Text("Скопировано: \(copied)")
                         .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
                 }
             }
         }
+    }
+
+    /// Шапка: тап по столбцу сортирует его.
+    private var headerRow: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(0..<columnCount, id: \.self) { index in
+                Button {
+                    if sortColumn == index { sortAscending.toggle() } else { sortColumn = index; sortAscending = true }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(index < headers.count ? headers[index] : "")
+                            .font(.system(size: fontSize * 0.92, weight: .semibold))
+                            .multilineTextAlignment(textAlignment(alignment(index)))
+                        if sortColumn == index {
+                            Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 9, weight: .bold))
+                        }
+                    }
+                    .frame(minWidth: 88, maxWidth: 240, alignment: frameAlignment(alignment(index)))
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(sortColumn == index ? HonorTheme.accent : HonorTheme.foreground)
+                .accessibilityLabel("Сортировать по столбцу")
+                if index < columnCount - 1 {
+                    Rectangle().fill(HonorTheme.divider.opacity(0.6)).frame(width: 0.5)
+                }
+            }
+        }
+        .background(HonorTheme.raised)
+    }
+
+    /// Строка итогов: сумма и среднее по числовым столбцам.
+    private var totalsRow: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(0..<columnCount, id: \.self) { index in
+                let values = numericColumnValues(index)
+                VStack(alignment: .leading, spacing: 2) {
+                    if values.isEmpty {
+                        Text(index == 0 ? "Итого" : "")
+                            .font(.system(size: fontSize * 0.85, weight: .semibold))
+                            .foregroundStyle(HonorTheme.secondary)
+                    } else {
+                        Text("Σ \(formatted(values.reduce(0, +)))")
+                            .font(.system(size: fontSize * 0.85, weight: .semibold))
+                        Text("сред. \(formatted(values.reduce(0, +) / Double(values.count)))")
+                            .font(.system(size: fontSize * 0.75))
+                            .foregroundStyle(HonorTheme.secondary)
+                    }
+                }
+                .frame(minWidth: 88, maxWidth: 240, alignment: frameAlignment(alignment(index)))
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                if index < columnCount - 1 {
+                    Rectangle().fill(HonorTheme.divider.opacity(0.6)).frame(width: 0.5)
+                }
+            }
+        }
+        .background(HonorTheme.raised.opacity(0.6))
+    }
+
+    private func numericColumnValues(_ column: Int) -> [Double] {
+        guard numericColumns.contains(column) else { return [] }
+        return visibleRows.compactMap { row in
+            guard column < row.count else { return nil }
+            let cleaned = row[column]
+                .replacingOccurrences(of: " ", with: "")
+                .replacingOccurrences(of: ",", with: ".")
+                .replacingOccurrences(of: "₽", with: "")
+                .replacingOccurrences(of: "%", with: "")
+            return Double(cleaned)
+        }
+    }
+
+    private func formatted(_ value: Double) -> String {
+        if value == value.rounded() && abs(value) < 1_000_000 {
+            return String(Int(value))
+        }
+        return String(format: "%.2f", value)
     }
 
     private func alignment(_ index: Int) -> TableAlignment {
@@ -945,13 +1108,13 @@ struct MarkdownTableView: View {
         }
     }
 
+    /// Обычная строка данных (шапка рисуется отдельно, чтобы её можно было сортировать).
     private func row(_ cells: [String], isHeader: Bool) -> some View {
         HStack(alignment: .top, spacing: 0) {
             ForEach(0..<columnCount, id: \.self) { index in
                 let value = index < cells.count ? cells[index] : ""
                 Text(highlighted(AttributedString(value), query: findQuery))
-                    .font(.system(size: fontSize * (isHeader ? 0.92 : 0.9),
-                                  weight: isHeader ? .semibold : .regular))
+                    .font(.system(size: fontSize * 0.9))
                     .multilineTextAlignment(textAlignment(alignment(index)))
                     .frame(minWidth: 88, maxWidth: 240, alignment: frameAlignment(alignment(index)))
                     .padding(.horizontal, 10).padding(.vertical, 8)
@@ -961,7 +1124,6 @@ struct MarkdownTableView: View {
                 }
             }
         }
-        .background(isHeader ? HonorTheme.raised : Color.clear)
     }
 
     private func textAlignment(_ value: TableAlignment) -> TextAlignment {
@@ -998,12 +1160,13 @@ struct MarkdownTableView: View {
                 }
             }.joined(separator: "|") + "|")
         }
-        for cells in rows { lines.append("| " + cells.joined(separator: " | ") + " |") }
+        // Копируется то, что видно с учётом фильтра и сортировки.
+        for cells in visibleRows { lines.append("| " + cells.joined(separator: " | ") + " |") }
         return lines.joined(separator: "\n")
     }
 
     private var asTSV: String {
-        ([headers] + rows).map { $0.joined(separator: "\t") }.joined(separator: "\n")
+        ([headers] + visibleRows).map { $0.joined(separator: "\t") }.joined(separator: "\n")
     }
 
     private var asCSV: String {
@@ -1012,6 +1175,6 @@ struct MarkdownTableView: View {
                 ? "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
                 : value
         }
-        return ([headers] + rows).map { $0.map(escape).joined(separator: ",") }.joined(separator: "\n")
+        return ([headers] + visibleRows).map { $0.map(escape).joined(separator: ",") }.joined(separator: "\n")
     }
 }

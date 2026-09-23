@@ -118,11 +118,13 @@ struct ChatRootView: View {
                 // A fading-out menu must stop intercepting the next touch immediately.
                 .allowsHitTesting(menuMessage != nil)
             }
-            .simultaneousGesture(DragGesture(minimumDistance: 24).onEnded { value in
+            .simultaneousGesture(DragGesture(minimumDistance: 45).onEnded { value in
+                // Порог поднят с 24 до 45: раньше горизонтальная прокрутка широких
+                // таблиц и блоков кода случайно открывала панель чатов.
                 guard menuMessage == nil else { return }
-                guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else { return }
-                if drawerOpen && value.translation.width < -45 { closeDrawer() }
-                else if !drawerOpen && value.startLocation.x < 24 && value.translation.width > 60 { openDrawer() }
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.6 else { return }
+                if drawerOpen && value.translation.width < -60 { closeDrawer() }
+                else if !drawerOpen && value.startLocation.x < 24 && value.translation.width > 80 { openDrawer() }
             })
         }
         .allowsHitTesting(!store.isLoadingHistory)

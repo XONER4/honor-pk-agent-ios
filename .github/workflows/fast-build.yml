@@ -1,0 +1,60 @@
+name: Fast build (no tests)
+
+# Быстрая сборка только .ipa, без тестов на симуляторе.
+# Обычный workflow тратит ~4 минуты macOS-времени (это 40 минут лимита, так как
+# macOS считается по тарифу 10x). Здесь только компиляция и упаковка — около минуты.
+#
+# Запуск: Actions → Fast build (no tests) → Run workflow
+# Он же запускается автоматически на каждый push в main.
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: Заметка к сборке
+        required: false
+        default: ''
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up project
+        run: |
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          python3 - <<'PY'
+          import os, plistlib
+          config = {'APIKey': os.environ.get('DEEPSEEK_API_KEY', ''), 'BaseURL': 'https://api.deepseek.com', 'Model': 'deepseek-flash'}
+          with open('HonorPKAgent/DeepSeekConfig.plist', 'wb') as f:
+              plistlib.dump(config, f)
+          PY
+          xcodegen generate
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+      - name: Build unsigned IPA
+        run: bash scripts/build-unsigned.sh
+
+      - name: Verify IPA содержимое
+        run: |
+          echo "=== Plist приложения ==="
+          unzip -p build/Honor-PK-Agent-unsigned.ipa 'Payload/*.app/Info.plist' > /tmp/app.plist
+          plutil -p /tmp/app.plist | head -20
+          echo "=== Размер бинарника ==="
+          unzip -o -q build/Honor-PK-Agent-unsigned.ipa -d /tmp/ipa
+          ls -la /tmp/ipa/Payload/*.app/ | head -15
+          echo "=== Итоговый файл ==="
+          ls -la build/*.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Honor-PK-Agent-unsigned
+          path: |
+            build/Honor-PK-Agent-unsigned.ipa
+            HonorPKAgent.xcodeproj
