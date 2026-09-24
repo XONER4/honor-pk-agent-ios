@@ -196,6 +196,10 @@ struct ToolCallRequest: Equatable, Sendable {
 /// Обзор одного чата для списка, который видит модель.
 struct ChatOverview: Sendable {
     var number: Int
+    /// Устойчивый идентификатор чата. Номер в списке меняется, как только чат
+    /// передвинулся наверх, поэтому действия над чатом выполняются по идентификатору:
+    /// иначе переименование могло попасть в соседний чат.
+    var id: UUID = UUID()
     var title: String
     var messageCount: Int
     var lastMessageAt: Date?
@@ -231,6 +235,10 @@ enum ToolEffect: Sendable {
     case sendToChat(number: Int, text: String)
     case saveMemory(String)
     case setSetting(name: String, value: String)
+    /// Действие над конкретным чатом по устойчивому идентификатору.
+    case renameChat(id: UUID, title: String)
+    case pinChat(id: UUID, pinned: Bool)
+    case sendToChatID(id: UUID, text: String)
 }
 
 /// Результат выполнения инструмента, который уходит обратно в модель.
@@ -350,7 +358,7 @@ enum ToolExecutor {
             }
             return ToolCallResult(callID: call.id, name: call.name,
                                   content: "Чат «\(chat.title)» переименован в «\(title)».",
-                                  effect: .setSetting(name: "rename_chat:\(number)", value: title))
+                                  effect: .renameChat(id: chat.id, title: title))
 
         case .pinChat:
             guard let number = arguments["number"] as? Int,
@@ -363,7 +371,7 @@ enum ToolExecutor {
             }
             return ToolCallResult(callID: call.id, name: call.name,
                                   content: "Чат «\(chat.title)» \(pinned ? "закреплён" : "откреплён").",
-                                  effect: .setSetting(name: "pin_chat:\(number)", value: pinned ? "true" : "false"))
+                                  effect: .pinChat(id: chat.id, pinned: pinned))
 
         case .sendToChat:
             guard let number = arguments["number"] as? Int,
@@ -377,7 +385,7 @@ enum ToolExecutor {
             }
             return ToolCallResult(callID: call.id, name: call.name,
                                   content: "Сообщение отправлено в чат «\(chat.title)»: \(text.prefix(200))",
-                                  effect: .sendToChat(number: number, text: text))
+                                  effect: .sendToChatID(id: chat.id, text: text))
 
         case .saveMemory:
             guard let text = arguments["text"] as? String,

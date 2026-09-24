@@ -1111,6 +1111,7 @@ final class ChatStore: ObservableObject {
             let preview = chat.messages.last(where: { !$0.content.isEmpty })
                 .map { String($0.content.prefix(120)) } ?? ""
             overviews.append(ChatOverview(number: number,
+                                          id: chat.id,
                                           title: chat.title,
                                           messageCount: chat.messages.count,
                                           lastMessageAt: chat.lastMessageAt,
@@ -1139,11 +1140,20 @@ final class ChatStore: ObservableObject {
         switch effect {
         case .sendToChat(let number, let text):
             guard let chat = chat(forNumber: number) else { return }
-            var message = ChatMessage(role: .assistant, content: text)
-            message.inputKind = .text
-            mutateChat(chatID: chat.id) { conversation in
-                conversation.messages.append(message)
-                conversation.updatedAt = Date()
+            appendMessage(text, to: chat.id)
+        case .sendToChatID(let id, let text):
+            // Отправка по идентификатору: номер чата в списке мог уже сместиться,
+            // и сообщение уходило бы в соседний чат.
+            appendMessage(text, to: id)
+        case .renameChat(let id, let title):
+            guard conversations.contains(where: { $0.id == id }) else { return }
+            mutateChat(chatID: id) { $0.title = String(title.prefix(100)) }
+            saveSnapshot()
+        case .pinChat(let id, let pinned):
+            guard conversations.contains(where: { $0.id == id }) else { return }
+            mutateChat(chatID: id) { conversation in
+                conversation.pinned = pinned
+                if !pinned { conversation.pinOrder = 0 }
             }
             saveSnapshot()
         case .saveMemory(let text):
@@ -1151,6 +1161,18 @@ final class ChatStore: ObservableObject {
         case .setSetting(let name, let value):
             applySetting(name: name, value: value)
         }
+    }
+
+    /// Дописать сообщение агента в конкретный чат по идентификатору.
+    private func appendMessage(_ text: String, to chatID: UUID) {
+        guard conversations.contains(where: { $0.id == chatID }) else { return }
+        var message = ChatMessage(role: .assistant, content: text)
+        message.inputKind = .text
+        mutateChat(chatID: chatID) { conversation in
+            conversation.messages.append(message)
+            conversation.updatedAt = Date()
+        }
+        saveSnapshot()
     }
 
     private func chat(forNumber number: Int) -> Conversation? {
