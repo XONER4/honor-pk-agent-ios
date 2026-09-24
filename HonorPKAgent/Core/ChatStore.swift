@@ -940,8 +940,12 @@ final class ChatStore: ObservableObject {
                                                                    systemInstruction: "Отвечай только итоговым текстом по-русски. Никаких обещаний что-то найти или прочитать, никаких рассуждений о своих действиях. Сразу дай ответ по данным, которые есть в переписке.",
                                                                    searchContext: "")
                             if !Self.needsAnswerRecovery(forced), !forced.isEmpty {
+                                // Именно заменяем ответ, а не дописываем: накопленный текст
+                                // содержал объявление о действии, и склейка выглядела как
+                                // «Сначала найду чат…## Ответ».
                                 retryContent = forced
                                 rawContent = forced
+                                pendingContent = ""
                                 self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = forced }
                             }
                         } catch {
