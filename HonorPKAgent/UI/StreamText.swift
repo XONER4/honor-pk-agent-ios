@@ -855,6 +855,9 @@ private struct MarkdownBlockView: View {
     /// Ширина сообщения: нужна таблицам, чтобы делить место по содержимому столбцов.
     var containerWidth: CGFloat = 320
     var onAnswer: ((String) -> Bool)? = nil
+    /// Кэш разметки абзаца: см. `attributed(for:)`.
+    @State private var cachedSource: String = ""
+    @State private var cached: AttributedString?
 
     var body: some View {
         Group {
@@ -951,7 +954,7 @@ private struct MarkdownBlockView: View {
 
     private func inline(_ text: String, size: Double, weight: Font.Weight) -> some View {
         InlineContentView(source: text, size: size, weight: weight,
-                          attributed: inlineAttributed(text))
+                          attributed: attributed(for: text))
     }
 
     private func inlineAttributed(_ source: String) -> AttributedString {
@@ -961,6 +964,24 @@ private struct MarkdownBlockView: View {
             ?? AttributedString(source)
         value = InlineStyleParser.apply(to: value)
         return highlighted(value, query: findQuery)
+    }
+
+    /// Разметку абзаца разбираем один раз на текст, а не на каждый кадр.
+    ///
+    /// Пока ответ печатается, представление блока пересобирается десятки раз в
+    /// секунду. Разбор инлайн-разметки (`**жирный**`, цвета, формулы, ссылки) — самая
+    /// дорогая часть отрисовки абзаца, и делать её каждый кадр нельзя: длинный ответ
+    /// начинал «заикаться». Здесь результат сохраняется, пока текст не изменился.
+    private func attributed(for text: String) -> AttributedString {
+        if cachedSource == text, let cached { return cached }
+        let value = inlineAttributed(text)
+        // Запоминаем результат только когда текст действительно другой: тогда запись
+        // в состояние происходит не на каждом кадре, а лишь при росте абзаца.
+        if cachedSource != text {
+            cachedSource = text
+            cached = value
+        }
+        return value
     }
 }
 
