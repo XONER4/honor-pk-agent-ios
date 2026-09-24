@@ -269,7 +269,8 @@ struct ChatRootView: View {
                                     composerFocused = false
                                     animate { menuMessage = message }
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                })
+                                },
+                                onToast: showToast)
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -866,6 +867,9 @@ private struct MessageTimeline: View {
     let onAttachment: (MessageAttachment) -> Void
     let onSources: (SourceSelection) -> Void
     let onMenu: (ChatMessage) -> Void
+    /// Всплывающая подсказка принадлежит корневому экрану — передаём её сюда,
+    /// чтобы объяснить пользователю, почему нажатие варианта сейчас не сработало.
+    let onToast: (String) -> Void
     @State private var followLatest = true
     @State private var pendingScroll: Task<Void, Never>?
     /// Плавное сопровождение растущего ответа. Прокрутка на каждое обновление
@@ -1047,8 +1051,8 @@ private struct MessageTimeline: View {
                            // загружалась или печатался ответ: казалось, что вариант
                            // «не выбирается».
                            guard !store.isGenerating, !store.isLoadingHistory else {
-                               showToast(text("Дождитесь конца ответа и нажмите ещё раз",
-                                              "Wait for the answer to finish, then tap again"))
+                               onToast(settings.text("Дождитесь конца ответа и нажмите ещё раз",
+                                                     "Wait for the answer to finish, then tap again"))
                                return
                            }
                            store.systemInstruction = settings.customInstructions
