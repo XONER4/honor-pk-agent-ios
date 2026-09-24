@@ -1209,7 +1209,9 @@ private struct MessageRow: View, Equatable {
     let onFeedback: (MessageFeedback?) -> Void
     let onReaction: (String?) -> Void
     /// Нажатие варианта в блоке вопросов агента (пункт 33).
-    let onAnswer: (String) -> Void
+    /// Возвращает `false`, если ответ отправить не удалось: тогда карточка
+    /// не фиксирует выбор, и пользователь может нажать снова.
+    let onAnswer: (String) -> Bool
     let onMenu: (ChatMessage) -> Void
     @State private var reasoningOpen = false
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
