@@ -614,7 +614,11 @@ final class ChatStore: ObservableObject {
     private func beginGeneration(in chatID: UUID) {
         guard let index = conversations.firstIndex(where: { $0.id == chatID }) else { return }
         errorMessage = nil
-        let input = conversations[index].messages
+        // В запрос уходит не вся переписка целиком, а последние сообщения: длинный
+        // чат на сотни тысяч знаков раздувал запрос до мегабайтов, ответ начинал
+        // идти с большой задержкой, а иногда сервис отвечал ошибкой — это выглядело
+        // как «запрос не работает». Полная переписка остаётся в приложении.
+        let input = Self.requestHistory(from: conversations[index].messages)
         let response = ChatMessage(role: .assistant)
         conversations[index].messages.append(response)
         conversations[index].updatedAt = Date()
@@ -1105,6 +1109,42 @@ final class ChatStore: ObservableObject {
     /// Важно: при включённых инструментах API требует возвращать `reasoning_content`
     /// предыдущего прохода — это делается в assistant-сообщении ниже.
     static let toolsEnabled = true
+
+    /// Переписка для отправки в сервис: последние сообщения в пределах разумного размера.
+    ///
+    /// Вся история хранится в приложении полностью; здесь только то, что реально
+    /// уходит в запрос. Правила: не больше 60 сообщений, не больше 120 000 знаков,
+    /// одно сообщение обрезается до 20 000 знаков, и первым обязан идти вопрос
+    /// пользователя (иначе сервис отвечает ошибкой на «висящий» ответ ассистента).
+    static func requestHistory(from messages: [ChatMessage]) -> [ChatMessage] {
+        let characterLimit = 120_000
+        let messageLimit = 60
+        var picked: [ChatMessage] = []
+        var total = 0
+        for message in messages.reversed() {
+            guard picked.count < messageLimit else { break }
+            var copy = message
+            if copy.content.count > 20_000 {
+                copy.content = String(copy.content.prefix(20_000)) + "\n… (сообщение сокращено)"
+            }
+            if message.role == .assistant, copy.reasoning.count > 4_000 {
+                // Рассуждение прошлых ответов нужно только при вызовах инструментов;
+                // в обычной переписке оно занимает больше места, чем сам ответ.
+                copy.reasoning = String(copy.reasoning.prefix(4_000))
+            }
+            let size = copy.content.count + copy.reasoning.count
+            if total + size > characterLimit, !picked.isEmpty { break }
+            total += size
+            picked.append(copy)
+        }
+        var ordered = picked.reversed().map { $0 }
+        // Живой буфер и незавершённый ответ в запрос не идут.
+        ordered.removeAll { $0.role == .assistant && $0.content.isEmpty && $0.reasoning.isEmpty }
+        if let firstUser = ordered.firstIndex(where: { $0.role == .user }) {
+            ordered = Array(ordered[firstUser...])
+        }
+        return ordered
+    }
 
     /// Переписка остальных чатов пользователя: прикладывается к каждому запросу.
     ///
