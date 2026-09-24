@@ -92,6 +92,7 @@ final class HonorPKAgentTests: XCTestCase {
         XCTAssertEqual((parts[1]["image_url"] as? [String: String])?["url"], "data:image/jpeg;base64,\(bytes.base64EncodedString())")
     }
 
+    @MainActor
     func testMissingAttachmentFileDoesNotKillTheWholeRequest() throws {
         // Если файл вложения исчез (очистка, смена песочницы после обновления,
         // восстановление из резервной копии), запрос раньше падал целиком — пользователь

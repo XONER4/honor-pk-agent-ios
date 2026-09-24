@@ -63,3 +63,34 @@ Get-ChildItem $root -Recurse -Filter '*.swift' | ForEach-Object {
 }
 
 if ($problems -eq 0) { Write-Output 'OK: all Swift files passed' } else { Write-Output "PROBLEMS: $problems" }
+
+# --- Test actor annotations: calls into ChatStore need @MainActor --------------------
+# Three times the CI build failed to compile tests because of this, so it is checked
+# here before pushing. ASCII-only output: PowerShell 5.1 mangles Cyrillic in scripts.
+$testsRoot = Join-Path $PSScriptRoot 'Tests'
+$mainActorCalls = @('ChatStore\.', 'ToolExecutor\.')
+$testProblems = 0
+Get-ChildItem $testsRoot -Recurse -Filter '*.swift' | ForEach-Object {
+    $lines = [System.IO.File]::ReadAllLines($_.FullName)
+    for ($k = 0; $k -lt $lines.Count; $k++) {
+        if ($lines[$k] -notmatch '^\s*(private\s+)?func\s+test') { continue }
+        $annotated = $false
+        for ($back = 1; $back -le 2; $back++) {
+            if (($k - $back) -ge 0 -and $lines[$k - $back] -match '@MainActor') { $annotated = $true }
+        }
+        if ($annotated) { continue }
+        $body = @()
+        for ($j = $k + 1; $j -lt $lines.Count; $j++) {
+            if ($lines[$j] -match '^\s{4}(@MainActor\s+)?(private\s+)?func\s') { break }
+            $body += $lines[$j]
+        }
+        foreach ($pattern in $mainActorCalls) {
+            if ($body -match $pattern) {
+                Write-Output "NEEDS MAINACTOR: $($_.Name):$($k + 1) ($pattern)"
+                $script:testProblems++
+                break
+            }
+        }
+    }
+}
+if ($testProblems -eq 0) { Write-Output 'OK: test actor annotations look right' } else { Write-Output "TEST PROBLEMS: $testProblems" }
