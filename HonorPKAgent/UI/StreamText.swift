@@ -1939,12 +1939,11 @@ struct CodeBlockView: View {
             }
             .padding(.vertical, 8)
         } else {
-            SyntaxHighlighter.highlight(visibleText,
-                                        language: language,
-                                        theme: SyntaxHighlighter.Theme.named(useLightTheme ? "light" : "dark"),
-                                        fontSize: fontSize)
-                .font(.system(size: fontSize * 0.82, design: .monospaced))
-                .textSelection(.enabled)
+            // Подсветка длинного блока кода — дорогая работа, а при печати текста
+            // она выполнялась целиком на каждое изменение. Во время ответа
+            // подсвечиваем только «хвост», а законченную часть берём из кэша.
+            CachedCodeText(code: visibleText, language: language,
+                           useLightTheme: useLightTheme, fontSize: fontSize)
         }
     }
 
@@ -1953,6 +1952,62 @@ struct CodeBlockView: View {
         if line.hasPrefix("-") && !line.hasPrefix("---") { return Color.red.opacity(0.16) }
         if line.hasPrefix("@@") { return HonorTheme.accent.opacity(0.12) }
         return .clear
+    }
+}
+
+/// Подсветка блока кода с кэшем законченной части.
+///
+/// Пока ответ печатается, текст блока растёт на глазах. Полная подсветка на каждое
+/// изменение — это сотни текстовых фрагментов за кадр на длинном листинге, из-за
+/// чего печать начинала «заикаться». Здесь подсвечивается только хвост (то, что
+/// реально меняется), а всё, что выше, берётся из готового кэша. Когда блок
+/// перестаёт расти, кэш закрывается целиком.
+struct CachedCodeText: View {
+    let code: String
+    let language: String
+    let useLightTheme: Bool
+    let fontSize: Double
+
+    /// Сколько последних строк считаем «хвостом». Их подсветка стоит недорого.
+    private static let tailLines = 40
+
+    @State private var cachedPrefix: String = ""
+    @State private var cachedText: Text = Text("")
+    @State private var cachedLanguage: String = ""
+
+    private var theme: SyntaxHighlighter.Theme {
+        .named(useLightTheme ? "light" : "dark")
+    }
+
+    var body: some View {
+        let lines = code.components(separatedBy: "\n")
+        let tailCount = min(lines.count, Self.tailLines)
+        let prefix = lines.dropLast(tailCount).joined(separator: "\n")
+        let tail = tailCount > 0 ? lines.suffix(tailCount).joined(separator: "\n") : ""
+        // Кэш сбрасывается, если текст стал короче (новый ответ) или сменился язык.
+        let prefixReady = prefix == cachedPrefix && language == cachedLanguage
+        let head: Text = prefix.isEmpty
+            ? Text("")
+            : (prefixReady ? cachedText : SyntaxHighlighter.highlight(prefix, language: language, theme: theme, fontSize: fontSize))
+        let separator: Text = (prefix.isEmpty || tail.isEmpty) ? Text("") : Text("\n")
+        let body: Text = tail.isEmpty
+            ? Text("")
+            : SyntaxHighlighter.highlight(tail, language: language, theme: theme, fontSize: fontSize)
+        return (head + separator + body)
+            .font(.system(size: fontSize * 0.82, design: .monospaced))
+            .textSelection(.enabled)
+            .onChange(of: prefix) { value in
+                // Запоминаем готовую подсветку, когда хвост уехал выше границы.
+                guard value.count > cachedPrefix.count || language != cachedLanguage else { return }
+                cachedText = SyntaxHighlighter.highlight(value, language: language, theme: theme, fontSize: fontSize)
+                cachedPrefix = value
+                cachedLanguage = language
+            }
+            .onAppear {
+                cachedText = SyntaxHighlighter.highlight(prefix, language: language, theme: theme, fontSize: fontSize)
+                cachedPrefix = prefix
+                cachedLanguage = language
+            }
     }
 }
 
