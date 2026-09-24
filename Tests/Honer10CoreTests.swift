@@ -387,6 +387,52 @@ final class Honer10CoreTests: XCTestCase {
                       "read_chat обязан вернуть содержимое чата")
     }
 
+    func testChatContextIsAttachedOnlyWhenTheQuestionIsAboutChats() throws {
+        // Переписка остальных чатов — это десятки тысяч знаков. Держать её в каждом
+        // запросе нельзя: первый токен приходит заметно позже, и ответ «зависает».
+        // Но когда пользователь спрашивает про свои чаты, контекст обязан приложиться.
+        XCTAssertTrue(ChatStore.queryMentionsChats(queryText: "Посмотри мой чат про отпуск", recentContext: ""))
+        XCTAssertTrue(ChatStore.queryMentionsChats(queryText: "Что мы обсуждали вчера?", recentContext: ""))
+        XCTAssertTrue(ChatStore.queryMentionsChats(queryText: "Переименуй чат про машины", recentContext: ""))
+        XCTAssertTrue(ChatStore.queryMentionsChats(queryText: "найди это в переписке", recentContext: ""))
+        // Продолжение разговора тоже считается: сам вопрос может быть коротким.
+        XCTAssertTrue(ChatStore.queryMentionsChats(queryText: "а во втором?", recentContext: "Пользователь: посмотри мой чат про отпуск"))
+        XCTAssertFalse(ChatStore.queryMentionsChats(queryText: "Какая сегодня погода в Новосибирске?", recentContext: ""))
+        XCTAssertFalse(ChatStore.queryMentionsChats(queryText: "Посчитай 2+2", recentContext: "Honer AI: два плюс два равно четырём"))
+    }
+
+    func testRequestHistoryBoundsWhatIsSentToTheService() throws {
+        // В сервис уходит не вся переписка: длинный чат давал мегабайтный запрос,
+        // из-за чего ответ начинал идти с задержкой или вовсе падал с ошибкой.
+        var messages: [ChatMessage] = []
+        for index in 0..<80 {
+            messages.append(ChatMessage(role: .user, content: "вопрос \(index) " + String(repeating: "а", count: 2000)))
+            messages.append(ChatMessage(role: .assistant, content: "ответ \(index) " + String(repeating: "б", count: 2000)))
+        }
+        let bounded = ChatStore.requestHistory(from: messages)
+        XCTAssertLessThanOrEqual(bounded.count, 61, "В запрос уходит слишком много сообщений")
+        let total = bounded.reduce(0) { $0 + $1.content.count + $1.reasoning.count }
+        XCTAssertLessThanOrEqual(total, 121_000, "Запрос всё ещё слишком большой: \(total)")
+        // Первым обязан идти вопрос пользователя, иначе сервис отвечает ошибкой.
+        XCTAssertEqual(bounded.first?.role, .user)
+        // Последнее сообщение — самое свежее: контекст разговора не теряется.
+        XCTAssertTrue(bounded.last?.content.hasPrefix("ответ 79") ?? false)
+
+        // Одно очень длинное сообщение обрезается, но не исчезает.
+        let huge = [ChatMessage(role: .user, content: String(repeating: "в", count: 60_000))]
+        let trimmed = ChatStore.requestHistory(from: huge)
+        XCTAssertEqual(trimmed.count, 1)
+        XCTAssertLessThan(trimmed[0].content.count, 21_000)
+        XCTAssertTrue(trimmed[0].content.contains("сокращено"))
+
+        // Пустой ответ ассистента (идёт печать) в запрос не попадает.
+        let withPlaceholder = [ChatMessage(role: .user, content: "Привет"),
+                               ChatMessage(role: .assistant, content: "")]
+        let cleaned = ChatStore.requestHistory(from: withPlaceholder)
+        XCTAssertEqual(cleaned.count, 1)
+        XCTAssertEqual(cleaned.first?.role, .user)
+    }
+
     func testTruncatedOrForeignTranslationIsRejected() throws {
         // Полный ответ не должен подменяться обрывком перевода или английским текстом.
         let source = String(repeating: "Ice melts when it receives enough heat energy. ", count: 40)

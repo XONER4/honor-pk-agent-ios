@@ -636,10 +636,14 @@ final class ChatStore: ObservableObject {
         // подобранная под текущий вопрос (пункты 18 и 24).
         var instruction = systemInstruction(forChat: chatID, query: query)
         instruction += HonerIdentity.context(for: query, recentContext: recentContext)
-        // Переписка остальных чатов прикладывается сразу, а не только через инструмент:
-        // без этого модель отвечала «у меня нет доступа к другим чатам», хотя доступ
-        // есть. Пользователь просил именно это — чтобы ИИ читал любой его чат.
-        instruction += otherChatsContext(excluding: chatID)
+        // Переписка остальных чатов прикладывается, когда вопрос действительно про
+        // чаты. Держать её в каждом запросе нельзя: это десятки тысяч знаков, из-за
+        // которых первый токен приходит заметно позже — ответ «зависает» на старте.
+        // Инструменты чтения и правки чатов доступны всегда, поэтому возможность
+        // остаётся полной (пункты 7 и 16 ТЗ).
+        if Self.queryMentionsChats(queryText: query, recentContext: recentContext) {
+            instruction += otherChatsContext(excluding: chatID)
+        }
         let client = injectedClient ?? DeepSeekClient(configuration: configuration)
         let russianNormalizer = client as? RussianTextNormalizing
         generationStatus = searching ? "Ищу в интернете…" : (thinking ? "Размышляю…" : "Отвечаю…")
@@ -1146,7 +1150,18 @@ final class ChatStore: ObservableObject {
         return ordered
     }
 
-    /// Переписка остальных чатов пользователя: прикладывается к каждому запросу.
+    /// Спрашивает ли пользователь про свои чаты: тогда к запросу прикладывается их
+    /// переписка. Проверяются и сам вопрос, и последние сообщения (просьба может
+    /// продолжаться: «а теперь то же самое по второму чату»).
+    static func queryMentionsChats(queryText: String, recentContext: String) -> Bool {
+        let haystack = (queryText + "\n" + recentContext).lowercased()
+        let markers = ["чат", "переписк", "диалог", "бесед", "ветк", "истори",
+                       "мы говорили", "мы обсуждали", "обсуждали", "писали",
+                       "chat", "conversation", "thread"]
+        return markers.contains { haystack.contains($0) }
+    }
+
+    /// Переписка остальных чатов пользователя: прикладывается к запросу.
     ///
     /// Заказчик несколько раз просил, чтобы ИИ умел читать любой другой чат. Раньше
     /// это работало только через инструмент read_chat: модель должна была сама
