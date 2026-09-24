@@ -435,6 +435,7 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertEqual(cleaned.first?.role, .user)
     }
 
+    @MainActor
     func testHistorySearchFindsTextInMessagesAndAttachments() throws {
         // Поиск по истории теперь выполняется в фоне, но правила поиска те же:
         // заголовок, текст сообщений, рассуждения, имена вложений и распознанный текст.
