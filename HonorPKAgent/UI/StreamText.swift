@@ -715,7 +715,10 @@ struct InlineContentView: View {
     let attributed: AttributedString
 
     private struct Part: Identifiable {
-        let id = UUID()
+        /// Идентификатор по позиции, а не случайный: разметка разбирается заново при
+        /// каждом росте текста, и со случайным UUID SwiftUI пересобирал все части,
+        /// заново загружая картинки.
+        let id: Int
         let text: String?
         let imageURL: URL?
         let caption: String
@@ -732,7 +735,7 @@ struct InlineContentView: View {
         let pattern = Self.imagePattern
         let full = NSRange(source.startIndex..., in: source)
         let matches = pattern.matches(in: source, range: full)
-        guard !matches.isEmpty else { return [Part(text: source, imageURL: nil, caption: "")] }
+        guard !matches.isEmpty else { return [Part(id: 0, text: source, imageURL: nil, caption: "")] }
         var result: [Part] = []
         var cursor = source.startIndex
         for match in matches {
@@ -740,14 +743,14 @@ struct InlineContentView: View {
                   let captionRange = Range(match.range(at: 1), in: source),
                   let urlRange = Range(match.range(at: 2), in: source) else { continue }
             let before = String(source[cursor..<whole.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !before.isEmpty { result.append(Part(text: before, imageURL: nil, caption: "")) }
-            result.append(Part(text: nil,
+            if !before.isEmpty { result.append(Part(id: result.count, text: before, imageURL: nil, caption: "")) }
+            result.append(Part(id: result.count, text: nil,
                                imageURL: URL(string: Self.trimmedURL(String(source[urlRange]))),
                                caption: String(source[captionRange])))
             cursor = whole.upperBound
         }
         let tail = String(source[cursor...]).trimmingCharacters(in: .whitespacesAndNewlines)
-        if !tail.isEmpty { result.append(Part(text: tail, imageURL: nil, caption: "")) }
+        if !tail.isEmpty { result.append(Part(id: result.count, text: tail, imageURL: nil, caption: "")) }
         return result
     }
 
@@ -810,6 +813,10 @@ struct BlockMarkdownView: View {
                 MarkdownBlockView(block: block, fontSize: fontSize,
                                   sources: sources, findQuery: findQuery,
                                   containerWidth: measuredWidth, onAnswer: onAnswer)
+                    // Устойчивый идентификатор блока: без него при каждом шаге разбора
+                    // SwiftUI считал блок новым и пересобирал его состояние — слетали
+                    // фильтр и сортировка в таблицах, сворачивалось рассуждение.
+                    .id(block.id)
             }
         }
         // Ширину измеряем фоном: так она не влияет ни на размеры, ни на высоту строк.
