@@ -695,10 +695,8 @@ private struct StatisticsSettingsPage: View {
                     .accessibilityIdentifier("stats.chats")
                 LabeledContent(settings.text("Записей в памяти", "Memory entries"), value: "\(store.memories.count)")
                     .accessibilityIdentifier("stats.memory")
-                if let first = Optional(stats.firstLaunch) {
-                    LabeledContent(settings.text("Первое вхождение", "First launch"),
-                                   value: first.formatted(date: .abbreviated, time: .shortened))
-                }
+                LabeledContent(settings.text("Первое вхождение", "First launch"),
+                               value: stats.firstLaunch.formatted(date: .abbreviated, time: .shortened))
             }
             Section {
                 Button(role: .destructive) { confirmsReset = true } label: {
