@@ -289,12 +289,25 @@ final class Honer10CoreTests: XCTestCase {
         // на каждом кадре она пересобиралась бы с нуля, и вместе с ней сбрасывались
         // фильтр, сортировка и прокрутка — таблица мигала бы во время ответа.
         let growing = MarkdownBlockParser.parse("| Модель | Год |\n|---|---|\n| Motorola | 1983 |\n| IBM Simon |")
+        // Диагностика: если этот разбор когда-нибудь снова разойдётся с ожиданием,
+        // в логе тестов будет видно, что именно вернул разборщик.
+        print("HONER_TABLE growing kinds=[\(growing.map { "\($0.kind)" }.joined(separator: " | "))] "
+              + "text=[\(growing.map(\.text).joined(separator: " / "))]")
         XCTAssertFalse(growing.contains { if case .table = $0.kind { return true } else { return false } },
                        "Незаконченная таблица не должна рисоваться таблицей")
         // Но текст таблицы обязан остаться видимым, а не пропасть.
         let growingText = growing.map(\.text).joined(separator: "\n")
         XCTAssertTrue(growingText.contains("Motorola"), "Текст незаконченной таблицы пропал")
         XCTAssertTrue(growingText.contains("IBM Simon"), "Последняя строка незаконченной таблицы пропала")
+        let running = "| Модель | Год |\n|---|---|\n| Motorola | 1983 |\n| IBM Simo"
+        let growingCut = MarkdownBlockParser.parse(running)
+        print("HONER_TABLE cut kinds=[\(growingCut.map { "\($0.kind)" }.joined(separator: " | "))] "
+              + "text=[\(growingCut.map(\.text).joined(separator: " / "))]")
+        XCTAssertFalse(growingCut.contains { if case .table = $0.kind { return true } else { return false } },
+                       "Таблица, оборванная на середине строки, не должна рисоваться таблицей")
+        XCTAssertTrue(growingCut.map(\.text).joined(separator: "\n").contains("IBM Simo"),
+                      "Обрывок последней строки таблицы пропал")
+
         // Как только строка дописана — это снова таблица.
         let finished = MarkdownBlockParser.parse("| Модель | Год |\n|---|---|\n| Motorola | 1983 |\n| IBM Simon | 1992 |")
         XCTAssertTrue(finished.contains { if case .table = $0.kind { return true } else { return false } },
