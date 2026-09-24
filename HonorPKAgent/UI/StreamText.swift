@@ -721,7 +721,12 @@ struct InlineContentView: View {
         let caption: String
     }
 
-    private static let imagePattern = try! NSRegularExpression(pattern: "!\\[([^\\]]*)\\]\\((https?://[^)\\s]+)\\)")
+    /// Картинка из ответа: `![подпись](ссылка)`.
+    ///
+    /// Адрес берём до первого пробела, а не до первой закрывающей скобки: в ссылках
+    /// на картинки часто есть скобки и параметры, из-за которых картинка раньше
+    /// не распознавалась вовсе.
+    private static let imagePattern = try! NSRegularExpression(pattern: "!\\[([^\\]]*)\\]\\(\\s*(https?://[^\\s]+)")
 
     private var parts: [Part] {
         let pattern = Self.imagePattern
@@ -737,13 +742,30 @@ struct InlineContentView: View {
             let before = String(source[cursor..<whole.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
             if !before.isEmpty { result.append(Part(text: before, imageURL: nil, caption: "")) }
             result.append(Part(text: nil,
-                               imageURL: URL(string: String(source[urlRange])),
+                               imageURL: URL(string: Self.trimmedURL(String(source[urlRange]))),
                                caption: String(source[captionRange])))
             cursor = whole.upperBound
         }
         let tail = String(source[cursor...]).trimmingCharacters(in: .whitespacesAndNewlines)
         if !tail.isEmpty { result.append(Part(text: tail, imageURL: nil, caption: "")) }
         return result
+    }
+
+    /// Убрать хвостовую закрывающую скобку Markdown из адреса картинки.
+    ///
+    /// Адрес берётся до пробела, поэтому `)` из разметки попадает в его конец. Но если
+    /// такая скобка есть и внутри адреса (например, `.../Photo_(1).jpg`), она часть
+    /// ссылки — тогда ничего не трогаем.
+    static func trimmedURL(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasSuffix(")") {
+            let opens = value.filter { $0 == "(" }.count
+            let closes = value.filter { $0 == ")" }.count
+            if closes > opens || value.hasSuffix(").jpg") || value.hasSuffix(").png") {
+                value = String(value.dropLast())
+            }
+        }
+        return value
     }
 
     var body: some View {

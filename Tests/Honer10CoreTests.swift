@@ -509,6 +509,21 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertTrue(TableColumnLayout.shares(headers: [], rows: [], columnCount: 0).isEmpty)
     }
 
+    func testImageMarkdownParsesLinksWithParentheses() throws {
+        // В ссылках на картинки часто есть скобки и параметры. Раньше адрес брался
+        // до первой закрывающей скобки, и такая картинка не показывалась вовсе.
+        XCTAssertEqual(InlineContentView.trimmedURL("https://a.b/c.jpg)"), "https://a.b/c.jpg")
+        XCTAssertEqual(InlineContentView.trimmedURL("https://a.b/Photo_(1).jpg)"), "https://a.b/Photo_(1).jpg")
+        XCTAssertEqual(InlineContentView.trimmedURL("https://a.b/Photo_(1).jpg"), "https://a.b/Photo_(1).jpg")
+        XCTAssertEqual(InlineContentView.trimmedURL("https://a.b/c.jpg?v=2&w=800)"), "https://a.b/c.jpg?v=2&w=800")
+
+        // Полная строка ответа: картинка распознаётся, подпись сохраняется.
+        let parts = BlockMarkdownParser.parse("Смотри:\n\n![Сочи](https://a.b/Photo_(1).jpg)\n\nГотово.")
+        let text = parts.map(\.text).joined(separator: " ")
+        XCTAssertTrue(text.contains("Смотри"), "Текст до картинки пропал: [\(text)]")
+        XCTAssertTrue(text.contains("Готово"), "Текст после картинки пропал: [\(text)]")
+    }
+
     @MainActor
     func testBackupWithManyMemoryEntriesCanBeImportedBack() throws {
         // Собственная резервная копия обязана импортироваться обратно. Раньше проверка
