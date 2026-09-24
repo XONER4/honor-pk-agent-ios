@@ -188,9 +188,20 @@ struct MarkdownBlockModel: Identifiable, Equatable {
 }
 
 enum MarkdownBlockParser {
+    /// Разбиение текста на строки.
+    ///
+    /// Раньше здесь стоял `components(separatedBy: .newlines)`: набор `.newlines`
+    /// шире, чем «\n», и на некоторых входах разбор давал лишнюю строку. Из-за этого
+    /// проверка «таблица ещё дописывается» не срабатывала — незаконченная таблица
+    /// рисовалась таблицей и пересобиралась на каждом кадре. Режем строго по «\n»,
+    /// сохраняя пустые строки: они разделяют абзацы.
+    static func splitLines(_ source: String) -> [String] {
+        source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    }
+
     static func parse(_ source: String) -> [MarkdownBlockModel] {
         var blocks: [MarkdownBlockModel] = []
-        let lines = source.components(separatedBy: .newlines)
+        let lines = Self.splitLines(source)
         var index = 0
         var buffer: [String] = []
 
@@ -338,8 +349,13 @@ enum MarkdownBlockParser {
                 // сбрасываются фильтр, сортировка и прокрутка) и мигать на экране.
                 // Поэтому такую таблицу пока показываем обычным текстом, а настоящей
                 // таблицей она станет, когда допишется.
-                if Self.tableContinues(lines: lines, from: cursor) {
+                if Self.tableContinues(lines: lines, from: cursor, source: source,
+                                       columnCount: max(headers.count, rows.map(\.count).max() ?? 0)) {
+                    // Показываем шапку, разделитель и все уже пришедшие строки:
+                    // таблица станет настоящей таблицей, когда допишется, а до тех
+                    // пор текст не должен пропадать с экрана.
                     var raw = [lines[index], lines[index + 1]]
+                    if cursor > index + 2 { raw.append(contentsOf: lines[(index + 2)..<cursor]) }
                     raw.append(contentsOf: lines[cursor...])
                     blocks.append(MarkdownBlockModel(id: blocks.count, kind: .paragraph,
                                                      text: raw.joined(separator: "\n")))
@@ -526,16 +542,26 @@ enum MarkdownBlockParser {
     /// Продолжается ли таблица после уже разобранных строк.
     ///
     /// Сервис присылает ответ построчно, поэтому таблица на экране появляется
-    /// постепенно. Если следующая строка снова начинается с палочки, таблица ещё
-    /// не дописана: рисовать её в этот момент нельзя — фильтр, сортировка и
-    /// прокрутка внутри таблицы сбрасывались бы на каждом кадре, и таблица мигала.
-    private static func tableContinues(lines: [String], from index: Int) -> Bool {
-        guard index < lines.count else { return false }
-        let next = lines[index].trimmingCharacters(in: .whitespaces)
-        if isTableRow(next) { return true }
-        // Палочка могла прийти не целиком: сервис присылает текст кусками, и строка
-        // может оборваться сразу после разделителя.
-        return next.hasPrefix("|") || next.hasPrefix("+")
+    /// постепенно. Если следующая строка снова начинается с палочки, или если текст
+    /// просто обрывается на строке таблицы (нет завершающего перевода строки),
+    /// таблица ещё не дописана: рисовать её в этот момент нельзя — фильтр, сортировка
+    /// и прокрутка внутри таблицы сбрасывались бы на каждом кадре, и таблица мигала.
+    private static func tableContinues(lines: [String], from index: Int,
+                                       source: String, columnCount: Int) -> Bool {
+        if index < lines.count {
+            let next = lines[index].trimmingCharacters(in: .whitespaces)
+            if isTableRow(next) { return true }
+            // Палочка могла прийти не целиком: сервис присылает текст кусками,
+            // и строка может оборваться сразу после разделителя.
+            if next.hasPrefix("|") || next.hasPrefix("+") { return true }
+        }
+        // Последняя строка не закрыта: в ней меньше ячеек, чем столбцов в шапке.
+        // Это значит, что сервис ещё дописывает таблицу.
+        if !source.hasSuffix("\n"), let last = lines.last {
+            let trimmed = last.trimmingCharacters(in: .whitespaces)
+            if isTableRow(trimmed), splitRow(trimmed).count < columnCount { return true }
+        }
+        return false
     }
 
     private static func isTextlessTableLine(_ line: String) -> Bool {

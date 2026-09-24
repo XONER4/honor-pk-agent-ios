@@ -1,4 +1,4 @@
-﻿# ASCII-only port of the Markdown table detection in StreamText.swift, used to check
+# ASCII-only port of the Markdown table detection in StreamText.swift, used to check
 # why a still-streaming table is (or is not) drawn as a table. Samples live in JSON (UTF-8).
 
 $ErrorActionPreference = 'Stop'
@@ -83,11 +83,19 @@ function Test-TableHeader([string] $line) {
     return ($null -eq (Get-AlignmentRow $line $line))
 }
 
-function Test-TableContinues([string[]] $lines, [int] $index) {
-    if ($index -ge $lines.Count) { return $false }
-    $next = $lines[$index].Trim()
-    if (Test-TableRow $next) { return $true }
-    return ($next.StartsWith('|') -or $next.StartsWith('+'))
+function Test-TableContinues([string[]] $lines, [int] $index, [string] $source, [int] $columnCount) {
+    # The table is still streaming when text continues after the parsed rows, or when
+    # the last line is an unclosed row (fewer cells than the header has columns).
+    if ($index -lt $lines.Count) {
+        $next = $lines[$index].Trim()
+        if (Test-TableRow $next) { return $true }
+        if ($next.StartsWith('|') -or $next.StartsWith('+')) { return $true }
+    }
+    if (-not $source.EndsWith("`n") -and $lines.Count -gt 0) {
+        $last = $lines[$lines.Count - 1].Trim()
+        if ((Test-TableRow $last) -and ((Split-Row $last).Count -lt $columnCount)) { return $true }
+    }
+    return $false
 }
 
 function Get-Blocks([string] $source) {
@@ -114,9 +122,13 @@ function Get-Blocks([string] $source) {
                 if ($hasText) { [void]$rows.Add($cells) }
                 $cursor++
             }
+            $columns = $headers.Count
+            foreach ($row in $rows) { if ($row.Count -gt $columns) { $columns = $row.Count } }
             if ($rows.Count -gt 0) {
-                if (Test-TableContinues -lines $lines -index $cursor) {
-                    $raw = @($lines[$index], $lines[$index + 1]) + @($lines[$cursor..($lines.Count - 1)])
+                if (Test-TableContinues -lines $lines -index $cursor -source $source -columnCount $columns) {
+                    $raw = @($lines[$index], $lines[$index + 1])
+                    if ($cursor -gt ($index + 2)) { $raw += $lines[($index + 2)..($cursor - 1)] }
+                    if ($cursor -lt $lines.Count) { $raw += $lines[$cursor..($lines.Count - 1)] }
                     [void]$blocks.Add([pscustomobject]@{ Kind = 'paragraph'; Text = ($raw -join "`n") })
                     $index = $lines.Count
                     continue
@@ -125,6 +137,12 @@ function Get-Blocks([string] $source) {
                 $index = $cursor
                 continue
             }
+            # Table without data rows is not a table: the parser keeps the header text
+            # as an ordinary paragraph so it does not disappear from the answer.
+            $headerText = @($headers | Where-Object { Test-HasText $_ }) -join ' · '
+            if ($headerText) { [void]$blocks.Add([pscustomobject]@{ Kind = 'paragraph'; Text = $headerText }) }
+            $index = $cursor
+            continue
         }
         $index++
     }
