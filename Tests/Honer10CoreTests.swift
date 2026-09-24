@@ -358,6 +358,34 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertFalse(ChatStore.isToolAnnouncement("Отпуск в Сочи длится 12 дней."))
     }
 
+    func testChatToolsActOnStableChatIdentifiers() throws {
+        // Номер чата в списке меняется, как только чат передвинулся наверх или был
+        // закреплён. Раньше переименование и закрепление выполнялись по номеру,
+        // поэтому действие могло попасть в соседний чат. Теперь действия несут
+        // устойчивый идентификатор чата.
+        let first = UUID()
+        let second = UUID()
+        let context = ToolExecutionContext(
+            chats: [ChatOverview(number: 1, id: first, title: "Первый", messageCount: 2,
+                                 lastMessageAt: nil, pinned: false, archived: false, preview: ""),
+                    ChatOverview(number: 2, id: second, title: "Второй", messageCount: 5,
+                                 lastMessageAt: nil, pinned: false, archived: false, preview: "")],
+            transcripts: [2: [ChatTranscriptLine(role: "user", text: "Отпуск 12 дней")]])
+        let call = ToolCallRequest(id: "call-1", name: HonerTool.renameChat.rawValue,
+                                   arguments: "{\"number\": 2, \"title\": \"Отпуск\"}")
+        let result = ToolExecutor.executeExtended(call, context: context)
+        guard case .renameChat(let id, let title)? = result.effect else {
+            return XCTFail("Переименование не вернуло действие с идентификатором чата")
+        }
+        XCTAssertEqual(id, second, "Переименование должно целиться во второй чат")
+        XCTAssertEqual(title, "Отпуск")
+
+        let read = ToolCallRequest(id: "call-2", name: HonerTool.readChat.rawValue,
+                                   arguments: "{\"number\": 2}")
+        XCTAssertTrue(ToolExecutor.executeExtended(read, context: context).content.contains("12 дней"),
+                      "read_chat обязан вернуть содержимое чата")
+    }
+
     func testTruncatedOrForeignTranslationIsRejected() throws {
         // Полный ответ не должен подменяться обрывком перевода или английским текстом.
         let source = String(repeating: "Ice melts when it receives enough heat energy. ", count: 40)
