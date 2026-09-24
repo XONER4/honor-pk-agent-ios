@@ -40,6 +40,10 @@ struct StreamText<Content: View>: View {
     var baseRate: Double = 30
     /// Отставание, после которого начинаем мягко догонять буфер.
     var comfortableLag: Int = 320
+    /// Сообщает, что печать закончилась и текст показан полностью: по этому сигналу
+    /// останавливается сопровождение прокрутки, иначе оно продолжало дёргать экран
+    /// ещё две минуты после ответа.
+    var onSettled: (() -> Void)? = nil
     @ViewBuilder let content: (String) -> Content
 
     @State private var revealed: String = ""
@@ -47,9 +51,14 @@ struct StreamText<Content: View>: View {
     /// Сколько символов уже достигнуто. Держим отдельно: пересчёт `revealed.count`
     /// на каждом кадре — лишняя работа на длинных ответах.
     @State private var revealedCount: Int = 0
+    /// Дробная часть шага. Раньше шаг был целым и не меньше единицы, поэтому на
+    /// 60 кадрах в секунду текст печатался со скоростью 60 символов в секунду —
+    /// вдвое быстрее заданных 30. Заказчик просил медленнее и плавнее: копим остаток.
+    @State private var carry: Double = 0
     /// Пока буфер пуст, показываем всё, что уже есть: иначе при медленном
     /// соединении строка замирает на одном символе и выглядит как обрыв.
     @State private var lastGrowth: Date = .distantPast
+    @State private var reportedSettled = false
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: isSettled)) { context in
@@ -59,6 +68,14 @@ struct StreamText<Content: View>: View {
         .onAppear { syncTarget() }
         .onChange(of: target) { _ in syncTarget() }
         .onChange(of: streaming) { _ in syncTarget() }
+        .onChange(of: isSettled) { settled in
+            if settled, !reportedSettled {
+                reportedSettled = true
+                onSettled?()
+            } else if !settled {
+                reportedSettled = false
+            }
+        }
     }
 
     /// Что реально показывается.
@@ -84,6 +101,7 @@ struct StreamText<Content: View>: View {
             if revealedCount > target.count {
                 revealed = target
                 revealedCount = target.count
+                carry = 0
             }
             lastTick = .distantPast
             return
@@ -91,6 +109,7 @@ struct StreamText<Content: View>: View {
         if revealedCount > target.count {
             revealed = target
             revealedCount = target.count
+            carry = 0
         }
     }
 
@@ -104,10 +123,12 @@ struct StreamText<Content: View>: View {
         let total = target.count
         var remaining = total - revealedCount
 
-        // Буфер не растёт дольше 2 секунд — догоняем всё, что есть, чтобы не оставлять
+        // Буфер не растёт дольше 4 секунд — догоняем всё, что есть, чтобы не оставлять
         // текст недописанным. Раньше порог был 0,35 с: из-за него при обычных паузах
         // сети в конце вываливался целый абзац — это и выглядело как «резкий» ответ.
-        let stalled = now.timeIntervalSince(lastGrowth) > 2.0
+        // Две секунды оказались слишком малы: размышление перед ответом молчит дольше,
+        // и каждый такой провал заканчивался рывком.
+        let stalled = now.timeIntervalSince(lastGrowth) > 4.0
         if remaining <= 0 {
             if revealedCount != total, stalled {
                 revealed = target
@@ -128,9 +149,15 @@ struct StreamText<Content: View>: View {
             rate = baseRate * 1.8
         }
 
-        var step = max(1, Int((rate * elapsed).rounded()))
+        // Копим дробную часть: иначе округление вверх до одного символа за кадр
+        // давало ровно 60 символов в секунду вместо заданных 30.
+        carry += rate * elapsed
+        var step = Int(carry)
+        if step < 1 { return }
         if stalled { step = max(step, remaining / 8) }
         let take = min(step, remaining)
+        carry -= Double(take)
+        if carry > 1 { carry = 0 }
         let end = target.index(target.startIndex, offsetBy: take)
         // Не разрываем графемы (эмодзи, составные символы).
         var slice = target[target.startIndex..<end]

@@ -977,6 +977,14 @@ private struct MessageTimeline: View {
         }
     }
 
+    /// Печать закончилась и текст показан целиком — сопровождение больше не нужно.
+    /// Раньше оно крутилось до истечения всего срока (две минуты) и продолжало
+    /// дёргать ленту, пока пользователь читал готовый ответ.
+    private func stopStreamFollow() {
+        followTask?.cancel()
+        followTask = nil
+    }
+
     private var disclaimer: some View {
         Text(settings.text("Сгенерированный ИИ ответ, только для справки.",
                            "AI-generated answers are for reference."))
@@ -1026,6 +1034,7 @@ private struct MessageTimeline: View {
                        onSources: onSources,
                        onRetry: { store.regenerate(messageID: message.id) },
                        onEdit: { store.edit(messageID: message.id) },
+                       onStreamSettled: { stopStreamFollow() },
                        onFeedback: { (value: MessageFeedback?) in
                            store.setFeedback(messageID: message.id, feedback: value)
                        },
@@ -1034,6 +1043,16 @@ private struct MessageTimeline: View {
                        },
                        onAnswer: { (answer: String) in
                            // Ответ на вопрос агента уходит как обычное сообщение (пункт 33).
+                           // Раньше нажатие молча ничего не делало, если история ещё
+                           // загружалась или печатался ответ: казалось, что вариант
+                           // «не выбирается».
+                           guard !store.isGenerating, !store.isLoadingHistory else {
+                               showToast(text("Дождитесь конца ответа и нажмите ещё раз",
+                                              "Wait for the answer to finish, then tap again"))
+                               return
+                           }
+                           store.systemInstruction = settings.customInstructions
+                           store.settingsBridge = settings
                            store.draft = answer
                            store.send(inputKind: .suggestion)
                        },
@@ -1162,6 +1181,8 @@ private struct MessageRow: View, Equatable {
     let onSources: (SourceSelection) -> Void
     let onRetry: () -> Void
     let onEdit: () -> Void
+    /// Печать закончилась: сопровождение прокрутки можно останавливать.
+    let onStreamSettled: () -> Void
     let onFeedback: (MessageFeedback?) -> Void
     let onReaction: (String?) -> Void
     /// Нажатие варианта в блоке вопросов агента (пункт 33).
@@ -1300,7 +1321,8 @@ private struct MessageRow: View, Equatable {
                             .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
                             .accessibilityIdentifier("message.reasoning.foreign." + message.id.uuidString)
                     }
-                    StreamText(target: visibleReasoning, streaming: streaming, baseRate: 42) { visible in
+                    StreamText(target: visibleReasoning, streaming: streaming, baseRate: 42,
+                               onSettled: streaming ? onStreamSettled : nil) { visible in
                         BlockMarkdownView(content: visible, fontSize: 14 * settings.fontScale * dynamicScale,
                                           sources: [], findQuery: findQuery)
                             .foregroundStyle(HonorTheme.secondary)
@@ -1315,7 +1337,8 @@ private struct MessageRow: View, Equatable {
                 // Плавный посимвольный вывод: текст растёт по кадрам, а не рывками
                 // на каждом обновлении стрима.
                 // Размер текста увеличен до 19 pt: на 17 pt ответ читался мелко.
-                StreamText(target: visibleContent, streaming: streaming, baseRate: 30) { visible in
+                StreamText(target: visibleContent, streaming: streaming, baseRate: 30,
+                           onSettled: streaming ? onStreamSettled : nil) { visible in
                     BlockMarkdownView(content: visible, fontSize: 19 * settings.fontScale * dynamicScale,
                                       sources: message.sources, findQuery: findQuery,
                                       onAnswer: onAnswer)

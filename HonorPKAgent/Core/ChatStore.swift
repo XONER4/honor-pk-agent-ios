@@ -672,12 +672,11 @@ final class ChatStore: ObservableObject {
                 var toolRounds = 0
 
                 do {
-                    // Инструменты сознательно НЕ передаём. По документации DeepSeek при
-                    // наличии tools обязателен полный возврат reasoning_content во всех
-                    // последующих запросах, иначе API отвечает 400, а сам вызов инструмента
-                    // завершает поток с finish_reason=tool_calls — именно из-за этого в чате
-                    // оставалась одна буква. Все нужные данные (время, устройство, память)
-                    // и так приходят в системной части, инструменты не нужны.
+                    // Инструменты передаём (пункт 16 ТЗ): чтение и переименование чатов,
+                    // запись в память, смена настроек. По документации DeepSeek при наличии
+                    // tools обязателен полный возврат reasoning_content предыдущих ответов
+                    // и результаты вызова отдельными сообщениями с ролью tool — это сделано
+                    // в DeepSeekClient.makeRequest, иначе API отвечает 400 и поток обрывается.
                     for try await delta in client.stream(messages: input, thinking: thinking,
                                                          systemInstruction: instruction, searchContext: context,
                                                          tools: HonerTool.apiSchemas) {

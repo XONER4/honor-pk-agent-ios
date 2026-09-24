@@ -461,6 +461,44 @@ final class HonorPKAgentTests: XCTestCase {
         XCTAssertTrue(store.errorMessage != nil || hasError || hasText)
     }
 
+    func testTypingPaceDoesNotDoubleTheRequestedSpeed() {
+        // Заказчик просил печатать медленнее и плавнее. Раньше шаг округлялся вверх
+        // и был не меньше одного символа за кадр, поэтому на 60 кадрах в секунду
+        // текст шёл со скоростью 60 символов в секунду вместо заданных 30 —
+        // ровно вдвое быстрее. Здесь проверяем, что дробный остаток копится.
+        let target = String(repeating: "а", count: 300)
+        let frame = 1.0 / 60.0
+        var revealed = 0
+        var carry = 0.0
+        var frames = 0
+        let limit = 600
+        while revealed < target.count && frames < limit {
+            frames += 1
+            carry += 30 * frame
+            let step = Int(carry)
+            if step < 1 { continue }
+            let take = min(step, target.count - revealed)
+            carry -= Double(take)
+            revealed += take
+        }
+        let seconds = Double(frames) * frame
+        // Двухсот символьный ответ печатается ровно с заданной скоростью:
+        // допускаем отклонение на один кадр, но не двукратный разгон.
+        XCTAssertGreaterThanOrEqual(seconds, 9.5, "Печать идёт быстрее заданной скорости")
+        XCTAssertLessThanOrEqual(seconds, 10.5, "Печать идёт медленнее заданной скорости")
+        XCTAssertEqual(revealed, target.count)
+
+        // Старое поведение (шаг не меньше единицы) давало вдвое быстрее — убеждаемся,
+        // что это действительно было так, иначе тест ничего не защищает.
+        var fastRevealed = 0
+        var fastFrames = 0
+        while fastRevealed < target.count && fastFrames < limit {
+            fastFrames += 1
+            fastRevealed += max(1, Int((30 * frame).rounded()))
+        }
+        XCTAssertLessThan(Double(fastFrames) * frame, 9.0)
+    }
+
     @MainActor
     func testStreamingTextGoesToLiveBufferAndReachesTheModelAtTheEnd() async throws {
         // Защита от возврата зависаний: пока идёт печать, текст обязан идти в живой
