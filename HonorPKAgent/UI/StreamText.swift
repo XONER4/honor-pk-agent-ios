@@ -152,7 +152,7 @@ enum MarkdownBlockKind: Equatable {
     case code(language: String)
     case copyBlock
     case card(style: String, title: String)
-    case ask([QuickQuestion])
+    case ask([QuickQuestion], open: Bool)
     /// Формула отдельным блоком: $$ … $$
     case mathBlock(String)
     /// Диаграмма Mermaid: ```mermaid
@@ -227,8 +227,13 @@ enum MarkdownBlockParser {
                     // Диаграмма рисуется нативно, без веб-вью (пункт 10 ТЗ).
                     blocks.append(MarkdownBlockModel(id: blocks.count, kind: .diagram(blockBody), text: blockBody))
                 } else if marker == "ask" || marker == "questions" {
+                    // Закрывающая рамка ещё не пришла — блок всё равно показываем:
+                    // пользователь должен видеть варианты, как только они появились,
+                    // а не ждать конца ответа. Флаг `open` нужен, чтобы карточку не
+                    // пересобирали на каждом кадре (иначе выбранный вариант сбрасывался).
                     blocks.append(MarkdownBlockModel(id: blocks.count,
-                                                     kind: .ask(Self.parseQuestions(blockBody)),
+                                                     kind: .ask(Self.parseQuestions(blockBody),
+                                                                open: index >= lines.count),
                                                      text: blockBody))
                 } else if marker.hasPrefix("card") {
                     let style = marker.contains(":")
@@ -762,7 +767,7 @@ struct BlockMarkdownView: View {
     let sources: [WebSource]
     let findQuery: String
     /// Нажатие варианта ответа в блоке ```ask (пункт 33).
-    var onAnswer: ((String) -> Void)? = nil
+    var onAnswer: ((String) -> Bool)? = nil
 
     /// Пока текст печатается, разбор всего ответа на каждом кадре — самая
     /// дорогая работа в кадре, из-за неё длинный ответ «заикается». Поэтому
@@ -806,7 +811,7 @@ private struct MarkdownBlockView: View {
     let fontSize: Double
     let sources: [WebSource]
     let findQuery: String
-    var onAnswer: ((String) -> Void)? = nil
+    var onAnswer: ((String) -> Bool)? = nil
 
     var body: some View {
         Group {
@@ -830,9 +835,9 @@ private struct MarkdownBlockView: View {
             case .card(let style, _):
                 CardBlockView(style: style, cardText: block.text, fontSize: fontSize,
                               sources: sources, findQuery: findQuery)
-            case .ask(let questions):
-                QuestionsCardView(questions: questions, fontSize: fontSize) { answer in
-                    onAnswer?(answer)
+            case .ask(let questions, let open):
+                QuestionsCardView(questions: questions, fontSize: fontSize, stillStreaming: open) { answer in
+                    onAnswer?(answer) ?? false
                 }
             case .mathBlock(let expression):
                 MathExpressionView(latex: expression, fontSize: fontSize * 1.1, block: true)
@@ -1134,7 +1139,12 @@ enum InlineStyleParser {
 struct QuestionsCardView: View {
     let questions: [QuickQuestion]
     let fontSize: Double
-    let onAnswer: (String) -> Void
+    /// Блок ещё дописывается: показываем мягкую подсказку, что список может вырасти.
+    var stillStreaming: Bool = false
+    /// Нажатие варианта. Возвращает `false`, если ответ отправить не удалось
+    /// (например, ещё печатается предыдущий ответ): тогда выбор НЕ фиксируем,
+    /// чтобы карточка не осталась навсегда нерабочей после одной неудачной попытки.
+    var onAnswer: (String) -> Bool
 
     @State private var customDrafts: [UUID: String] = [:]
     /// Какой вариант уже выбран. Нужен как видимый отклик на нажатие и как защита
@@ -1145,13 +1155,34 @@ struct QuestionsCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            // Заголовок карточки: без него список вариантов выглядел как случайные
+            // строки текста и было непонятно, что это вопрос от агента.
+            HStack(spacing: 7) {
+                Image(systemName: "questionmark.bubble")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(questions.count == 1 ? "Вопрос Honer AI" : "Вопросы Honer AI (\(questions.count))")
+                    .font(.system(size: fontSize * 0.78, weight: .semibold))
+                if stillStreaming {
+                    ProgressView().scaleEffect(0.6)
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(HonorTheme.accent)
+
             ForEach(Array(questions.enumerated()), id: \.element.id) { index, question in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("\(index + 1). \(question.text)")
-                        .font(.system(size: fontSize, weight: .semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-                    ForEach(question.options, id: \.self) { option in
-                        optionButton(option)
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(alignment: .top, spacing: 9) {
+                        Text("\(index + 1)")
+                            .font(.system(size: fontSize * 0.74, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 21, height: 21)
+                            .background(HonorTheme.accent, in: Circle())
+                        Text(question.text)
+                            .font(.system(size: fontSize, weight: .semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    ForEach(Array(question.options.enumerated()), id: \.element) { optionIndex, option in
+                        optionButton(option, letter: Self.letter(optionIndex))
                     }
                     if question.allowsCustom {
                         HStack(spacing: 8) {
@@ -1162,7 +1193,7 @@ struct QuestionsCardView: View {
                                 .textFieldStyle(.plain)
                                 .padding(.horizontal, 12)
                                 .frame(minHeight: 40)
-                                .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 10))
+                                .background(HonorTheme.raised, in: RoundedRectangle(cornerRadius: 10))
                                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.7))
                             Button {
                                 let value = (customDrafts[question.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1182,56 +1213,82 @@ struct QuestionsCardView: View {
                     }
                 }
             }
+            if sent {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 12))
+                    Text("Ответ отправлен: \(selected ?? "")")
+                        .font(.system(size: fontSize * 0.78))
+                        .lineLimit(2)
+                }
+                .foregroundStyle(HonorTheme.accent)
+                .accessibilityIdentifier("question.sent")
+            }
         }
-        .padding(14)
+        .padding(15)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(HonorTheme.accent.opacity(0.35), lineWidth: 0.8))
+        .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .stroke(HonorTheme.accent.opacity(0.35), lineWidth: 0.9))
         .accessibilityIdentifier("message.questions")
     }
 
+    /// Буква варианта: «А», «Б», «В» — так варианты легче называть словами.
+    static func letter(_ index: Int) -> String {
+        let alphabet = Array("АБВГДЕЖЗИКЛМНОПРСТУФ")
+        return index < alphabet.count ? String(alphabet[index]) : "\(index + 1)"
+    }
+
     /// Вариант ответа: явная зона нажатия, видимая галочка и защита от повторной отправки.
-    private func optionButton(_ option: String) -> some View {
+    private func optionButton(_ option: String, letter: String) -> some View {
         let isSelected = selected == option
         return Button {
             guard !sent else { return }
             send(option)
         } label: {
-            HStack(spacing: 9) {
-                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 15))
-                    .foregroundStyle(isSelected ? HonorTheme.accent : HonorTheme.secondary)
+            HStack(spacing: 10) {
+                Text(letter)
+                    .font(.system(size: fontSize * 0.74, weight: .bold))
+                    .foregroundStyle(isSelected ? .white : HonorTheme.secondary)
+                    .frame(width: 22, height: 22)
+                    .background(isSelected ? HonorTheme.accent : HonorTheme.raised, in: Circle())
+                    .overlay(Circle().stroke(isSelected ? Color.clear : HonorTheme.divider, lineWidth: 0.7))
                 Text(option)
                     .font(.system(size: fontSize * 0.96))
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .bold))
+                    Image(systemName: sent ? "checkmark.circle.fill" : "checkmark")
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(HonorTheme.accent)
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .frame(minHeight: 42)
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? HonorTheme.accent.opacity(0.16) : HonorTheme.raised,
-                        in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? HonorTheme.accent.opacity(0.6) : Color.clear, lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: 10))
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isSelected ? HonorTheme.accent.opacity(0.65) : HonorTheme.divider.opacity(0.7), lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
         .foregroundStyle(HonorTheme.foreground)
+        .disabled(sent)
         .accessibilityIdentifier("question.option." + option)
+        .accessibilityLabel("\(letter). \(option)")
+        .accessibilityValue(isSelected ? "Выбрано" : "Не выбрано")
     }
 
     private func send(_ value: String) {
+        // Сначала спрашиваем вызывающий код: он знает, можно ли сейчас отправлять.
+        // Раньше выбор фиксировался до проверки, и после отказа карточка выглядела
+        // «уже отправленной» — вариант больше не выбирался вообще.
+        guard onAnswer(value) else { return }
         sent = true
         selected = value
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        onAnswer(value)
     }
 }
 

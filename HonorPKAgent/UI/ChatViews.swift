@@ -1059,20 +1059,25 @@ private struct MessageTimeline: View {
                        onReaction: { (emoji: String?) in
                            store.setReaction(messageID: message.id, emoji: emoji)
                        },
-                       onAnswer: { (answer: String) in
+                       onAnswer: { (answer: String) -> Bool in
                            // Ответ на вопрос агента уходит как обычное сообщение (пункт 33).
                            // Раньше нажатие молча ничего не делало, если история ещё
                            // загружалась или печатался ответ: казалось, что вариант
-                           // «не выбирается».
+                           // «не выбирается». Теперь объясняем и НЕ фиксируем выбор,
+                           // чтобы после отказа можно было нажать снова.
                            guard !store.isGenerating, !store.isLoadingHistory else {
                                onToast(settings.text("Дождитесь конца ответа и нажмите ещё раз",
                                                      "Wait for the answer to finish, then tap again"))
-                               return
+                               return false
                            }
                            store.systemInstruction = settings.customInstructions
                            store.settingsBridge = settings
+                           let before = store.messages.count
                            store.draft = answer
                            store.send(inputKind: .suggestion)
+                           // Отправка принята, только если сообщение действительно ушло:
+                           // иначе карточка не должна навсегда закрываться для нажатий.
+                           return store.messages.count > before
                        },
                        onMenu: onMenu)
                 .equatable()
