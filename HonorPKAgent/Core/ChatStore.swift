@@ -964,6 +964,30 @@ final class ChatStore: ObservableObject {
                     // больше не относится к показанному ответу.
                     if retryIsAnswer { finishReason = nil }
                 }
+                // Последняя очистка перед показом: убираем из ответа объявления
+                // о действиях («Сначала найду чат…»). Если после очистки ничего
+                // не осталось, но данные инструментов есть — просим нормальный ответ.
+                if Self.isToolAnnouncement(rawContent) {
+                    let cleaned = Self.strippingToolAnnouncements(rawContent)
+                    if !Self.isTooShortToBeAnAnswer(cleaned) {
+                        rawContent = cleaned
+                        self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = cleaned }
+                    } else if !toolResults.isEmpty {
+                        self.generationStatus = "Формулирую ответ…"
+                        var synthesisInput = input
+                        var data = ChatMessage(role: .user)
+                        let collected = toolResults.map { "• \($0.content)" }.joined(separator: "\n")
+                        data.content = "Данные, полученные инструментами:\n\(collected)"
+                        synthesisInput.append(data)
+                        if let answer = try? await client.complete(
+                            messages: synthesisInput, thinking: false,
+                            systemInstruction: "Ответь пользователю по-русски одним связным ответом, используя данные выше. Без вступлений, без описания своих действий и без markdown-заголовков первого уровня.",
+                            searchContext: ""), !Self.isTooShortToBeAnAnswer(answer) {
+                            rawContent = answer
+                            self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = answer }
+                        }
+                    }
+                }
                 let final = self.conversations.first(where: { $0.id == chatID })?.messages.first(where: { $0.id == response.id })
                 guard !(final?.content.isEmpty ?? true) else { throw HonorError.emptyResponse }
                 guard !(final.map { Self.isTooShortToBeAnAnswer($0.content) } ?? false) else {
@@ -1212,6 +1236,35 @@ final class ChatStore: ObservableObject {
                        "let me check", "let me look", "i will call", "let me read",
                        "i'll check", "i found your chat"]
         return markers.contains { lowered.contains($0) }
+    }
+
+    /// Убирает из ответа объявления о действиях: «Сначала найду чат…», «Сейчас прочитаю…».
+    /// Модель вставляет такие фразы перед настоящим ответом, и они попадали в чат
+    /// как часть ответа — выглядело как склейка двух сообщений.
+    static func strippingToolAnnouncements(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+        let lowered = trimmed.lowercased()
+        let markers = ["сначала найду", "сначала проверю", "сейчас найду", "сейчас прочитаю",
+                       "затем открою", "затем прочитаю", "сейчас вызову", "вызову инструмент",
+                       "без вызова инструмента", "нашёл ваш чат", "нашел ваш чат",
+                       "прочитал его", "прочитал чат", "нашёл чат", "нашел чат",
+                       "let me check", "let me look", "i will call", "let me read",
+                       "i'll check", "i found your chat"]
+        // Если объявления нет, ничего не трогаем.
+        guard markers.contains(where: { lowered.contains($0) }) else { return trimmed }
+        let kept = trimmed
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { line in
+                guard !line.isEmpty else { return false }
+                let loweredLine = line.lowercased()
+                return !markers.contains { loweredLine.contains($0) }
+            }
+        let result = kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Если после очистки ничего не осталось — вернуть пусто: вызывающий код
+        // запросит нормальный ответ заново.
+        return result
     }
 
     /// Нужен ли повтор: ответ пуст, оборван или это объявление о действии без самого ответа.
