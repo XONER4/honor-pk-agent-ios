@@ -433,6 +433,28 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertEqual(cleaned.first?.role, .user)
     }
 
+    func testHistorySearchFindsTextInMessagesAndAttachments() throws {
+        // Поиск по истории теперь выполняется в фоне, но правила поиска те же:
+        // заголовок, текст сообщений, рассуждения, имена вложений и распознанный текст.
+        var chat = Conversation()
+        chat.title = "Отпуск"
+        var message = ChatMessage(role: .assistant, content: "В чате сказано: 12 дней отпуска.")
+        message.attachments = [MessageAttachment(name: "путёвка.pdf", kind: .document,
+                                                 extractedText: "Отель Приморье, 12 ночей")]
+        chat.messages = [ChatMessage(role: .user, content: "Сколько дней?"), message]
+        var other = Conversation()
+        other.title = "Погода"
+        other.messages = [ChatMessage(role: .user, content: "Какая погода в Клину?")]
+
+        let chats = [chat, other]
+        XCTAssertEqual(HistorySearch.filter(chats, query: "отпуск").count, 1)
+        XCTAssertEqual(HistorySearch.filter(chats, query: "12 дней").count, 1)
+        XCTAssertEqual(HistorySearch.filter(chats, query: "Приморье").count, 1, "Текст из вложения не найден")
+        XCTAssertEqual(HistorySearch.filter(chats, query: "Клину").count, 1)
+        XCTAssertEqual(HistorySearch.filter(chats, query: "").count, 2)
+        XCTAssertEqual(HistorySearch.filter(chats, query: "вертолёт").count, 0)
+    }
+
     func testTruncatedOrForeignTranslationIsRejected() throws {
         // Полный ответ не должен подменяться обрывком перевода или английским текстом.
         let source = String(repeating: "Ice melts when it receives enough heat energy. ", count: 40)

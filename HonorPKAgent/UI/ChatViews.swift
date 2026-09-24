@@ -2300,26 +2300,29 @@ private struct HistoryDrawer: View {
         // Список чатов снимаем на главном потоке, а сам просмотр текста — в фоне.
         let snapshot = store.sortedConversations
         let matches = await Task.detached(priority: .userInitiated) {
-            Self.filterChats(snapshot, query: query)
+            HistorySearch.filter(snapshot, query: query)
         }.value
         guard !Task.isCancelled else { return }
         cachedGroups = ("\(query)|\(store.conversations.count)|\(historyRevision)", group(matches))
     }
 
     /// Совпадает ли чат с запросом: заголовок, текст сообщений, рассуждения,
-    /// имена вложений и распознанный из них текст.
-    nonisolated static func filterChats(_ chats: [Conversation], query: String) -> [Conversation] {
-        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !needle.isEmpty else { return chats }
-        return chats.filter { chat in
-            if chat.title.localizedCaseInsensitiveContains(needle) { return true }
-            return chat.messages.contains { message in
-                message.content.localizedCaseInsensitiveContains(needle)
-                    || message.reasoning.localizedCaseInsensitiveContains(needle)
-                    || message.attachments.contains {
-                        $0.name.localizedCaseInsensitiveContains(needle)
-                            || $0.extractedText.localizedCaseInsensitiveContains(needle)
-                    }
+    /// имена вложений и распознанный из них текст. Вынесено отдельно, чтобы правила
+    /// поиска можно было проверить тестом (сама панель чатов приватная).
+    enum HistorySearch {
+        static func filter(_ chats: [Conversation], query: String) -> [Conversation] {
+            let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !needle.isEmpty else { return chats }
+            return chats.filter { chat in
+                if chat.title.localizedCaseInsensitiveContains(needle) { return true }
+                return chat.messages.contains { message in
+                    message.content.localizedCaseInsensitiveContains(needle)
+                        || message.reasoning.localizedCaseInsensitiveContains(needle)
+                        || message.attachments.contains {
+                            $0.name.localizedCaseInsensitiveContains(needle)
+                                || $0.extractedText.localizedCaseInsensitiveContains(needle)
+                        }
+                }
             }
         }
     }
