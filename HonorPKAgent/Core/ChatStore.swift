@@ -1703,10 +1703,15 @@ private enum HistoryArchiveIO {
         let bytes = try Data(contentsOf: url)
         guard bytes.count <= 100 * 1024 * 1024 else { throw HonorError.archiveTooLarge }
         var incoming = try decoder.decode(HistoryArchive.self, from: bytes)
+        // Пределы должны совпадать с рабочими: раньше импорт принимал не больше
+        // 50 записей памяти, а приложение разрешает 5000 — собственная резервная
+        // копия пользователя не проходила проверку и импорт отвечал «неверный архив».
+        let memoryCountLimit = ChatStore.maximumMemoryCount
+        let memoryLengthLimit = ChatStore.maximumMemoryLength
         guard incoming.version == 1, Set(incoming.conversations.map(\.id)).count == incoming.conversations.count,
               incoming.conversations.allSatisfy({ Set($0.messages.map(\.id)).count == $0.messages.count }),
-              (incoming.memories?.count ?? 0) <= 50,
-              (incoming.memories ?? []).allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.text.count <= 1000 }),
+              (incoming.memories?.count ?? 0) <= memoryCountLimit,
+              (incoming.memories ?? []).allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.text.count <= memoryLengthLimit }),
               (incoming.attachmentFiles ?? [:]).values.allSatisfy({ $0.count <= 40 * 1024 * 1024 }),
               (incoming.attachmentFrameFiles ?? [:]).values.allSatisfy({ $0.count <= 8 && $0.allSatisfy { $0.count <= 5 * 1024 * 1024 } }),
               (incoming.attachmentFiles ?? [:]).values.reduce(0, { $0 + $1.count }) +

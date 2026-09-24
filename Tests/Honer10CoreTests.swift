@@ -457,6 +457,34 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertEqual(HistorySearch.filter(chats, query: "вертолёт").count, 0)
     }
 
+    @MainActor
+    func testBackupWithManyMemoryEntriesCanBeImportedBack() throws {
+        // Собственная резервная копия обязана импортироваться обратно. Раньше проверка
+        // архива принимала не больше 50 записей памяти и 1000 знаков в записи, хотя
+        // приложение разрешает 5000 записей по 1200 знаков — то есть копия, сделанная
+        // самим приложением, отвергалась как «неверный архив».
+        let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"),
+                              storageURL: temporaryHistoryFile())
+        for index in 0..<60 {
+            store.addMemory("Факт номер \(index): " + String(repeating: "п", count: 300))
+        }
+        XCTAssertGreaterThanOrEqual(store.memories.count, 60)
+        let exported = try store.exportData()
+        defer { try? FileManager.default.removeItem(at: exported) }
+
+        let restored = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"),
+                                 storageURL: temporaryHistoryFile())
+        try restored.importData(from: exported)
+        XCTAssertGreaterThanOrEqual(restored.memories.count, 60,
+                                    "Записи памяти потерялись при импорте собственной копии")
+    }
+
+    @MainActor
+    private func temporaryHistoryFile() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("honer-import-\(UUID()).json")
+    }
+
     func testTruncatedOrForeignTranslationIsRejected() throws {
         // Полный ответ не должен подменяться обрывком перевода или английским текстом.
         let source = String(repeating: "Ice melts when it receives enough heat energy. ", count: 40)
