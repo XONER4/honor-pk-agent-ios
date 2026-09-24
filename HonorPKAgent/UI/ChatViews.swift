@@ -1570,15 +1570,30 @@ private struct MessageRow: View, Equatable {
     }
 
     private var reasoningTitle: String {
-        if streaming && visibleContent.isEmpty { return status ?? text("Размышляет…", "Thinking…") }
+        if streaming && visibleContent.isEmpty {
+            // Пока текста нет, показываем состояние и идущий счётчик: раньше здесь было
+            // просто «Размышляю…», и при долгом ожидании первого токена это выглядело
+            // как зависание. Счётчик растёт, значит приложение работает.
+            let base = status ?? text("Размышляю…", "Thinking…")
+            let seconds = visibleReasoningSeconds
+            guard seconds > 0 else { return base }
+            return base + " " + Self.secondsText(seconds, russian: settings.language == .russian)
+        }
         if message.reasoningWasTranslated == true { return text("Описание рассуждения · перевод", "Reasoning description · translation") }
         let seconds = max(visibleReasoningSeconds, 1)
-        let ending: String
+        return text("Размышлял \(seconds) \(Self.secondsWord(seconds))", "Thought for \(seconds)s")
+    }
+
+    /// «1 секунду», «2 секунды», «5 секунд» — правильная форма для счётчика.
+    static func secondsWord(_ seconds: Int) -> String {
         let last = seconds % 10, lastTwo = seconds % 100
-        if last == 1 && lastTwo != 11 { ending = "секунду" }
-        else if (2...4).contains(last) && !(12...14).contains(lastTwo) { ending = "секунды" }
-        else { ending = "секунд" }
-        return text("Размышлял \(seconds) \(ending)", "Thought for \(seconds)s")
+        if last == 1 && lastTwo != 11 { return "секунду" }
+        if (2...4).contains(last) && !(12...14).contains(lastTwo) { return "секунды" }
+        return "секунд"
+    }
+
+    static func secondsText(_ seconds: Int, russian: Bool) -> String {
+        russian ? "\(seconds) \(secondsWord(seconds))" : "\(seconds)s"
     }
 }
 

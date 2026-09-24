@@ -686,6 +686,10 @@ final class ChatStore: ObservableObject {
                 }
                 var firstReasoningAt: Date?
                 var reasoningEndedAt: Date?
+                /// Начало этого запроса: по нему считается счётчик «Размышляю…».
+                /// Раньше отсчёт начинался только с первого куска рассуждения,
+                /// поэтому долгое ожидание первого токена выглядело как зависание.
+                let generationStartedAt = Date()
                 var pendingContent = ""
                 var pendingReasoning = ""
                 var rawContent = ""
@@ -698,7 +702,12 @@ final class ChatStore: ObservableObject {
 
                 @MainActor func flush() {
                     guard !pendingContent.isEmpty || !pendingReasoning.isEmpty else { return }
-                    let seconds = firstReasoningAt.map { max(1, Int((reasoningEndedAt ?? Date()).timeIntervalSince($0).rounded())) } ?? 0
+                    // Секунды считаем от начала запроса: пока текста нет, счётчик идёт,
+                    // после начала ответа замирает на фактическом времени обдумывания.
+                    // Так пользователь видит, что приложение работает, а не зависло.
+                    let window = (reasoningEndedAt ?? Date()).timeIntervalSince(
+                        firstReasoningAt ?? generationStartedAt)
+                    let seconds = max(1, Int(window.rounded()))
                     let contentChanged = !pendingContent.isEmpty
                     let reasoningChanged = !pendingReasoning.isEmpty
                     rawContent += pendingContent
