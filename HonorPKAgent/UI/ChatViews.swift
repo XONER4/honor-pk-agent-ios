@@ -2315,27 +2315,6 @@ private struct HistoryDrawer: View {
         cachedGroups = ("\(query)|\(store.conversations.count)|\(historyRevision)", group(matches))
     }
 
-    /// Совпадает ли чат с запросом: заголовок, текст сообщений, рассуждения,
-    /// имена вложений и распознанный из них текст. Вынесено отдельно, чтобы правила
-    /// поиска можно было проверить тестом (сама панель чатов приватная).
-    enum HistorySearch {
-        static func filter(_ chats: [Conversation], query: String) -> [Conversation] {
-            let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !needle.isEmpty else { return chats }
-            return chats.filter { chat in
-                if chat.title.localizedCaseInsensitiveContains(needle) { return true }
-                return chat.messages.contains { message in
-                    message.content.localizedCaseInsensitiveContains(needle)
-                        || message.reasoning.localizedCaseInsensitiveContains(needle)
-                        || message.attachments.contains {
-                            $0.name.localizedCaseInsensitiveContains(needle)
-                                || $0.extractedText.localizedCaseInsensitiveContains(needle)
-                        }
-                }
-            }
-        }
-    }
-
     /// Признак того, что история изменилась по существу: число сообщений и последние
     /// заголовки. Пока идёт печать ответа, он не меняется — значит и поиск не нужен.
     private var historyRevision: Int {
@@ -2351,6 +2330,29 @@ private struct HistoryGroup: Identifiable {
     let id: String
     let title: String
     let chats: [Conversation]
+}
+
+/// Правила поиска по истории чатов.
+///
+/// Вынесены на уровень файла, чтобы их можно было проверить тестом: сама панель
+/// чатов приватная, а правила — нет. Поиск учитывает заголовок, текст сообщений,
+/// рассуждения, имена вложений и распознанный из вложений текст.
+enum HistorySearch {
+    static func filter(_ chats: [Conversation], query: String) -> [Conversation] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return chats }
+        return chats.filter { chat in
+            if chat.title.localizedCaseInsensitiveContains(needle) { return true }
+            return chat.messages.contains { message in
+                message.content.localizedCaseInsensitiveContains(needle)
+                    || message.reasoning.localizedCaseInsensitiveContains(needle)
+                    || message.attachments.contains {
+                        $0.name.localizedCaseInsensitiveContains(needle)
+                            || $0.extractedText.localizedCaseInsensitiveContains(needle)
+                    }
+            }
+        }
+    }
 }
 
 private struct SelectedText: Identifiable {
