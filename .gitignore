@@ -10,3 +10,4 @@ HonorPKAgent/DeepSeekConfig.plist
 # локальные отчёты сборки
 Test-results.json
 VALIDATION.md
+verify/ci-logs-*/
