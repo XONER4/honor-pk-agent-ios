@@ -51,13 +51,11 @@ struct StreamText<Content: View>: View {
     /// Сколько символов уже достигнуто. Держим отдельно: пересчёт `revealed.count`
     /// на каждом кадре — лишняя работа на длинных ответах.
     @State private var revealedCount: Int = 0
-    /// Дробная часть шага. Раньше шаг был целым и не меньше единицы, поэтому на
-    /// 60 кадрах в секунду текст печатался со скоростью 60 символов в секунду —
-    /// вдвое быстрее заданных 30. Заказчик просил медленнее и плавнее: копим остаток.
-    @State private var carry: Double = 0
-    /// Пока буфер пуст, показываем всё, что уже есть: иначе при медленном
-    /// соединении строка замирает на одном символе и выглядит как обрыв.
-    @State private var lastGrowth: Date = .distantPast
+    /// Все правила скорости печати — в StreamPace: там же объяснено, почему
+    /// раньше текст шёл вдвое быстрее заданного и почему ответ начинался рывком.
+    @State private var pace = StreamPaceState()
+    /// Поток данных уже закончился — разрешаем дописать остаток быстрее.
+    @State private var streamEnded = false
     @State private var reportedSettled = false
 
     var body: some View {
@@ -92,25 +90,16 @@ struct StreamText<Content: View>: View {
     private var isSettled: Bool { !streaming && revealedCount >= target.count }
 
     private func syncTarget() {
-        // Поток завершился: мгновенно показываем финальный текст без «дописывания».
-        // Раньше при этом оставался огрызок, если аниматор не успел доиграть.
-        if !streaming {
-            // Поток закончился, но печать продолжается: пользователь просил плавность,
-            // а не мгновенный показ. Полный текст дописывается аниматором, поэтому
-            // здесь только выравниваем счётчики, если они ушли вперёд цели.
-            if revealedCount > target.count {
-                revealed = target
-                revealedCount = target.count
-                carry = 0
-            }
-            lastTick = .distantPast
-            return
-        }
+        // Поток завершился: печать продолжается аниматором, но с этого момента
+        // разрешён разгон без ограничения бюджета — недописанный хвост ответа
+        // выглядел как зависание.
+        streamEnded = !streaming
         if revealedCount > target.count {
             revealed = target
             revealedCount = target.count
-            carry = 0
+            pace.reset()
         }
+        lastTick = .distantPast
     }
 
     private func advance(to now: Date) {
@@ -121,43 +110,12 @@ struct StreamText<Content: View>: View {
         guard elapsed > 0 else { return }
 
         let total = target.count
-        var remaining = total - revealedCount
+        let lag = total - revealedCount
+        guard lag > 0 else { return }
 
-        // Буфер не растёт дольше 4 секунд — догоняем всё, что есть, чтобы не оставлять
-        // текст недописанным. Раньше порог был 0,35 с: из-за него при обычных паузах
-        // сети в конце вываливался целый абзац — это и выглядело как «резкий» ответ.
-        // Две секунды оказались слишком малы: размышление перед ответом молчит дольше,
-        // и каждый такой провал заканчивался рывком.
-        let stalled = now.timeIntervalSince(lastGrowth) > 4.0
-        if remaining <= 0 {
-            if revealedCount != total, stalled {
-                revealed = target
-                revealedCount = total
-            }
-            return
-        }
-
-        // Адаптивная скорость. Главное требование заказчика — плавность, поэтому
-        // базовую скорость держим низкой, а догон делаем мягким: при большом
-        // отставании текст идёт быстрее, но никогда не «вываливается» мгновенно.
-        var rate = baseRate
-        if remaining > comfortableLag * 4 {
-            rate = baseRate * 6
-        } else if remaining > comfortableLag * 2 {
-            rate = baseRate * 3
-        } else if remaining > comfortableLag {
-            rate = baseRate * 1.8
-        }
-
-        // Копим дробную часть: иначе округление вверх до одного символа за кадр
-        // давало ровно 60 символов в секунду вместо заданных 30.
-        carry += rate * elapsed
-        var step = Int(carry)
-        if step < 1 { return }
-        if stalled { step = max(step, remaining / 8) }
-        let take = min(step, remaining)
-        carry -= Double(take)
-        if carry > 1 { carry = 0 }
+        var rule = StreamPace(baseRate: baseRate, comfortableLag: comfortableLag)
+        let take = rule.step(state: &pace, lag: lag, elapsed: elapsed, streamEnded: streamEnded)
+        guard take > 0 else { return }
         let end = target.index(target.startIndex, offsetBy: take)
         // Не разрываем графемы (эмодзи, составные символы).
         var slice = target[target.startIndex..<end]
@@ -166,11 +124,12 @@ struct StreamText<Content: View>: View {
         }
         revealed = String(slice)
         revealedCount = revealed.count
-        if revealedCount > 0 { lastGrowth = now }
-        remaining = total - revealedCount
         // Полный текст появляется только когда он весь показан посимвольно;
         // мгновенный показ допускаем лишь при завершённом потоке.
-        if remaining <= 0, !streaming { revealed = target; revealedCount = total }
+        if revealedCount >= total, !streaming {
+            revealed = target
+            revealedCount = total
+        }
     }
 
     private func isCombining(_ scalar: Unicode.Scalar) -> Bool {

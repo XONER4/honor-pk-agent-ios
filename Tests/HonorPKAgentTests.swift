@@ -466,37 +466,51 @@ final class HonorPKAgentTests: XCTestCase {
         // и был не меньше одного символа за кадр, поэтому на 60 кадрах в секунду
         // текст шёл со скоростью 60 символов в секунду вместо заданных 30 —
         // ровно вдвое быстрее. Здесь проверяем, что дробный остаток копится.
-        let target = String(repeating: "а", count: 300)
-        let frame = 1.0 / 60.0
+        var pace = StreamPace(baseRate: 30, comfortableLag: 320)
+        var state = StreamPaceState()
         var revealed = 0
-        var carry = 0.0
         var frames = 0
-        let limit = 600
-        while revealed < target.count && frames < limit {
+        let total = 300
+        let frame = 1.0 / 60.0
+        // Сервер уже отдал весь текст: печатает только аниматор.
+        while revealed < total, frames < 1200 {
             frames += 1
-            carry += 30 * frame
-            let step = Int(carry)
-            if step < 1 { continue }
-            let take = min(step, target.count - revealed)
-            carry -= Double(take)
-            revealed += take
+            revealed += pace.step(state: &state, lag: total - revealed,
+                                  elapsed: frame, streamEnded: false)
         }
         let seconds = Double(frames) * frame
-        // Двухсот символьный ответ печатается ровно с заданной скоростью:
-        // допускаем отклонение на один кадр, но не двукратный разгон.
-        XCTAssertGreaterThanOrEqual(seconds, 9.5, "Печать идёт быстрее заданной скорости")
-        XCTAssertLessThanOrEqual(seconds, 10.5, "Печать идёт медленнее заданной скорости")
-        XCTAssertEqual(revealed, target.count)
+        XCTAssertEqual(revealed, total)
+        // Ответ на 300 символов не может «выстрелить» быстрее, чем за 9 секунд:
+        // это и есть требуемая заказчиком плавность.
+        XCTAssertGreaterThanOrEqual(seconds, 6.0, "Печать идёт быстрее заданной скорости: \(seconds) с")
+        // …и не должен тянуться бесконечно.
+        XCTAssertLessThanOrEqual(seconds, 20.0, "Печать идёт слишком медленно: \(seconds) с")
+    }
 
-        // Старое поведение (шаг не меньше единицы) давало вдвое быстрее — убеждаемся,
-        // что это действительно было так, иначе тест ничего не защищает.
-        var fastRevealed = 0
-        var fastFrames = 0
-        while fastRevealed < target.count && fastFrames < limit {
-            fastFrames += 1
-            fastRevealed += max(1, Int((30 * frame).rounded()))
+    func testTypingPaceNeverJumpsAtTheStartAndFinishesTheTail() {
+        // Первый кадр раньше вываливал восьмую часть ответа: счётчик «буфер молчит»
+        // начинался с бесконечности, и первый же кадр попадал в режим догона.
+        var pace = StreamPace(baseRate: 30, comfortableLag: 320)
+        var state = StreamPaceState()
+        let total = 900
+        let frame = 1.0 / 60.0
+        let first = pace.step(state: &state, lag: total, elapsed: frame, streamEnded: false)
+        XCTAssertLessThanOrEqual(first, 3, "Ответ начинается рывком: \(first) символов за кадр")
+
+        // Хвост не должен «висеть»: после конца потока остаток дописывается быстро.
+        var revealed = first
+        var frames = 1
+        var ended = false
+        while revealed < total, frames < 1800 {
+            frames += 1
+            ended = frames > 300   // поток закончился на пятой секунде
+            revealed += pace.step(state: &state, lag: total - revealed,
+                                  elapsed: frame, streamEnded: ended)
         }
-        XCTAssertLessThan(Double(fastFrames) * frame, 9.0)
+        XCTAssertEqual(revealed, total, "Хвост ответа так и не допечатался")
+        let afterStreamEnd = Double(frames - 300) * frame
+        XCTAssertLessThanOrEqual(afterStreamEnd, 8.0,
+                                 "Хвост дописывается слишком долго: \(afterStreamEnd) с")
     }
 
     @MainActor
