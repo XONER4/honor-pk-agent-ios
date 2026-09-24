@@ -457,6 +457,36 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertEqual(HistorySearchRules.filter(chats, query: "вертолёт").count, 0)
     }
 
+    func testTableColumnsShareWidthByContent() throws {
+        // Раньше столбцы делили ширину поровну: короткий «Год» забирал столько же
+        // места, сколько длинное название, и числа переносились по одной цифре.
+        let headers = ["Модель", "Год"]
+        let rows = [["Motorola DynaTAC 8000X", "1983"], ["IBM Simon", "1992"]]
+        let shares = TableColumnLayout.shares(headers: headers, rows: rows, columnCount: 2)
+        XCTAssertEqual(shares.count, 2)
+        XCTAssertGreaterThan(shares[0], shares[1], "Длинный столбец должен получить больше места")
+        XCTAssertEqual(shares.reduce(0, +), 1.0, accuracy: 0.001, "Сумма долей должна быть равна единице")
+        // Ни один столбец не исчезает и не забирает всю ширину.
+        for share in shares {
+            XCTAssertGreaterThanOrEqual(share, TableColumnLayout.minimumShare - 0.001)
+            XCTAssertLessThanOrEqual(share, TableColumnLayout.maximumShare + 0.001)
+        }
+
+        // Три столбца: длинный текст, короткое число, короткий год.
+        let three = TableColumnLayout.shares(headers: ["Название", "шт", "Год"],
+                                             rows: [["Очень длинное описание товара", "2", "2024"]],
+                                             columnCount: 3)
+        XCTAssertEqual(three.count, 3)
+        XCTAssertGreaterThan(three[0], three[2])
+        XCTAssertEqual(three.reduce(0, +), 1.0, accuracy: 0.001)
+
+        // Пустые данные не должны приводить к делению на ноль.
+        let empty = TableColumnLayout.shares(headers: [], rows: [], columnCount: 2)
+        XCTAssertEqual(empty.count, 2)
+        XCTAssertEqual(empty.reduce(0, +), 1.0, accuracy: 0.001)
+        XCTAssertTrue(TableColumnLayout.shares(headers: [], rows: [], columnCount: 0).isEmpty)
+    }
+
     @MainActor
     func testBackupWithManyMemoryEntriesCanBeImportedBack() throws {
         // Собственная резервная копия обязана импортироваться обратно. Раньше проверка

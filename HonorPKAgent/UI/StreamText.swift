@@ -804,14 +804,25 @@ struct BlockMarkdownView: View {
     /// разбор идёт по мере роста текста шагами, а не каждый кадр.
     @State private var parsed: [MarkdownBlockModel] = []
     @State private var parsedLength: Int = -1
+    /// Ширина сообщения: нужна таблицам, чтобы столбцы делили место по содержимому.
+    @State private var measuredWidth: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(blocks) { block in
                 MarkdownBlockView(block: block, fontSize: fontSize,
-                                  sources: sources, findQuery: findQuery, onAnswer: onAnswer)
+                                  sources: sources, findQuery: findQuery,
+                                  containerWidth: measuredWidth, onAnswer: onAnswer)
             }
         }
+        // Ширину измеряем фоном: так она не влияет ни на размеры, ни на высоту строк.
+        .background(
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear { measuredWidth = geometry.size.width }
+                    .onChange(of: geometry.size.width) { measuredWidth = $0 }
+            }
+        )
         .onAppear { reparse(force: true) }
         .onChange(of: content) { _ in reparse(force: false) }
     }
@@ -841,6 +852,8 @@ private struct MarkdownBlockView: View {
     let fontSize: Double
     let sources: [WebSource]
     let findQuery: String
+    /// Ширина сообщения: нужна таблицам, чтобы делить место по содержимому столбцов.
+    var containerWidth: CGFloat = 320
     var onAnswer: ((String) -> Bool)? = nil
 
     var body: some View {
@@ -880,7 +893,8 @@ private struct MarkdownBlockView: View {
                 if !rows.isEmpty
                     || headers.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
                     MarkdownTableView(headers: headers, alignments: alignments, rows: rows,
-                                      fontSize: fontSize, findQuery: findQuery)
+                                      fontSize: fontSize, findQuery: findQuery,
+                                      containerWidth: containerWidth > 0 ? containerWidth : 320)
                 }
             case .divider:
                 Rectangle().fill(HonorTheme.divider).frame(height: 1).padding(.vertical, 4)
@@ -2011,6 +2025,45 @@ struct CachedCodeText: View {
     }
 }
 
+/// Распределение ширины столбцов компактной таблицы.
+///
+/// Раньше столбцы делили ширину поровну, и таблица выглядела неаккуратно: короткий
+/// «Год» забирал столько же места, сколько длинное название, поэтому числа переносились
+/// по одной цифре, а длинный столбец сжимался. Здесь ширина считается по содержимому:
+/// короткие столбцы получают меньше, длинные — больше.
+enum TableColumnLayout {
+    /// Минимальная и максимальная доля ширины для одного столбца.
+    static let minimumShare = 0.12
+    static let maximumShare = 0.55
+
+    /// Доли ширины столбцов, сумма которых равна единице.
+    ///
+    /// - Parameters:
+    ///   - headers: заголовки столбцов (могут быть пустыми строками).
+    ///   - rows: строки данных.
+    ///   - columnCount: сколько столбцов показывать.
+    static func shares(headers: [String], rows: [[String]], columnCount: Int) -> [Double] {
+        guard columnCount > 0 else { return [] }
+        var weights = [Double](repeating: 1, count: columnCount)
+        for column in 0..<columnCount {
+            var longest = column < headers.count ? headers[column].count : 0
+            for row in rows where column < row.count {
+                longest = max(longest, row[column].count)
+            }
+            // Корень сглаживает разницу: столбец в 25 знаков не должен быть в 25 раз
+            // шире столбца в один знак.
+            weights[column] = max(3, min(28, Double(longest))).squareRoot()
+        }
+        let total = weights.reduce(0, +)
+        guard total > 0 else { return [Double](repeating: 1 / Double(columnCount), count: columnCount) }
+        var shares = weights.map { $0 / total }
+        // Держим доли в разумных пределах, чтобы ни один столбец не исчез и не съел всё.
+        shares = shares.map { min(maximumShare, max(minimumShare, $0)) }
+        let sum = shares.reduce(0, +)
+        return sum > 0 ? shares.map { $0 / sum } : shares
+    }
+}
+
 /// Таблица GFM с выравниванием столбцов, сортировкой, фильтром по строкам,
 /// строкой итогов, горизонтальным скроллом и копированием в Markdown / TSV / CSV.
 struct MarkdownTableView: View {
@@ -2019,6 +2072,9 @@ struct MarkdownTableView: View {
     let rows: [[String]]
     let fontSize: Double
     let findQuery: String
+    /// Ширина, в которую обязана поместиться компактная таблица. Передаётся родителем:
+    /// без неё столбцы не могут делить место по содержимому.
+    var containerWidth: CGFloat = 320
 
     @State private var copied: String?
     @State private var sortColumn: Int?
@@ -2255,20 +2311,25 @@ struct MarkdownTableView: View {
     /// строки идут друг под другом, текст переносится внутри ячейки, а ширины столбцов
     /// считаются по содержимому.
     private var fitTable: some View {
-        // Столбцы делят ширину контейнера поровну: таблица не выходит за пределы
-        // сообщения и переносит текст внутри ячейки — прокрутка не нужна.
-        VStack(alignment: .leading, spacing: 0) {
+        // Столбцы делят ширину контейнера, но не поровну: короткий столбец получает
+        // меньше места, длинный — больше (см. TableColumnLayout). Текст переносится
+        // внутри ячейки, поэтому прокрутка не нужна. Ширину берём у родителя строками
+        // фиксированной ширины: так высота таблицы считается по содержимому, а не
+        // обрезается.
+        let shares = TableColumnLayout.shares(headers: headers, rows: shownRows, columnCount: columnCount)
+        return VStack(alignment: .leading, spacing: 0) {
             if hasHeaderText {
                 HStack(alignment: .top, spacing: 0) {
                     ForEach(0..<columnCount, id: \.self) { index in
                         headerCell(index)
+                            .frame(width: width(index: index, shares: shares))
                     }
                 }
                 .background(HonorTheme.raised)
                 Rectangle().fill(HonorTheme.divider).frame(height: 1)
             }
             ForEach(Array(shownRows.enumerated()), id: \.offset) { index, cells in
-                fitRow(cells, striped: !index.isMultiple(of: 2))
+                fitRow(cells, striped: !index.isMultiple(of: 2), shares: shares)
                 if index < shownRows.count - 1 {
                     Rectangle().fill(HonorTheme.divider.opacity(0.5)).frame(height: 0.5)
                 }
@@ -2278,6 +2339,7 @@ struct MarkdownTableView: View {
                 HStack(alignment: .top, spacing: 0) {
                     ForEach(0..<columnCount, id: \.self) { column in
                         totalsCell(column)
+                            .frame(width: width(index: column, shares: shares))
                     }
                 }
                 .background(HonorTheme.raised.opacity(0.6))
@@ -2288,8 +2350,17 @@ struct MarkdownTableView: View {
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.6))
     }
 
+    /// Ширина одного столбца в точках. Разделители (0,5 pt) вычитаются, чтобы
+    /// таблица не выходила за границы сообщения.
+    private func width(index: Int, shares: [Double]) -> CGFloat {
+        guard index < shares.count else { return 0 }
+        let dividers = CGFloat(max(0, columnCount - 1)) * 0.5
+        let available = max(0, containerWidth - dividers)
+        return available * CGFloat(shares[index])
+    }
+
     /// Строка компактной таблицы: те же столбцы и тот же порядок, что и в шапке.
-    private func fitRow(_ cells: [String], striped: Bool) -> some View {
+    private func fitRow(_ cells: [String], striped: Bool, shares: [Double]) -> some View {
         HStack(alignment: .top, spacing: 0) {
             ForEach(0..<columnCount, id: \.self) { column in
                 Group {
@@ -2302,7 +2373,7 @@ struct MarkdownTableView: View {
                             .foregroundStyle(HonorTheme.secondary)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: frameAlignment(alignment(column)))
+                .frame(width: width(index: column, shares: shares), alignment: frameAlignment(alignment(column)))
                 .padding(.horizontal, 5).padding(.vertical, 7)
                 if column < columnCount - 1 {
                     Rectangle().fill(HonorTheme.divider.opacity(0.6)).frame(width: 0.5)
