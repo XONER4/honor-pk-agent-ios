@@ -358,6 +358,7 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertFalse(ChatStore.isToolAnnouncement("Отпуск в Сочи длится 12 дней."))
     }
 
+    @MainActor
     func testChatToolsActOnStableChatIdentifiers() throws {
         // Номер чата в списке меняется, как только чат передвинулся наверх или был
         // закреплён. Раньше переименование и закрепление выполнялись по номеру,
