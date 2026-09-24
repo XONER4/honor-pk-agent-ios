@@ -1892,6 +1892,9 @@ private struct HistoryDrawer: View {
     @State private var search = ""
     /// Кэш поиска по истории: без него поиск выполнялся при каждой перерисовке панели.
     @State private var cachedGroups: (signature: String, groups: [HistoryGroup])?
+    /// Идёт ли поиск по истории прямо сейчас: поиск выполняется в фоне, поэтому
+    /// на больших переписках панель чатов больше не замирает.
+    @State private var isSearchingHistory = false
     @State private var selecting = false
     @State private var selectedIDs: Set<UUID> = []
     @State private var renameTarget: UUID?
@@ -1977,12 +1980,23 @@ private struct HistoryDrawer: View {
                             .accessibilityLabel(text("Очистить поиск", "Clear search"))
                             .accessibilityIdentifier("history.clear")
                     }
+                    if isSearchingHistory {
+                        ProgressView().scaleEffect(0.7)
+                            .accessibilityLabel(text("Ищу по истории", "Searching history"))
+                            .accessibilityIdentifier("history.searching")
+                    }
                 }
                 .foregroundStyle(HonorTheme.secondary)
                 .padding(.horizontal, 13).frame(height: 44)
                 .background(HonorTheme.surface.opacity(0.4), in: Capsule())
                 .overlay(Capsule().stroke(HonorTheme.divider, lineWidth: 0.7))
                 .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 13)
+                .task(id: search) {
+                    // Поиск по всей истории идёт в фоне: на большой переписке просмотр
+                    // текста всех сообщений заметно тормозил панель при вводе каждой буквы.
+                    guard !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                    await searchHistory(search)
+                }
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 17) {
@@ -2248,18 +2262,24 @@ private struct HistoryDrawer: View {
         // и пересчитывается только когда меняется запрос или сама история.
         let signature = "\(query)|\(store.conversations.count)|\(historyRevision)"
         if let cache = cachedGroups, cache.signature == signature { return cache.groups }
-        let chats = store.sortedConversations.filter { chat in
-            query.isEmpty || chat.title.localizedCaseInsensitiveContains(query) || chat.messages.contains {
-                $0.content.localizedCaseInsensitiveContains(query) || $0.reasoning.localizedCaseInsensitiveContains(query) ||
-                $0.attachments.contains {
-                    $0.name.localizedCaseInsensitiveContains(query) || $0.extractedText.localizedCaseInsensitiveContains(query)
-                }
-            }
+        if query.isEmpty {
+            // Пустой запрос ничего не ищет — считаем сразу, это дешёвая группировка.
+            let result = group(store.sortedConversations)
+            cachedGroups = (signature, result)
+            return result
         }
+        // С непустым запросом поиск идёт в фоне (см. .task ниже): просмотр текста всех
+        // сообщений на большой истории занимает заметное время, и делать его в теле
+        // представления нельзя — панель чатов замирала при вводе каждой буквы.
+        return cachedGroups?.groups ?? group([])
+    }
+
+    /// Группировка чатов по датам: «Закреплено», «Сегодня», «Вчера», «7 дней», «Ранее».
+    private func group(_ chats: [Conversation]) -> [HistoryGroup] {
         let calendar = Calendar.current
         let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) ?? .distantPast
         let unpinned = chats.filter { !$0.pinned }
-        let result = [
+        return [
             HistoryGroup(id: "pinned", title: text("Закреплено", "Pinned"), chats: chats.filter(\.pinned)),
             HistoryGroup(id: "today", title: text("Сегодня", "Today"), chats: unpinned.filter { calendar.isDateInToday($0.lastMessageAt) }),
             HistoryGroup(id: "yesterday", title: text("Вчера", "Yesterday"), chats: unpinned.filter { calendar.isDateInYesterday($0.lastMessageAt) }),
@@ -2268,8 +2288,40 @@ private struct HistoryDrawer: View {
             }),
             HistoryGroup(id: "older", title: text("Ранее", "Older"), chats: unpinned.filter { $0.lastMessageAt < weekAgo })
         ].filter { !$0.chats.isEmpty }
-        cachedGroups = (signature, result)
-        return result
+    }
+
+    /// Поиск по истории в фоне с небольшой задержкой: пока пользователь печатает,
+    /// считаем только последний запрос.
+    private func searchHistory(_ query: String) async {
+        isSearchingHistory = true
+        defer { isSearchingHistory = false }
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        guard !Task.isCancelled else { return }
+        // Список чатов снимаем на главном потоке, а сам просмотр текста — в фоне.
+        let snapshot = store.sortedConversations
+        let matches = await Task.detached(priority: .userInitiated) {
+            Self.filterChats(snapshot, query: query)
+        }.value
+        guard !Task.isCancelled else { return }
+        cachedGroups = ("\(query)|\(store.conversations.count)|\(historyRevision)", group(matches))
+    }
+
+    /// Совпадает ли чат с запросом: заголовок, текст сообщений, рассуждения,
+    /// имена вложений и распознанный из них текст.
+    nonisolated static func filterChats(_ chats: [Conversation], query: String) -> [Conversation] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return chats }
+        return chats.filter { chat in
+            if chat.title.localizedCaseInsensitiveContains(needle) { return true }
+            return chat.messages.contains { message in
+                message.content.localizedCaseInsensitiveContains(needle)
+                    || message.reasoning.localizedCaseInsensitiveContains(needle)
+                    || message.attachments.contains {
+                        $0.name.localizedCaseInsensitiveContains(needle)
+                            || $0.extractedText.localizedCaseInsensitiveContains(needle)
+                    }
+            }
+        }
     }
 
     /// Признак того, что история изменилась по существу: число сообщений и последние
