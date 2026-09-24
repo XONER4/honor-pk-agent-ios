@@ -1670,14 +1670,17 @@ private enum HistoryArchiveIO {
             let id = attachment.id.uuidString
             guard files[id] == nil, references[id] == nil, let fileURL = attachment.resolvedURL else { continue }
             if let canonicalID = canonicalFiles[fileURL.standardizedFileURL.path] { references[id] = canonicalID; continue }
-            let data = try Data(contentsOf: fileURL)
+            // Файл мог исчезнуть: раньше из-за одного пропавшего вложения не
+            // сохранялась вся резервная копия. Теперь такое вложение пропускаем,
+            // а остальная история выгружается.
+            guard let data = try? Data(contentsOf: fileURL) else { continue }
             totalBytes += data.count
             guard totalBytes <= 64 * 1024 * 1024 else { throw HonorError.archiveTooLarge }
             files[id] = data
             if attachment.kind == .video {
                 var frames: [Data] = []
                 for frameURL in attachment.resolvedFrameURLs.prefix(8) {
-                    let frame = try Data(contentsOf: frameURL)
+                    guard let frame = try? Data(contentsOf: frameURL) else { continue }
                     totalBytes += frame.count
                     guard totalBytes <= 64 * 1024 * 1024 else { throw HonorError.archiveTooLarge }
                     frames.append(frame)
@@ -1712,8 +1715,8 @@ private enum HistoryArchiveIO {
               incoming.conversations.allSatisfy({ Set($0.messages.map(\.id)).count == $0.messages.count }),
               (incoming.memories?.count ?? 0) <= memoryCountLimit,
               (incoming.memories ?? []).allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.text.count <= memoryLengthLimit }),
-              (incoming.attachmentFiles ?? [:]).values.allSatisfy({ $0.count <= 40 * 1024 * 1024 }),
-              (incoming.attachmentFrameFiles ?? [:]).values.allSatisfy({ $0.count <= 8 && $0.allSatisfy { $0.count <= 5 * 1024 * 1024 } }),
+              (incoming.attachmentFiles ?? [:]).values.allSatisfy({ $0.count <= 64 * 1024 * 1024 }),
+              (incoming.attachmentFrameFiles ?? [:]).values.allSatisfy({ $0.count <= 8 && $0.allSatisfy { $0.count <= 8 * 1024 * 1024 } }),
               (incoming.attachmentFiles ?? [:]).values.reduce(0, { $0 + $1.count }) +
                 (incoming.attachmentFrameFiles ?? [:]).values.flatMap({ $0 }).reduce(0, { $0 + $1.count }) <= 64 * 1024 * 1024 else { throw HonorError.invalidArchive }
         incoming.conversations.removeAll { existingIDs.contains($0.id) }
