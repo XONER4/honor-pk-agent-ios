@@ -2038,6 +2038,11 @@ enum TableColumnLayout {
 
     /// Доли ширины столбцов, сумма которых равна единице.
     ///
+    /// Столбцы получают место по содержимому, но упираются в границы: слишком
+    /// длинный не может забрать почти всю ширину, слишком короткий не может
+    /// сжаться в точку. Лишнее от «упёршихся» столбцов распределяется между
+    /// остальными, поэтому сумма долей всегда ровно единица.
+    ///
     /// - Parameters:
     ///   - headers: заголовки столбцов (могут быть пустыми строками).
     ///   - rows: строки данных.
@@ -2057,10 +2062,41 @@ enum TableColumnLayout {
         let total = weights.reduce(0, +)
         guard total > 0 else { return [Double](repeating: 1 / Double(columnCount), count: columnCount) }
         var shares = weights.map { $0 / total }
-        // Держим доли в разумных пределах, чтобы ни один столбец не исчез и не съел всё.
-        shares = shares.map { min(maximumShare, max(minimumShare, $0)) }
-        let sum = shares.reduce(0, +)
-        return sum > 0 ? shares.map { $0 / sum } : shares
+
+        // Упираем слишком широкие столбцы в потолок, а остаток отдаём остальным.
+        for _ in 0..<4 {
+            let overflowing = shares.enumerated().filter { $0.element > maximumShare }
+            guard !overflowing.isEmpty else { break }
+            var freed = 0.0
+            for item in overflowing {
+                freed += shares[item.offset] - maximumShare
+                shares[item.offset] = maximumShare
+            }
+            let flexible = shares.enumerated().filter { $0.element < maximumShare }.map(\.offset)
+            let flexibleTotal = flexible.reduce(0.0) { $0 + shares[$1] }
+            guard !flexible.isEmpty, flexibleTotal > 0 else { break }
+            for index in flexible {
+                shares[index] += freed * shares[index] / flexibleTotal
+            }
+        }
+
+        // Слишком узкие столбцы поднимаем до минимума, а нехватку снимаем с широких.
+        for _ in 0..<4 {
+            let narrow = shares.enumerated().filter { $0.element < minimumShare }
+            guard !narrow.isEmpty else { break }
+            var needed = 0.0
+            for item in narrow {
+                needed += minimumShare - shares[item.offset]
+                shares[item.offset] = minimumShare
+            }
+            let donors = shares.enumerated().filter { $0.element > minimumShare }.map(\.offset)
+            let donorTotal = donors.reduce(0.0) { $0 + shares[$1] }
+            guard !donors.isEmpty, donorTotal > 0 else { break }
+            for index in donors {
+                shares[index] -= needed * shares[index] / donorTotal
+            }
+        }
+        return shares
     }
 }
 

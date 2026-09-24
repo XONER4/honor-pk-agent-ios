@@ -473,6 +473,27 @@ final class Honer10CoreTests: XCTestCase {
             XCTAssertLessThanOrEqual(share, TableColumnLayout.maximumShare + 0.001)
         }
 
+        // Очень длинное название рядом с коротким числом: длинный столбец упирается
+        // в потолок, а не забирает почти всю ширину.
+        let extreme = TableColumnLayout.shares(
+            headers: ["Название", "шт"],
+            rows: [["Очень длинное описание товара с кучей подробностей", "2"]],
+            columnCount: 2)
+        XCTAssertLessThanOrEqual(extreme[0], TableColumnLayout.maximumShare + 0.001)
+        XCTAssertGreaterThanOrEqual(extreme[1], TableColumnLayout.minimumShare - 0.001)
+        XCTAssertEqual(extreme.reduce(0, +), 1.0, accuracy: 0.001)
+
+        // Четыре столбца с разной длиной текста: сумма долей тоже ровно единица.
+        let four = TableColumnLayout.shares(headers: ["Модель", "Год", "Цена", "Страна"],
+                                            rows: [["Motorola DynaTAC 8000X", "1983", "3995", "США"]],
+                                            columnCount: 4)
+        XCTAssertEqual(four.count, 4)
+        XCTAssertEqual(four.reduce(0, +), 1.0, accuracy: 0.001)
+        for share in four {
+            XCTAssertGreaterThanOrEqual(share, TableColumnLayout.minimumShare - 0.001)
+            XCTAssertLessThanOrEqual(share, TableColumnLayout.maximumShare + 0.001)
+        }
+
         // Три столбца: длинный текст, короткое число, короткий год.
         let three = TableColumnLayout.shares(headers: ["Название", "шт", "Год"],
                                              rows: [["Очень длинное описание товара", "2", "2024"]],
