@@ -114,6 +114,10 @@ final class ChatStore: ObservableObject {
     private var activeConversationID: UUID?
     private var activeMessageID: UUID?
     private var flushStreamingBuffer: (@MainActor () -> Void)?
+    /// Один следующий запрос идёт без режима рассуждения: так работает повтор после
+    /// неудачного ответа — иначе сервис отвечает тем же отказом, и «Повторить запрос»
+    /// выглядело как неработающая кнопка.
+    private var suppressThinkingOnce = false
     private var isLoading = true
 
     init(configuration: DeepSeekConfiguration = .bundled,
@@ -378,6 +382,12 @@ final class ChatStore: ObservableObject {
               let chatIndex = conversations.firstIndex(where: { $0.id == chatID }),
               let messageIndex = conversations[chatIndex].messages.firstIndex(where: { $0.id == messageID && $0.role == .assistant }),
               conversations[chatIndex].messages[..<messageIndex].contains(where: { $0.role == .user }) else { return }
+        // Повтор после неудачного ответа идёт без режима рассуждения. Причина:
+        // «Размышлял N секунд» заканчивалось пустотой именно в режиме рассуждения.
+        // Если просто повторить запрос с теми же настройками, сервис отвечает так же,
+        // и пользователь видел, что «повтор ничего не делает». Теперь повтор заведомо
+        // идёт другим путём, поэтому у него есть шанс дать ответ.
+        suppressThinkingOnce = conversations[chatIndex].messages[messageIndex].error != nil
         let discardedAttachments = conversations[chatIndex].messages[messageIndex...].flatMap(\.attachments)
         conversations[chatIndex].messages = Array(conversations[chatIndex].messages.prefix(messageIndex))
         editingMessageID = nil
@@ -598,7 +608,8 @@ final class ChatStore: ObservableObject {
         activeConversationID = chatID
         activeMessageID = response.id
         isGenerating = true
-        let thinking = reasoningEnabled
+        let thinking = reasoningEnabled && !suppressThinkingOnce
+        suppressThinkingOnce = false
         let query = input.last(where: { $0.role == .user })?.content ?? ""
         let searching = SearchIntent.needsSearch(query: query, searchToggleOn: searchEnabled)
         let recentContext = input.suffix(4).map { String($0.content.prefix(1500)) }.joined(separator: "\n")

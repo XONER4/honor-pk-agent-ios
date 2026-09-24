@@ -71,4 +71,33 @@ final class AppSettings: ObservableObject {
     func text(_ russian: String, _ english: String) -> String {
         language == .russian ? russian : english
     }
+
+    /// Папка приложения, в которой лежит фото профиля.
+    static var profilePhotoURL: URL {
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("HonorPK", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("profile-photo.jpg")
+    }
+
+    /// Починить путь к фото профиля после обновления приложения.
+    ///
+    /// iOS при обновлении меняет идентификатор песочницы, поэтому сохранённый
+    /// абсолютный путь перестаёт существовать — фото «пропадало» в профиле,
+    /// хотя файл лежал на месте. Здесь путь пересчитывается по текущей песочнице.
+    /// Если файла нет вовсе, путь очищается, чтобы приложение не показывало пустоту.
+    @discardableResult
+    func repairProfilePhotoPath() -> Bool {
+        let target = Self.profilePhotoURL
+        if FileManager.default.fileExists(atPath: target.path) {
+            if profilePhotoPath != target.path { profilePhotoPath = target.path }
+            return true
+        }
+        // Старый путь ещё рабочий — оставляем как есть.
+        if !profilePhotoPath.isEmpty, FileManager.default.fileExists(atPath: profilePhotoPath) {
+            return true
+        }
+        if !profilePhotoPath.isEmpty { profilePhotoPath = "" }
+        return false
+    }
 }

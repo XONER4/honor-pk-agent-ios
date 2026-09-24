@@ -223,9 +223,16 @@ private struct ProfileSettingsPage: View {
 
     private var avatar: UIImage? {
         if let justPicked { return justPicked }
-        guard !settings.profilePhotoPath.isEmpty else { return nil }
-        guard FileManager.default.fileExists(atPath: settings.profilePhotoPath) else { return nil }
-        return UIImage(contentsOfFile: settings.profilePhotoPath)
+        // Ищем фото по актуальному пути в песочнице, а не только по сохранённой
+        // строке: после обновления приложения iOS меняет идентификатор песочницы,
+        // и старое значение указывало в несуществующую папку — фото не отображалось.
+        let candidates = [settings.profilePhotoPath, AppSettings.profilePhotoURL.path]
+        for path in candidates where !path.isEmpty {
+            if FileManager.default.fileExists(atPath: path), let image = UIImage(contentsOfFile: path) {
+                return image
+            }
+        }
+        return nil
     }
 
     var body: some View {
@@ -311,7 +318,7 @@ private struct ProfileSettingsPage: View {
                     let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
                         .appendingPathComponent("HonorPK", isDirectory: true)
                     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                    let url = directory.appendingPathComponent("profile-photo.jpg")
+                    let url = AppSettings.profilePhotoURL
                     try jpeg.write(to: url, options: .atomic)
                     guard FileManager.default.fileExists(atPath: url.path) else {
                         photoError = settings.text("Не удалось сохранить фото на устройство.", "Could not save the photo on the device.")

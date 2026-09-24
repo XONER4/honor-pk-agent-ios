@@ -48,6 +48,11 @@ struct HonorPKAgentApp: App {
             .onAppear {
                 guard !didConfigure else { return }
                 didConfigure = true
+                // Путь к фото профиля хранится в настройках как абсолютный. iOS меняет
+                // идентификатор песочницы при обновлении приложения, и после установки
+                // новой версии фото «терялось»: файл лежал на месте, а путь в настройках
+                // указывал в несуществующую папку. Здесь путь пересчитывается.
+                settings.repairProfilePhotoPath()
                 store.systemInstruction = settings.customInstructions
                 store.profileName = settings.displayName
                 // Автоудаление старых чатов по настройке (пункт 40).
