@@ -1072,7 +1072,7 @@ final class ChatStore: ObservableObject {
         return ToolExecutionContext(
             deviceModel: DeviceModel.name,
             systemVersion: UIDevice.current.systemVersion,
-            appVersion: "10.25",
+            appVersion: "10.26",
             messageCount: messages.count,
             voiceMessageCount: messages.filter { $0.inputKind == .voice }.count,
             chatStartedAt: selectedConversation?.createdAt,
@@ -1242,37 +1242,44 @@ final class ChatStore: ObservableObject {
     ///
     /// Модель вставляет такие фразы перед настоящим ответом и часто склеивает их
     /// без пробела: «Сначала посмотрю список чатов.В вашем чате написано: 12 дней».
-    /// Поэтому режем текст на предложения (в том числе по знаку без пробела)
-    /// и выбрасываем предложения-обещания в начале ответа.
+    /// Поэтому берём первое смысловое звено (до точки, вопросительного, восклицательного
+    /// знака, многоточия или перевода строки), проверяем, похоже ли оно на обещание
+    /// что-то найти или прочитать, и срезаем его. Так уходит и одна фраза, и несколько
+    /// подряд («Сейчас найду чат. Затем прочитаю его и отвечу.»). Если после среза
+    /// не осталось содержательного текста, возвращаем пустую строку — вызывающий код
+    /// запросит нормальный ответ заново.
     static func strippingToolAnnouncements(_ text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return trimmed }
-        guard let splitter = try? NSRegularExpression(pattern: "(?s).*?(?:[.!?…]+|\\n|$)") else { return trimmed }
-        let range = NSRange(trimmed.startIndex..., in: trimmed)
-        var sentences: [String] = []
-        for match in splitter.matches(in: trimmed, range: range) {
-            guard let part = Range(match.range, in: trimmed) else { continue }
-            let value = String(trimmed[part]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !value.isEmpty { sentences.append(value) }
-        }
+        var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return value }
+        guard let splitter = try? NSRegularExpression(pattern: "(?s)^.*?(?:[.!?…]+|\\n|$)") else { return value }
         let verbs = ["найду", "найти", "прочитаю", "прочитать", "открою", "открыть",
                      "вызову", "вызвать", "проверю", "проверить", "посмотрю", "посмотреть",
+                     "отвечу", "ответить", "сформулирую", "уточню", "достану", "извлеку",
+                     "разберу", "составлю", "подготовлю", "дам ответ",
                      "let me", "i will", "i'll", "i am going to"]
         let nouns = ["чат", "переписк", "список", "инструмент", "сообщени", "chat", "tool"]
+        let markers = ["сначала", "затем", "потом", "теперь", "для этого", "после этого",
+                       "first,", "then i"]
         func isAnnouncement(_ sentence: String) -> Bool {
             let lowered = sentence.lowercased()
-            guard lowered.count < 220 else { return false }
+            guard !lowered.isEmpty, lowered.count < 220 else { return false }
+            // В настоящем ответе почти всегда есть числа и списки — обещание их не содержит.
+            guard !lowered.contains(where: { $0.isNumber }) else { return false }
             guard verbs.contains(where: { lowered.contains($0) }) else { return false }
-            return nouns.contains { lowered.contains($0) }
+            if nouns.contains(where: { lowered.contains($0) }) { return true }
+            return markers.contains { lowered.contains($0) }
         }
-        var result = sentences
-        while result.count > 1, let first = result.first, isAnnouncement(first) {
-            result.removeFirst()
+        for _ in 0..<5 {
+            let range = NSRange(value.startIndex..., in: value)
+            guard let match = splitter.firstMatch(in: value, range: range),
+                  let whole = Range(match.range, in: value) else { break }
+            let first = String(value[whole]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard isAnnouncement(first) else { break }
+            let rest = String(value[whole.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard rest.count >= 12 else { return "" }
+            value = rest
         }
-        let joined = result.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        // Если после очистки не осталось содержательного текста, возвращаем пусто:
-        // вызывающий код запросит нормальный ответ заново.
-        return joined.count >= 12 ? joined : ""
+        return value
     }
 
     /// Нужен ли повтор: ответ пуст, оборван или это объявление о действии без самого ответа.
