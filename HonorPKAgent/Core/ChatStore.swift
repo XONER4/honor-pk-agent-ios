@@ -911,7 +911,7 @@ final class ChatStore: ObservableObject {
                     if Self.needsAnswerRecovery(retryContent) {
                         do {
                             var streamed = ""
-                            for try await delta in client.stream(messages: input, thinking: false,
+                            for try await delta in client.stream(messages: recoveryInput, thinking: false,
                                                                  systemInstruction: instruction,
                                                                  searchContext: context, tools: nil) {
                                 try Task.checkCancellation()
@@ -926,6 +926,24 @@ final class ChatStore: ObservableObject {
                                 }
                             }
                             retryContent = streamed
+                        } catch {
+                            if Task.isCancelled { throw CancellationError() }
+                        }
+                    }
+                    // Последняя попытка: модель уже дважды не дала ответ по существу,
+                    // хотя данные инструментов у неё есть. Просим строго ответить текстом,
+                    // без рассуждений и без обещаний что-то найти.
+                    if Self.needsAnswerRecovery(retryContent), !toolResults.isEmpty {
+                        self.generationStatus = "Формулирую ответ…"
+                        do {
+                            let forced = try await client.complete(messages: recoveryInput, thinking: false,
+                                                                   systemInstruction: "Отвечай только итоговым текстом по-русски. Никаких обещаний что-то найти или прочитать, никаких рассуждений о своих действиях. Сразу дай ответ по данным, которые есть в переписке.",
+                                                                   searchContext: "")
+                            if !Self.needsAnswerRecovery(forced), !forced.isEmpty {
+                                retryContent = forced
+                                rawContent = forced
+                                self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = forced }
+                            }
                         } catch {
                             if Task.isCancelled { throw CancellationError() }
                         }
@@ -1026,7 +1044,7 @@ final class ChatStore: ObservableObject {
         return ToolExecutionContext(
             deviceModel: DeviceModel.name,
             systemVersion: UIDevice.current.systemVersion,
-            appVersion: "10.22",
+            appVersion: "10.23",
             messageCount: messages.count,
             voiceMessageCount: messages.filter { $0.inputKind == .voice }.count,
             chatStartedAt: selectedConversation?.createdAt,
@@ -1181,12 +1199,14 @@ final class ChatStore: ObservableObject {
     /// результата, и пользователь не получает ответа. Такой ответ считаем незавершённым.
     static func isToolAnnouncement(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.count < 300 else { return false }
+        guard !trimmed.isEmpty, trimmed.count < 400 else { return false }
         let lowered = trimmed.lowercased()
         let markers = ["сначала найду", "сначала проверю", "сейчас найду", "сейчас прочитаю",
                        "затем открою", "затем прочитаю", "сейчас вызову", "вызову инструмент",
-                       "без вызова инструмента", "let me check", "let me look",
-                       "i will call", "let me read", "i'll check"]
+                       "без вызова инструмента", "нашёл ваш чат", "нашел ваш чат",
+                       "прочитал его", "прочитал чат", "нашёл чат", "нашел чат",
+                       "let me check", "let me look", "i will call", "let me read",
+                       "i'll check", "i found your chat"]
         return markers.contains { lowered.contains($0) }
     }
 
