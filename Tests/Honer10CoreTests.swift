@@ -387,6 +387,7 @@ final class Honer10CoreTests: XCTestCase {
                       "read_chat обязан вернуть содержимое чата")
     }
 
+    @MainActor
     func testChatContextIsAttachedOnlyWhenTheQuestionIsAboutChats() throws {
         // Переписка остальных чатов — это десятки тысяч знаков. Держать её в каждом
         // запросе нельзя: первый токен приходит заметно позже, и ответ «зависает».
@@ -401,6 +402,7 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertFalse(ChatStore.queryMentionsChats(queryText: "Посчитай 2+2", recentContext: "Honer AI: два плюс два равно четырём"))
     }
 
+    @MainActor
     func testRequestHistoryBoundsWhatIsSentToTheService() throws {
         // В сервис уходит не вся переписка: длинный чат давал мегабайтный запрос,
         // из-за чего ответ начинал идти с задержкой или вовсе падал с ошибкой.
