@@ -1072,7 +1072,7 @@ final class ChatStore: ObservableObject {
         return ToolExecutionContext(
             deviceModel: DeviceModel.name,
             systemVersion: UIDevice.current.systemVersion,
-            appVersion: "10.24",
+            appVersion: "10.25",
             messageCount: messages.count,
             voiceMessageCount: messages.filter { $0.inputKind == .voice }.count,
             chatStartedAt: selectedConversation?.createdAt,
@@ -1239,26 +1239,40 @@ final class ChatStore: ObservableObject {
     }
 
     /// Убирает из ответа объявления о действиях: «Сначала найду чат…», «Сейчас прочитаю…».
-    /// Модель вставляет такие фразы перед настоящим ответом, причём часто БЕЗ переноса
-    /// строки: «Сначала найду чат про отпуск.## Ответ: 12 дней». Поэтому срезаем такое
-    /// вступление в начале текста, а не ищем отдельные строки.
+    ///
+    /// Модель вставляет такие фразы перед настоящим ответом и часто склеивает их
+    /// без пробела: «Сначала посмотрю список чатов.В вашем чате написано: 12 дней».
+    /// Поэтому режем текст на предложения (в том числе по знаку без пробела)
+    /// и выбрасываем предложения-обещания в начале ответа.
     static func strippingToolAnnouncements(_ text: String) -> String {
-        var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return value }
-        let prefix = "(?is)^\\s*(?:сначала|сейчас|затем|далее|подожди[те]?|хорошо|ок[а-я]*)?[^.!?\\n]{0,160}?"
-            + "(?:найду|найти|прочитаю|прочитать|открою|открыть|вызову|вызвать|проверю|проверить|посмотрю|посмотреть|"
-            + "let me|i will|i'll|i am going to|i found)[^.!?\\n]{0,160}[.!?…\\n]+\\s*"
-        for _ in 0..<4 {
-            guard let expression = try? NSRegularExpression(pattern: prefix, options: [.caseInsensitive]) else { break }
-            let range = NSRange(value.startIndex..., in: value)
-            guard let match = expression.firstMatch(in: value, range: range),
-                  let whole = Range(match.range, in: value) else { break }
-            let remainder = String(value[whole.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
-            // Не срезаем, если после этого не останется содержательного текста.
-            guard remainder.count >= 12 else { break }
-            value = remainder
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+        guard let splitter = try? NSRegularExpression(pattern: "(?s).*?(?:[.!?…]+|\\n|$)") else { return trimmed }
+        let range = NSRange(trimmed.startIndex..., in: trimmed)
+        var sentences: [String] = []
+        for match in splitter.matches(in: trimmed, range: range) {
+            guard let part = Range(match.range, in: trimmed) else { continue }
+            let value = String(trimmed[part]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty { sentences.append(value) }
         }
-        return value
+        let verbs = ["найду", "найти", "прочитаю", "прочитать", "открою", "открыть",
+                     "вызову", "вызвать", "проверю", "проверить", "посмотрю", "посмотреть",
+                     "let me", "i will", "i'll", "i am going to"]
+        let nouns = ["чат", "переписк", "список", "инструмент", "сообщени", "chat", "tool"]
+        func isAnnouncement(_ sentence: String) -> Bool {
+            let lowered = sentence.lowercased()
+            guard lowered.count < 220 else { return false }
+            guard verbs.contains(where: { lowered.contains($0) }) else { return false }
+            return nouns.contains { lowered.contains($0) }
+        }
+        var result = sentences
+        while result.count > 1, let first = result.first, isAnnouncement(first) {
+            result.removeFirst()
+        }
+        let joined = result.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Если после очистки не осталось содержательного текста, возвращаем пусто:
+        // вызывающий код запросит нормальный ответ заново.
+        return joined.count >= 12 ? joined : ""
     }
 
     /// Нужен ли повтор: ответ пуст, оборван или это объявление о действии без самого ответа.
