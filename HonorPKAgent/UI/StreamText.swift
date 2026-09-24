@@ -750,34 +750,9 @@ struct InlineContentView: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(parts) { part in
                 if let url = part.imageURL {
-                    VStack(alignment: .leading, spacing: 4) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                // Ограничиваем высоту: без этого большая картинка
-                                // растягивалась на несколько экранов и «ломала» ответ.
-                                image.resizable().scaledToFit()
-                                    .frame(maxHeight: 320)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                            case .failure:
-                                Label("Не удалось загрузить изображение", systemImage: "photo.badge.exclamationmark")
-                                    .font(.system(size: size * 0.85))
-                                    .foregroundStyle(HonorTheme.secondary)
-                            default:
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(HonorTheme.surface)
-                                    .frame(height: 140)
-                                    .overlay(ProgressView())
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        if !part.caption.isEmpty {
-                            Text(part.caption)
-                                .font(.system(size: size * 0.78))
-                                .foregroundStyle(HonorTheme.secondary)
-                        }
-                    }
-                    .accessibilityIdentifier("message.image")
+                    // Картинка грузится один раз и берётся из кэша: раньше она
+                    // перезагружалась на каждом кадре печати и мигала.
+                    CachedRemoteImage(url: url, caption: part.caption, fontSize: size)
                 } else if let text = part.text {
                     Text(text == source ? attributed : AttributedString(text))
                         .font(.system(size: size, weight: weight))
@@ -1650,13 +1625,9 @@ struct LinkPreviewListView: View {
                 Link(destination: preview.url) {
                     VStack(alignment: .leading, spacing: 8) {
                         if let imageURL = preview.imageURL {
-                            AsyncImage(url: imageURL) { phase in
-                                if case .success(let image) = phase {
-                                    image.resizable().scaledToFill().frame(height: 120).clipped()
-                                } else {
-                                    Color.clear.frame(height: 0)
-                                }
-                            }
+                            // Картинка превью берётся из того же кэша: без него она
+                            // пропадала и появлялась при каждой перерисовке карточки.
+                            CachedPreviewImage(url: imageURL)
                         }
                         VStack(alignment: .leading, spacing: 4) {
                             if !preview.siteName.isEmpty {
