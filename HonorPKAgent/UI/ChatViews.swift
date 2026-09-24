@@ -573,7 +573,7 @@ struct ChatRootView: View {
             }
             HStack(alignment: .top, spacing: 2) {
                 TextField(text("Напишите сообщение…", "Message Honer AI…"), text: $store.draft, axis: .vertical)
-                .font(.system(size: 19 * settings.fontScale * dynamicScale))
+                .font(.system(size: 21 * settings.fontScale * dynamicScale))
                 .lineLimit(1...6)
                 .focused($composerFocused)
                 .tint(HonorTheme.accent)
@@ -1267,7 +1267,7 @@ private struct MessageRow: View, Equatable {
                 if !message.content.isEmpty {
                     // Цветной текст работает и в сообщениях пользователя (пункт 8 ТЗ).
                     Text(InlineStyleParser.apply(to: highlighted(AttributedString(message.content), query: findQuery)))
-                        .font(.system(size: 19 * settings.fontScale * dynamicScale))
+                        .font(.system(size: 21 * settings.fontScale * dynamicScale))
                         .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1321,7 +1321,7 @@ private struct MessageRow: View, Equatable {
                 } label: {
                     HStack(spacing: 7) {
                         if streaming && visibleContent.isEmpty { ProgressView().scaleEffect(0.7).tint(HonorTheme.secondary) }
-                        Text(reasoningTitle).font(.system(size: 17 * settings.fontScale * dynamicScale, weight: .medium))
+                        Text(reasoningTitle).font(.system(size: 18 * settings.fontScale * dynamicScale, weight: .medium))
                         Image(systemName: reasoningOpen ? "chevron.down" : "chevron.right").font(.system(size: 12, weight: .medium))
                     }
                     .foregroundStyle(HonorTheme.secondary)
@@ -1348,7 +1348,7 @@ private struct MessageRow: View, Equatable {
                     }
                     StreamText(target: visibleReasoning, streaming: streaming, baseRate: 42,
                                onSettled: streaming ? onStreamSettled : nil) { visible in
-                        BlockMarkdownView(content: visible, fontSize: 14 * settings.fontScale * dynamicScale,
+                        BlockMarkdownView(content: visible, fontSize: 16 * settings.fontScale * dynamicScale,
                                           sources: [], findQuery: findQuery)
                             .foregroundStyle(HonorTheme.secondary)
                             .padding(.leading, 13)
@@ -1364,7 +1364,7 @@ private struct MessageRow: View, Equatable {
                 // Размер текста увеличен до 19 pt: на 17 pt ответ читался мелко.
                 StreamText(target: visibleContent, streaming: streaming, baseRate: 30,
                            onSettled: streaming ? onStreamSettled : nil) { visible in
-                    BlockMarkdownView(content: visible, fontSize: 19 * settings.fontScale * dynamicScale,
+                    BlockMarkdownView(content: visible, fontSize: 21 * settings.fontScale * dynamicScale,
                                       sources: message.sources, findQuery: findQuery,
                                       onAnswer: onAnswer)
                 }
@@ -1374,7 +1374,7 @@ private struct MessageRow: View, Equatable {
                 // Карточки-превью ссылок из ответа (OG-теги).
                 if !streaming {
                     LinkPreviewListView(content: message.content,
-                                        fontSize: 19 * settings.fontScale * dynamicScale)
+                                        fontSize: 21 * settings.fontScale * dynamicScale)
                 }
             }
             if let error = message.error {
@@ -1405,39 +1405,46 @@ private struct MessageRow: View, Equatable {
                     .accessibilityIdentifier("message.search.failed." + message.id.uuidString)
             }
             if !message.sources.isEmpty {
-                // Раньше здесь были просто значки сайтов и число — непонятно, что это.
-                // Теперь блок подписан словами, показаны названия страниц и есть
-                // подсказка, что по нажатию открывается список источников ответа.
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "link").font(.system(size: 11, weight: .semibold))
-                        Text(text("Источники ответа", "Answer sources"))
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .foregroundStyle(HonorTheme.secondary)
-                    Button { onSources(SourceSelection(sources: message.sources, readOnly: false)) } label: {
+                // Раньше здесь были просто значки сайтов и число — непонятно, что это
+                // и зачем. Теперь это подписанная карточка: словами сказано, что это
+                // источники ответа, показано, сколько страниц прочитано, и написано,
+                // что делать по нажатию.
+                Button { onSources(SourceSelection(sources: message.sources, readOnly: false)) } label: {
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(spacing: 7) {
+                            Image(systemName: "link.circle.fill").font(.system(size: 14))
+                                .foregroundStyle(HonorTheme.accent)
+                            Text(text("Источники ответа", "Answer sources"))
+                                .font(.system(size: 13, weight: .semibold))
+                            Spacer(minLength: 0)
+                            Text(sourceSummary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(HonorTheme.secondary)
+                                .lineLimit(1)
+                        }
                         HStack(spacing: 8) {
                             SourceSiteMarks(sources: message.sources)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(sourceSummary)
-                                    .font(.system(size: 13, weight: .medium))
-                                    .lineLimit(1)
-                                Text(text("Нажмите, чтобы посмотреть страницы и цитаты",
-                                          "Tap to view the pages and quotes"))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(HonorTheme.secondary)
-                            }
+                            Text(text("Нажмите, чтобы открыть страницы и цитаты",
+                                      "Tap to open the pages and quotes"))
+                                .font(.system(size: 12))
+                                .foregroundStyle(HonorTheme.secondary)
+                                .lineLimit(2)
                             Spacer(minLength: 0)
-                            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(HonorTheme.secondary)
                         }
-                        .padding(.horizontal, 11).padding(.vertical, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(HonorTheme.divider, lineWidth: 0.7))
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(HonorTheme.foreground)
-                    .accessibilityIdentifier("message.sources." + message.id.uuidString)
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(HonorTheme.divider, lineWidth: 0.7))
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(HonorTheme.foreground)
+                .accessibilityLabel(text("Источники ответа, \(sourceSummary). Нажмите, чтобы открыть страницы.",
+                                         "Answer sources, \(sourceSummary). Tap to open the pages."))
+                .accessibilityIdentifier("message.sources." + message.id.uuidString)
             }
             if !streaming && !message.content.isEmpty {
                 HStack(spacing: 0) {

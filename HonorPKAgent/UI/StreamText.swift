@@ -728,7 +728,10 @@ struct InlineContentView: View {
                         AsyncImage(url: url) { phase in
                             switch phase {
                             case .success(let image):
+                                // Ограничиваем высоту: без этого большая картинка
+                                // растягивалась на несколько экранов и «ломала» ответ.
                                 image.resizable().scaledToFit()
+                                    .frame(maxHeight: 320)
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                             case .failure:
                                 Label("Не удалось загрузить изображение", systemImage: "photo.badge.exclamationmark")
@@ -741,6 +744,7 @@ struct InlineContentView: View {
                                     .overlay(ProgressView())
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         if !part.caption.isEmpty {
                             Text(part.caption)
                                 .font(.system(size: size * 0.78))
