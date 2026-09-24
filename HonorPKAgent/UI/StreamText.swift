@@ -327,6 +327,20 @@ enum MarkdownBlockParser {
                     continue
                 }
                 flushParagraph()
+                // Таблица, за которой сразу идёт ещё одна строка с палочками, ещё не
+                // закончилась: сервис присылает таблицу построчно. Рисовать её в этот
+                // момент — значит пересобирать таблицу с нуля на каждом кадре (в ней
+                // сбрасываются фильтр, сортировка и прокрутка) и мигать на экране.
+                // Поэтому такую таблицу пока показываем обычным текстом, а настоящей
+                // таблицей она станет, когда допишется.
+                if Self.tableContinues(lines: lines, from: cursor) {
+                    var raw = [lines[index], lines[index + 1]]
+                    raw.append(contentsOf: lines[cursor...])
+                    blocks.append(MarkdownBlockModel(id: blocks.count, kind: .paragraph,
+                                                     text: raw.joined(separator: "\n")))
+                    index = lines.count
+                    continue
+                }
                 index = cursor
                 blocks.append(MarkdownBlockModel(id: blocks.count,
                                                  kind: .table(headers: headers, alignments: alignments, rows: rows),
@@ -504,6 +518,21 @@ enum MarkdownBlockParser {
 
     /// Строка таблицы без единого текста: все ячейки пустые или состоят только из
     /// разделителей («-», «:», «=»). Вне распознанной таблицы это мусор разметки.
+    /// Продолжается ли таблица после уже разобранных строк.
+    ///
+    /// Сервис присылает ответ построчно, поэтому таблица на экране появляется
+    /// постепенно. Если следующая строка снова начинается с палочки, таблица ещё
+    /// не дописана: рисовать её в этот момент нельзя — фильтр, сортировка и
+    /// прокрутка внутри таблицы сбрасывались бы на каждом кадре, и таблица мигала.
+    private static func tableContinues(lines: [String], from index: Int) -> Bool {
+        guard index < lines.count else { return false }
+        let next = lines[index].trimmingCharacters(in: .whitespaces)
+        if isTableRow(next) { return true }
+        // Палочка могла прийти не целиком: сервис присылает текст кусками, и строка
+        // может оборваться сразу после разделителя.
+        return next.hasPrefix("|") || next.hasPrefix("+")
+    }
+
     private static func isTextlessTableLine(_ line: String) -> Bool {
         guard separator(line) != nil else { return false }
         return !splitRow(line).contains { hasText($0) }

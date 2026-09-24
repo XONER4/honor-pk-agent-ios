@@ -270,7 +270,8 @@ struct ChatRootView: View {
                                     animate { menuMessage = message }
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 },
-                                onToast: showToast)
+                                onToast: showToast,
+                                composing: composerFocused)
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -870,6 +871,9 @@ private struct MessageTimeline: View {
     /// Всплывающая подсказка принадлежит корневому экрану — передаём её сюда,
     /// чтобы объяснить пользователю, почему нажатие варианта сейчас не сработало.
     let onToast: (String) -> Void
+    /// Открыто ли поле ввода. Когда пользователь поднимает клавиатуру, конец ответа
+    /// обязан остаться на виду: раньше половина переписки уходила под клавиатуру.
+    var composing: Bool = false
     @State private var followLatest = true
     @State private var pendingScroll: Task<Void, Never>?
     /// Плавное сопровождение растущего ответа. Прокрутка на каждое обновление
@@ -940,6 +944,16 @@ private struct MessageTimeline: View {
             // ответа не оказался за клавиатурой.
             followLatest = true
             scheduleStreamFollow(proxy: proxy, timeout: 3.0)
+        }
+        .onChange(of: composing) { (focused: Bool) in
+            // Пользователь открыл клавиатуру: показываем конец ответа, даже если
+            // до этого он листал переписку выше. Раньше при поднятой клавиатуре
+            // на экране оставалась середина чата, а конец ответа был скрыт.
+            guard focused else { return }
+            followLatest = true
+            pendingScroll?.cancel()
+            pendingScroll = nil
+            scheduleStreamFollow(proxy: proxy, timeout: 6.0)
         }
         .onChange(of: selectedMatch) { (id: UUID?) in
             guard let id else { return }

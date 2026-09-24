@@ -285,6 +285,21 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertFalse(dividerOnly.contains { if case .table = $0.kind { return true } else { return false } },
                        "Разделитель --- не должен становиться таблицей")
 
+        // Таблица, которая ещё дописывается, не должна рисоваться таблицей: иначе
+        // на каждом кадре она пересобиралась бы с нуля, и вместе с ней сбрасывались
+        // фильтр, сортировка и прокрутка — таблица мигала бы во время ответа.
+        let growing = MarkdownBlockParser.parse("| Модель | Год |\n|---|---|\n| Motorola | 1983 |\n| IBM Simon |")
+        XCTAssertFalse(growing.contains { if case .table = $0.kind { return true } else { return false } },
+                       "Незаконченная таблица не должна рисоваться таблицей")
+        // Но текст таблицы обязан остаться видимым, а не пропасть.
+        let growingText = growing.map(\.text).joined(separator: "\n")
+        XCTAssertTrue(growingText.contains("Motorola"), "Текст незаконченной таблицы пропал")
+        XCTAssertTrue(growingText.contains("IBM Simon"), "Последняя строка незаконченной таблицы пропала")
+        // Как только строка дописана — это снова таблица.
+        let finished = MarkdownBlockParser.parse("| Модель | Год |\n|---|---|\n| Motorola | 1983 |\n| IBM Simon | 1992 |")
+        XCTAssertTrue(finished.contains { if case .table = $0.kind { return true } else { return false } },
+                      "Законченная таблица перестала распознаваться")
+
         // Настоящая таблица по-прежнему распознаётся.
         let real = MarkdownBlockParser.parse("| Модель | Год |\n|---|---|\n| Motorola DynaTAC 8000X | 1983 |")
         guard case .table(let realHeaders, _, let realRows)? = real.first?.kind else {
