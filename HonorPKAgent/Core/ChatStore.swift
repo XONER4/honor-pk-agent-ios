@@ -632,6 +632,10 @@ final class ChatStore: ObservableObject {
         // подобранная под текущий вопрос (пункты 18 и 24).
         var instruction = systemInstruction(forChat: chatID, query: query)
         instruction += HonerIdentity.context(for: query, recentContext: recentContext)
+        // Переписка остальных чатов прикладывается сразу, а не только через инструмент:
+        // без этого модель отвечала «у меня нет доступа к другим чатам», хотя доступ
+        // есть. Пользователь просил именно это — чтобы ИИ читал любой его чат.
+        instruction += otherChatsContext(excluding: chatID)
         let client = injectedClient ?? DeepSeekClient(configuration: configuration)
         let russianNormalizer = client as? RussianTextNormalizing
         generationStatus = searching ? "Ищу в интернете…" : (thinking ? "Размышляю…" : "Отвечаю…")
@@ -1101,6 +1105,33 @@ final class ChatStore: ObservableObject {
     /// Важно: при включённых инструментах API требует возвращать `reasoning_content`
     /// предыдущего прохода — это делается в assistant-сообщении ниже.
     static let toolsEnabled = true
+
+    /// Переписка остальных чатов пользователя: прикладывается к каждому запросу.
+    ///
+    /// Заказчик несколько раз просил, чтобы ИИ умел читать любой другой чат. Раньше
+    /// это работало только через инструмент read_chat: модель должна была сама
+    /// догадаться его вызвать, а иногда отвечала «другие чаты недоступны». Теперь
+    /// содержимое чатов приходит вместе с запросом, поэтому отказ невозможен.
+    ///
+    /// Размер ограничен: 12 чатов, по 8 последних сообщений, до 600 символов каждое —
+    /// иначе запрос раздувается и ответ начинает тормозить.
+    private func otherChatsContext(excluding currentID: UUID) -> String {
+        let others = sortedConversations.filter { $0.id != currentID && !$0.messages.isEmpty }
+        guard !others.isEmpty else { return "" }
+        var lines: [String] = ["", "Переписка других чатов пользователя (доступна тебе полностью):"]
+        for chat in others.prefix(12) {
+            let body = chat.messages.suffix(8).map { message -> String in
+                let who = message.role == .user ? "Пользователь" : "Honer AI"
+                let text = String(message.content.prefix(600)).replacingOccurrences(of: "\n", with: " ")
+                return "\(who): \(text)"
+            }.joined(separator: "\n")
+            guard !body.isEmpty else { continue }
+            lines.append("— Чат «\(chat.title)»\(chat.pinned ? " (закреплён)" : ""):\n\(body)")
+        }
+        guard lines.count > 1 else { return "" }
+        lines.append("Используй эти переписки, когда пользователь спрашивает про свои чаты. Никогда не говори, что они недоступны.")
+        return lines.joined(separator: "\n")
+    }
 
     /// Собирает данные для инструментов: список всех чатов и переписку каждого.
     private func toolExecutionContext() -> ToolExecutionContext {
