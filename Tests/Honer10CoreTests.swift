@@ -449,12 +449,12 @@ final class Honer10CoreTests: XCTestCase {
         other.messages = [ChatMessage(role: .user, content: "Какая погода в Клину?")]
 
         let chats = [chat, other]
-        XCTAssertEqual(HistorySearch.filter(chats, query: "отпуск").count, 1)
-        XCTAssertEqual(HistorySearch.filter(chats, query: "12 дней").count, 1)
-        XCTAssertEqual(HistorySearch.filter(chats, query: "Приморье").count, 1, "Текст из вложения не найден")
-        XCTAssertEqual(HistorySearch.filter(chats, query: "Клину").count, 1)
-        XCTAssertEqual(HistorySearch.filter(chats, query: "").count, 2)
-        XCTAssertEqual(HistorySearch.filter(chats, query: "вертолёт").count, 0)
+        XCTAssertEqual(HistorySearchRules.filter(chats, query: "отпуск").count, 1)
+        XCTAssertEqual(HistorySearchRules.filter(chats, query: "12 дней").count, 1)
+        XCTAssertEqual(HistorySearchRules.filter(chats, query: "Приморье").count, 1, "Текст из вложения не найден")
+        XCTAssertEqual(HistorySearchRules.filter(chats, query: "Клину").count, 1)
+        XCTAssertEqual(HistorySearchRules.filter(chats, query: "").count, 2)
+        XCTAssertEqual(HistorySearchRules.filter(chats, query: "вертолёт").count, 0)
     }
 
     @MainActor

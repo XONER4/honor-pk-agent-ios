@@ -2309,7 +2309,7 @@ private struct HistoryDrawer: View {
         // Список чатов снимаем на главном потоке, а сам просмотр текста — в фоне.
         let snapshot = store.sortedConversations
         let matches = await Task.detached(priority: .userInitiated) {
-            HistorySearch.filter(snapshot, query: query)
+            HistorySearchRules.filter(snapshot, query: query)
         }.value
         guard !Task.isCancelled else { return }
         cachedGroups = ("\(query)|\(store.conversations.count)|\(historyRevision)", group(matches))
@@ -2337,7 +2337,7 @@ private struct HistoryGroup: Identifiable {
 /// Вынесены на уровень файла, чтобы их можно было проверить тестом: сама панель
 /// чатов приватная, а правила — нет. Поиск учитывает заголовок, текст сообщений,
 /// рассуждения, имена вложений и распознанный из вложений текст.
-enum HistorySearch {
+enum HistorySearchRules {
     static func filter(_ chats: [Conversation], query: String) -> [Conversation] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return chats }
