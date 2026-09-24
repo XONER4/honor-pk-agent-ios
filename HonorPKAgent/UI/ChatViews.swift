@@ -1389,9 +1389,21 @@ private struct MessageRow: View, Equatable {
                     .accessibilityIdentifier("message.action.retry." + message.id.uuidString)
             }
             if message.isInterrupted {
-                Text(text("Ответ остановлен", "Response stopped"))
-                    .font(.system(size: 12)).foregroundStyle(HonorTheme.secondary)
-                    .accessibilityIdentifier("message.stopped." + message.id.uuidString)
+                HStack(spacing: 10) {
+                    Text(text("Ответ остановлен", "Response stopped"))
+                        .font(.system(size: 12 * settings.fontScale * dynamicScale))
+                        .foregroundStyle(HonorTheme.secondary)
+                        .accessibilityIdentifier("message.stopped." + message.id.uuidString)
+                    // Остановленный ответ без текста раньше оставлял тупик: пользователь
+                    // видел надпись «Ответ остановлен» и не мог ничего сделать —
+                    // кнопка повтора появлялась только при ошибке. Теперь она есть и здесь.
+                    if visibleContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       !streaming {
+                        Button(action: onRetry) { Label(text("Повторить запрос", "Try again"), systemImage: "arrow.clockwise") }
+                            .font(.system(size: 13, weight: .medium)).tint(HonorTheme.accent)
+                            .accessibilityIdentifier("message.action.retry." + message.id.uuidString)
+                    }
+                }
             }
             // Поиск включали, но страницы не открылись: честно помечаем ответ,
             // иначе свежие данные выглядели бы проверенными в интернете.

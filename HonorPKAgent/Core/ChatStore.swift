@@ -377,11 +377,26 @@ final class ChatStore: ObservableObject {
 
     func regenerate(messageID: UUID) {
         guard hasAPIKey else { errorMessage = HonorError.missingAPIKey.localizedDescription; return }
+        // Раньше повтор не начинался, если ответ стоял не последним: разговор уже
+        // продолжался, и кнопка «Повторить запрос» выглядела неработающей.
+        // Теперь кнопка сначала возвращает чат к этому месту.
+        if let chatID = selectedConversationID,
+           let chatIndex = conversations.firstIndex(where: { $0.id == chatID }),
+           let messageIndex = conversations[chatIndex].messages.firstIndex(where: { $0.id == messageID && $0.role == .assistant }),
+           messageIndex < conversations[chatIndex].messages.count - 1 {
+            let dropped = conversations[chatIndex].messages[(messageIndex + 1)...].flatMap(\.attachments)
+            conversations[chatIndex].messages = Array(conversations[chatIndex].messages.prefix(messageIndex + 1))
+            removeUnreferencedAttachments(dropped)
+        }
         stop()
         guard let chatID = selectedConversationID,
               let chatIndex = conversations.firstIndex(where: { $0.id == chatID }),
               let messageIndex = conversations[chatIndex].messages.firstIndex(where: { $0.id == messageID && $0.role == .assistant }),
-              conversations[chatIndex].messages[..<messageIndex].contains(where: { $0.role == .user }) else { return }
+              conversations[chatIndex].messages[..<messageIndex].contains(where: { $0.role == .user }) else {
+            // Раньше здесь был молчаливый выход: кнопка нажималась и ничего не происходило.
+            errorMessage = "Этот ответ нельзя повторить: перед ним нет вашего сообщения. Напишите запрос заново."
+            return
+        }
         // Повтор после неудачного ответа идёт без режима рассуждения. Причина:
         // «Размышлял N секунд» заканчивалось пустотой именно в режиме рассуждения.
         // Если просто повторить запрос с теми же настройками, сервис отвечает так же,
