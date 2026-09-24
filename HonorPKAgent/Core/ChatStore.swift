@@ -771,7 +771,14 @@ final class ChatStore: ObservableObject {
                     // Результаты отправляем только текущего прохода: накопленные
                     // раньше повторять не нужно, иначе растёт запрос и модель путается.
                     toolResults.removeAll()
-                    for call in toolCalls {
+                    // Список чатов выполняем первым: модель иногда просит read_chat
+                    // в одном проходе с list_chats, а read_chat опирается на список.
+                    // Без этого порядка данные терялись и ответ получался пустым.
+                    let ordered = toolCalls.sorted { lhs, rhs in
+                        (lhs.name == HonerTool.listChats.rawValue ? 0 : 1)
+                            < (rhs.name == HonerTool.listChats.rawValue ? 0 : 1)
+                    }
+                    for call in ordered {
                         let result = ToolExecutor.executeExtended(call, context: toolContext)
                         if let effect = result.effect { self.apply(effect) }
                         toolResults.append(result)

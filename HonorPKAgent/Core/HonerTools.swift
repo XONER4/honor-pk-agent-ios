@@ -314,7 +314,8 @@ enum ToolExecutor {
                 return parts.joined(separator: ", ")
             }
             return ToolCallResult(callID: call.id, name: call.name,
-                                  content: "Чаты пользователя (всего \(context.chats.count)):\n" + lines.joined(separator: "\n"))
+                                  content: "Чаты пользователя (всего \(context.chats.count)):\n" + lines.joined(separator: "\n")
+                                  + "\n\nЧтобы прочитать переписку чата, вызови read_chat с его номером.")
 
         case .readChat:
             guard let number = arguments["number"] as? Int else {
