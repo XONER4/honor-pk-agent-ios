@@ -1313,6 +1313,19 @@ private struct MessageRow: View, Equatable {
         return text("прочитано \(pages) из \(count) страниц", "\(pages) of \(count) pages read")
     }
 
+    /// Названия прочитанных страниц: по ним сразу видно, откуда взялся ответ,
+    /// без нажатия на карточку. Если название пустое, показываем адрес сайта.
+    private var sourceTitles: String {
+        let names = message.sources.prefix(3).map { source -> String in
+            let title = source.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty { return title }
+            return source.url.host ?? source.url.absoluteString
+        }
+        var value = names.joined(separator: " · ")
+        if message.sources.count > 3 { value += " …" }
+        return value
+    }
+
     private var assistantMessage: some View {
         VStack(alignment: .leading, spacing: 13) {
             if !visibleReasoning.isEmpty || (streaming && visibleContent.isEmpty) {
@@ -1436,8 +1449,7 @@ private struct MessageRow: View, Equatable {
                         }
                         HStack(spacing: 8) {
                             SourceSiteMarks(sources: message.sources)
-                            Text(text("Нажмите, чтобы открыть страницы и цитаты",
-                                      "Tap to open the pages and quotes"))
+                            Text(sourceTitles)
                                 .font(.system(size: 12))
                                 .foregroundStyle(HonorTheme.secondary)
                                 .lineLimit(2)
@@ -1445,6 +1457,10 @@ private struct MessageRow: View, Equatable {
                             Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(HonorTheme.secondary)
                         }
+                        Text(text("Нажмите, чтобы открыть страницы и цитаты, которые я прочитал",
+                                  "Tap to open the pages and quotes I read"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(HonorTheme.secondary.opacity(0.9))
                     }
                     .padding(.horizontal, 12).padding(.vertical, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
