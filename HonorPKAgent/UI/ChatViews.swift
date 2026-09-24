@@ -499,7 +499,7 @@ struct ChatRootView: View {
 
     /// Версия приложения из бандла — та же, что в настройках.
     static var appVersion: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        let version = DeviceModel.appVersion
         return version.isEmpty ? "Honer AI" : "Honer AI \(version)"
     }
 
@@ -1529,6 +1529,16 @@ private struct MessageRow: View, Equatable {
 
 /// Понятное название модели iPhone по внутреннему идентификатору.
 enum DeviceModel {
+    /// Версия приложения из бандла. Раньше она была вписана руками в трёх местах,
+    /// и в «О приложении» оставалась старая цифра. Теперь источник один — Info.plist,
+    /// который заполняет XcodeGen из project.yml.
+    static var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? ""
+        if !short.isEmpty { return short }
+        return "10.26"
+    }
+
     static var name: String {
         #if targetEnvironment(simulator)
         return "Симулятор iPhone"

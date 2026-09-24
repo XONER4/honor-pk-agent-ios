@@ -298,6 +298,7 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertFalse(divider.contains { if case .table = $0.kind { return true } else { return false } })
     }
 
+    @MainActor
     func testToolAnnouncementPrefacesAreRemovedFromTheAnswer() throws {
         // Живой тест: модель склеивала объявление о действии с настоящим ответом
         // («Сначала посмотрю список чатов.В вашем чате написано: 12 дней»),
