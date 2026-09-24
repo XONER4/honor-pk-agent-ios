@@ -716,7 +716,15 @@ final class ChatStore: ObservableObject {
                     // последняя строка. Модель чата обновляем редко — по таймеру ниже.
                     if contentChanged { self.live.content = rawContent }
                     if reasoningChanged { self.live.reasoning = rawReasoning }
-                    self.live.reasoningSeconds = seconds
+                    // Счётчик «Размышляю… N секунд» переносим в модель чата: строка
+                    // перерисовывается только когда число изменилось (раз в секунду),
+                    // а не на каждом куске текста. Раньше это не вызывалось вообще,
+                    // поэтому счётчик на экране стоял на месте — состояние выглядело
+                    // зависшим, хотя ответ уже печатался.
+                    if seconds != self.live.reasoningSeconds || (reasoningChanged && self.live.reasoningSeconds == 0) {
+                        self.live.reasoningSeconds = seconds
+                        self.mutateMessage(chatID: chatID, messageID: response.id) { $0.reasoningSeconds = seconds }
+                    }
                     pendingContent = ""; pendingReasoning = ""; lastPublished = Date()
                 }
                 /// Переносит накопленный текст в модель чата: нужно для сохранения

@@ -1172,15 +1172,24 @@ struct AttachmentThumbnail: View {
         // Читаем и уменьшаем фото в фоне: если делать это в главном потоке,
         // прокрутка чата с фотографиями начинает тормозить.
         Task { @MainActor in
-            let loaded = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                guard let data = try? Data(contentsOf: url), let full = UIImage(data: data) else { return nil }
-                let side: CGFloat = 900
-                let scale = min(side / max(full.size.width, 1), side / max(full.size.height, 1), 1)
-                guard scale < 1 else { return full }
-                let target = CGSize(width: full.size.width * scale, height: full.size.height * scale)
-                let renderer = UIGraphicsImageRenderer(size: target)
-                return renderer.image { _ in full.draw(in: CGRect(origin: .zero, size: target)) }
-            }.value
+            // Файл мог ещё дописываться в момент, когда строка появилась на экране.
+            // Тогда миниатюра оставалась серой заглушкой навсегда — «фото не видно».
+            // Поэтому пробуем несколько раз с короткой паузой.
+            var loaded: UIImage?
+            for attempt in 0..<3 {
+                let attemptURL = url
+                loaded = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                    guard let data = try? Data(contentsOf: attemptURL), let full = UIImage(data: data) else { return nil }
+                    let side: CGFloat = 900
+                    let scale = min(side / max(full.size.width, 1), side / max(full.size.height, 1), 1)
+                    guard scale < 1 else { return full }
+                    let target = CGSize(width: full.size.width * scale, height: full.size.height * scale)
+                    let renderer = UIGraphicsImageRenderer(size: target)
+                    return renderer.image { _ in full.draw(in: CGRect(origin: .zero, size: target)) }
+                }.value
+                if loaded != nil { break }
+                if attempt < 2 { try? await Task.sleep(nanoseconds: 400_000_000) }
+            }
             if let loaded, image == nil { image = loaded }
         }
     }
