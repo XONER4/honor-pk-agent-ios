@@ -345,6 +345,8 @@ private struct DataSettingsPage: View {
     @State private var status: String?
     @State private var isTransferring = false
     @State private var transferTask: Task<Void, Never>?
+    /// Уведомления запрещены в системных настройках — тогда предупреждаем пользователя.
+    @State private var notificationsBlocked = false
     var body: some View {
         Form {
             Section {
@@ -395,6 +397,15 @@ private struct DataSettingsPage: View {
                 Toggle(settings.text("Уведомлять о готовом ответе", "Notify when an answer is ready"),
                        isOn: $settings.notificationsEnabled)
                     .accessibilityIdentifier("data.notifications")
+                if settings.notificationsEnabled, notificationsBlocked {
+                    // Разрешение выключено в настройках iPhone: раньше переключатель
+                    // стоял включённым, а уведомления молча не приходили.
+                    Text(settings.text("Уведомления запрещены в настройках iPhone. Откройте Настройки → Honer AI → Уведомления и разрешите их.",
+                                       "Notifications are blocked in iPhone Settings. Open Settings → Honer AI → Notifications and allow them."))
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("data.notifications.blocked")
+                }
             } header: {
                 Text(settings.text("Автоматизация", "Automation"))
             } footer: {
@@ -420,6 +431,12 @@ private struct DataSettingsPage: View {
         .navigationTitle(settings.text("Управление данными", "Data management"))
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("settings.page.data")
+        .task {
+            // Проверяем системное разрешение на уведомления: если оно запрещено,
+            // пользователь должен это увидеть, а не гадать, почему тихо.
+            let status = await NotificationCenterService.shared.authorizationStatus()
+            notificationsBlocked = (status == .denied)
+        }
         .sheet(item: $export) { export in ActivitySheet(items: [export.url]) }
         .fileImporter(isPresented: $showsImport, allowedContentTypes: [.json]) { result in
             switch result {

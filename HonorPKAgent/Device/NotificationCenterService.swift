@@ -27,6 +27,33 @@ final class NotificationCenterService: NSObject, UNUserNotificationCenterDelegat
         }
     }
 
+    /// Проверить и при необходимости запросить разрешение, дождавшись ответа системы.
+    ///
+    /// `configure()` запрашивает разрешение асинхронно и результат не возвращает.
+    /// Из-за этого приложение не знало, разрешены ли уведомления, и не могло честно
+    /// сказать об этом пользователю. Здесь ответ системы дожидается.
+    @discardableResult
+    func ensureNotifications() async -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            authorized = true
+        case .notDetermined:
+            let granted = (try? await UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+            authorized = granted
+        default:
+            authorized = false
+        }
+        return authorized
+    }
+
+    /// Текущее состояние разрешения для понятного текста в настройках.
+    func authorizationStatus() async -> UNAuthorizationStatus {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    }
+
     /// Показывать баннер даже при активном приложении — так ответ не теряется,
     /// если пользователь ушёл в другой чат или свернул окно.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
