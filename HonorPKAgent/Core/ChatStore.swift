@@ -617,14 +617,34 @@ final class ChatStore: ObservableObject {
                 try Task.checkCancellation()
                 guard self.activeRunID == runID else { return }
                 var context = ""
+                var searchFailed = false
                 if searching {
-                    guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw HonorError.searchUnavailable }
-                    let sources = try await self.searchClient.search(query)
-                    try Task.checkCancellation()
-                    guard self.activeRunID == runID else { return }
-                    self.mutateMessage(chatID: chatID, messageID: response.id) { $0.sources = sources }
-                    context = WebSearchClient.context(sources)
-                    self.generationStatus = thinking ? "Размышляю…" : "Отвечаю…"
+                    // Пустой запрос искать нечем: отвечаем по своим знаниям.
+                    // Раньше здесь сразу возникала ошибка «Поиск недоступен», хотя
+                    // пользователь просто отправил вложение без текста.
+                    if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        searchFailed = true
+                    } else {
+                        do {
+                            let sources = try await self.searchClient.search(query)
+                            try Task.checkCancellation()
+                            guard self.activeRunID == runID else { return }
+                            self.mutateMessage(chatID: chatID, messageID: response.id) { $0.sources = sources }
+                            context = WebSearchClient.context(sources)
+                            self.generationStatus = thinking ? "Размышляю…" : "Отвечаю…"
+                        } catch {
+                            if Task.isCancelled { throw CancellationError() }
+                            // Поиск не смог открыть страницы — это не повод оставить
+                            // пользователя без ответа. Отвечаем по своим знаниям и честно
+                            // помечаем ответ: свежих данных из интернета в нём нет.
+                            searchFailed = true
+                        }
+                    }
+                }
+                // Пометка «ответ без свежих данных из интернета» ставится до печати,
+                // чтобы её было видно рядом с первым же абзацем ответа.
+                if searchFailed {
+                    self.mutateMessage(chatID: chatID, messageID: response.id) { $0.searchFailed = true }
                 }
                 var firstReasoningAt: Date?
                 var reasoningEndedAt: Date?

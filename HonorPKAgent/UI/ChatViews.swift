@@ -1372,6 +1372,17 @@ private struct MessageRow: View, Equatable {
                     .font(.system(size: 12)).foregroundStyle(HonorTheme.secondary)
                     .accessibilityIdentifier("message.stopped." + message.id.uuidString)
             }
+            // Поиск включали, но страницы не открылись: честно помечаем ответ,
+            // иначе свежие данные выглядели бы проверенными в интернете.
+            if message.searchFailed, message.role == .assistant {
+                Label(text("Без свежих данных из интернета: страницы не открылись, ответ по знаниям Honer AI",
+                           "No fresh web data: pages did not open, answered from Honer AI knowledge"),
+                      systemImage: "wifi.exclamationmark")
+                    .font(.system(size: 12 * settings.fontScale * dynamicScale))
+                    .foregroundStyle(HonorTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("message.search.failed." + message.id.uuidString)
+            }
             if !message.sources.isEmpty {
                 // Раньше здесь были просто значки сайтов и число — непонятно, что это.
                 // Теперь блок подписан словами, показаны названия страниц и есть
