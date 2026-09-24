@@ -379,24 +379,38 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
             for attachment in message.attachments {
                 if attachment.kind == .image || attachment.kind == .video {
                     let urls = attachment.kind == .video ? Array(attachment.resolvedFrameURLs.prefix(8)) : [attachment.resolvedURL].compactMap { $0 }
-                    guard !urls.isEmpty else { throw HonorError.attachmentUnavailable(attachment.name) }
+                    // Файл вложения мог исчезнуть (очистка, восстановление из резервной
+                    // копии, смена песочницы после обновления). Раньше запрос в этом
+                    // случае падал целиком, и пользователь не получал ответа вообще.
+                    // Теперь пропускаем такое вложение и честно сообщаем об этом модели.
+                    guard !urls.isEmpty else {
+                        text += "\n\n[Вложение «\(attachment.name)» недоступно: файл не найден. Скажи об этом пользователю и продолжи ответ.]"
+                        continue
+                    }
                     if attachment.kind == .video {
                         text += "\n\nВидео «\(attachment.name)»: ниже \(urls.count) выбранных кадров. Это выборка, не полный просмотр видео; аудио не передано. \(attachment.extractedText)"
                     }
+                    var attached = 0
                     for url in urls {
-                        guard let data = try? Data(contentsOf: url), !data.isEmpty else { throw HonorError.attachmentUnavailable(attachment.name) }
-                        guard data.count <= 32 * 1024 * 1024 else { throw HonorError.requestTooLarge }
+                        guard let data = try? Data(contentsOf: url), !data.isEmpty else { continue }
+                        guard data.count <= 32 * 1024 * 1024 else { continue }
                         estimatedBytes += ((data.count + 2) / 3) * 4 + 200
                         guard estimatedBytes < 47 * 1024 * 1024 else { throw HonorError.requestTooLarge }
                         let mimes = ["png": "image/png", "gif": "image/gif", "webp": "image/webp"]
                         let mime = mimes[url.pathExtension.lowercased()] ?? "image/jpeg"
                         blocks.append(["type": "image_url", "image_url": ["url": "data:\(mime);base64,\(data.base64EncodedString())", "detail": "auto"]])
+                        attached += 1
+                    }
+                    if attached == 0 {
+                        text += "\n\n[Вложение «\(attachment.name)» не удалось прочитать. Скажи об этом пользователю и продолжи ответ.]"
                     }
                 } else if !attachment.extractedText.isEmpty {
                     estimatedBytes += attachment.extractedText.utf8.count + attachment.name.utf8.count + 100
                     guard estimatedBytes < 47 * 1024 * 1024 else { throw HonorError.requestTooLarge }
                     text += "\n\n--- Вложение: \(attachment.name) ---\n\(attachment.extractedText)\n--- Конец вложения ---"
-                } else { throw HonorError.attachmentUnavailable(attachment.name) }
+                } else {
+                    text += "\n\n[Вложение «\(attachment.name)» пустое или нечитаемое. Скажи об этом пользователю и продолжи ответ.]"
+                }
             }
             if !blocks.isEmpty {
                 blocks.insert(["type": "text", "text": text.isEmpty ? "Посмотри на прикреплённые изображения." : text], at: 0)

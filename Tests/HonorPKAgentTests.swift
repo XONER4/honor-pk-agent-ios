@@ -92,6 +92,33 @@ final class HonorPKAgentTests: XCTestCase {
         XCTAssertEqual((parts[1]["image_url"] as? [String: String])?["url"], "data:image/jpeg;base64,\(bytes.base64EncodedString())")
     }
 
+    func testMissingAttachmentFileDoesNotKillTheWholeRequest() throws {
+        // Если файл вложения исчез (очистка, смена песочницы после обновления,
+        // восстановление из резервной копии), запрос раньше падал целиком — пользователь
+        // не получал ответа вообще. Теперь такое вложение пропускается, а модель
+        // получает пометку, чтобы честно сказать об этом.
+        let missing = MessageAttachment(name: "пропавшее.jpg", kind: .image,
+                                        localPath: FileManager.default.temporaryDirectory
+                                            .appendingPathComponent("нет-такого-\(UUID()).jpg").path)
+        let message = ChatMessage(role: .user, content: "Что на фото?", attachments: [missing])
+        let client = DeepSeekClient(configuration: DeepSeekConfiguration(apiKey: "test-key"))
+        let request = try client.makeRequest(messages: [message], thinking: false,
+                                             systemInstruction: "", searchContext: "")
+        let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+        let messages = try XCTUnwrap(body["messages"] as? [[String: Any]])
+        let content = messages.last?["content"]
+        let text = (content as? String) ?? ((content as? [[String: Any]])?.first?["text"] as? String) ?? ""
+        XCTAssertTrue(text.contains("пропавшее.jpg"), "Про недоступное вложение не сказано: [\(text)]")
+        XCTAssertTrue(text.contains("недоступно") || text.contains("не удалось"),
+                      "Нет пояснения, что вложение недоступно: [\(text)]")
+
+        // Пустое вложение (без текста и без файла) тоже не должно ломать запрос.
+        let empty = MessageAttachment(name: "пустое.pdf", kind: .document)
+        let second = ChatMessage(role: .user, content: "Прочитай", attachments: [empty])
+        _ = try client.makeRequest(messages: [second], thinking: false,
+                                   systemInstruction: "", searchContext: "")
+    }
+
     func testSearchParserFiltersUnsafeURLsAndDeduplicates() {
         let xml = """
         <rss><channel><item><title>A &amp; B</title><link>https://example.com/a</link><description><![CDATA[<b>Text</b>]]></description></item>
