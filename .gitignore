@@ -13,3 +13,5 @@ VALIDATION.md
 verify/ci-logs-*/
 verify/ipa-*/
 verify/ci-logs-*/
+verify/ci-*/
+verify/_streamtext_*.swift

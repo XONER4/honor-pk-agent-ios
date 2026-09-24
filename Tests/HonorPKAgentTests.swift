@@ -179,16 +179,23 @@ final class HonorPKAgentTests: XCTestCase {
 
     @MainActor
     func testSearchFailureDoesNotGenerateFabricatedAnswer() async throws {
+        // Раньше неудача поиска полностью отменяла ответ: пользователь видел ошибку
+        // «Поиск недоступен» и не получал ничего. Теперь приложение отвечает по своим
+        // знаниям, но ЧЕСТНО помечает ответ: свежих данных из интернета в нём нет,
+        // и источников у такого ответа быть не должно.
         let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"),
-                              client: ImmediateClient(events: [.init(content: "Ответ не должен появиться без поиска.")]),
+                              client: ImmediateClient(events: [.init(content: "Отвечаю по своим знаниям.")]),
                               searchClient: FailingSearch(), storageURL: temporaryHistory())
         store.searchEnabled = true
         store.draft = "Новости"
         store.send()
         try await waitUntilIdle(store)
-        XCTAssertEqual(store.messages.last?.content, "")
-        XCTAssertNotNil(store.messages.last?.error)
-        XCTAssertTrue(store.messages.last?.sources.isEmpty ?? false)
+        XCTAssertEqual(store.messages.last?.content, "Отвечаю по своим знаниям.")
+        XCTAssertNil(store.messages.last?.error)
+        XCTAssertTrue(store.messages.last?.sources.isEmpty ?? false,
+                      "Без открытых страниц источников быть не должно")
+        XCTAssertTrue(store.messages.last?.searchFailed ?? false,
+                      "Ответ без свежих данных обязан быть помечен")
     }
 
     @MainActor
