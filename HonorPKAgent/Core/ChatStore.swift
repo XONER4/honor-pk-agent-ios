@@ -1072,7 +1072,7 @@ final class ChatStore: ObservableObject {
         return ToolExecutionContext(
             deviceModel: DeviceModel.name,
             systemVersion: UIDevice.current.systemVersion,
-            appVersion: "10.23",
+            appVersion: "10.24",
             messageCount: messages.count,
             voiceMessageCount: messages.filter { $0.inputKind == .voice }.count,
             chatStartedAt: selectedConversation?.createdAt,
@@ -1239,32 +1239,26 @@ final class ChatStore: ObservableObject {
     }
 
     /// Убирает из ответа объявления о действиях: «Сначала найду чат…», «Сейчас прочитаю…».
-    /// Модель вставляет такие фразы перед настоящим ответом, и они попадали в чат
-    /// как часть ответа — выглядело как склейка двух сообщений.
+    /// Модель вставляет такие фразы перед настоящим ответом, причём часто БЕЗ переноса
+    /// строки: «Сначала найду чат про отпуск.## Ответ: 12 дней». Поэтому срезаем такое
+    /// вступление в начале текста, а не ищем отдельные строки.
     static func strippingToolAnnouncements(_ text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return trimmed }
-        let lowered = trimmed.lowercased()
-        let markers = ["сначала найду", "сначала проверю", "сейчас найду", "сейчас прочитаю",
-                       "затем открою", "затем прочитаю", "сейчас вызову", "вызову инструмент",
-                       "без вызова инструмента", "нашёл ваш чат", "нашел ваш чат",
-                       "прочитал его", "прочитал чат", "нашёл чат", "нашел чат",
-                       "let me check", "let me look", "i will call", "let me read",
-                       "i'll check", "i found your chat"]
-        // Если объявления нет, ничего не трогаем.
-        guard markers.contains(where: { lowered.contains($0) }) else { return trimmed }
-        let kept = trimmed
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { line in
-                guard !line.isEmpty else { return false }
-                let loweredLine = line.lowercased()
-                return !markers.contains { loweredLine.contains($0) }
-            }
-        let result = kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        // Если после очистки ничего не осталось — вернуть пусто: вызывающий код
-        // запросит нормальный ответ заново.
-        return result
+        var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return value }
+        let prefix = "(?is)^\\s*(?:сначала|сейчас|затем|далее|подожди[те]?|хорошо|ок[а-я]*)?[^.!?\\n]{0,160}?"
+            + "(?:найду|найти|прочитаю|прочитать|открою|открыть|вызову|вызвать|проверю|проверить|посмотрю|посмотреть|"
+            + "let me|i will|i'll|i am going to|i found)[^.!?\\n]{0,160}[.!?…\\n]+\\s*"
+        for _ in 0..<4 {
+            guard let expression = try? NSRegularExpression(pattern: prefix, options: [.caseInsensitive]) else { break }
+            let range = NSRange(value.startIndex..., in: value)
+            guard let match = expression.firstMatch(in: value, range: range),
+                  let whole = Range(match.range, in: value) else { break }
+            let remainder = String(value[whole.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            // Не срезаем, если после этого не останется содержательного текста.
+            guard remainder.count >= 12 else { break }
+            value = remainder
+        }
+        return value
     }
 
     /// Нужен ли повтор: ответ пуст, оборван или это объявление о действии без самого ответа.
