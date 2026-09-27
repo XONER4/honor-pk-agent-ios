@@ -99,6 +99,14 @@ final class ChatStore: ObservableObject {
     /// давало «зависания» на длинных ответах и в больших переписках.
     let live = StreamBuffer()
 
+    /// Плавная печать текущего ответа: получает текст из потока и сама выдаёт
+    /// видимую часть каждый кадр экрана. Строка сообщения показывает её, пока
+    /// `typingMessageID` совпадает с id сообщения.
+    let pacer = TypingPacer()
+    /// Ответ, который сейчас печатается на экране. Печать может закончиться чуть
+    /// позже потока: хвост допечатывается плавно, а не вываливается целиком.
+    @Published private(set) var typingMessageID: UUID?
+
     /// Клиент для самопроверки связи. Есть только у настоящего клиента:
     /// у тестовых заглушек его нет, и проверка просто не запускается.
     var connectionChecker: DeepSeekClient? { injectedClient as? DeepSeekClient }
@@ -153,6 +161,10 @@ final class ChatStore: ObservableObject {
         } else {
             applyLoadedHistory(HistoryArchiveIO.readHistory(resolvedStorageURL))
             isLoading = false
+        }
+        pacer.onFinished = { [weak self] id in
+            guard let self, self.typingMessageID == id else { return }
+            self.typingMessageID = nil
         }
     }
 
@@ -343,7 +355,11 @@ final class ChatStore: ObservableObject {
     }
 
     func stop() {
-        guard isGenerating else { return }
+        guard isGenerating else {
+            // Поток уже закончился, но хвост ещё допечатывается: показываем его сразу.
+            if typingMessageID != nil { pacer.cancel(); typingMessageID = nil }
+            return
+        }
         flushStreamingBuffer?()
         // Переносим напечатанное в модель чата: пользователь нажал «остановить»,
         // ответ должен остаться в переписке и сохраниться в истории.
@@ -359,6 +375,9 @@ final class ChatStore: ObservableObject {
         flushStreamingBuffer = nil
         generationTask?.cancel()
         generationTask = nil
+        // Печать останавливается сразу: на экране остаётся весь полученный текст.
+        pacer.cancel()
+        typingMessageID = nil
         if let chatID = activeConversationID, let messageID = activeMessageID {
             mutateMessage(chatID: chatID, messageID: messageID) { $0.isInterrupted = true }
         }
@@ -627,25 +646,33 @@ final class ChatStore: ObservableObject {
         activeConversationID = chatID
         activeMessageID = response.id
         isGenerating = true
+        pacer.begin(messageID: response.id)
+        typingMessageID = response.id
         let thinking = reasoningEnabled && !suppressThinkingOnce
         suppressThinkingOnce = false
         let query = input.last(where: { $0.role == .user })?.content ?? ""
         let searching = SearchIntent.needsSearch(query: query, searchToggleOn: searchEnabled)
         let recentContext = input.suffix(4).map { String($0.content.prefix(1500)) }.joined(separator: "\n")
+        // Для решения «вопрос про другие чаты» смотрим только на реплики пользователя:
+        // ответы ассистента сами часто упоминают «чат», и раньше из-за этого переписка
+        // чужих чатов подмешивалась в каждый следующий запрос — модель путала темы.
+        let recentUserContext = input.filter { $0.role == .user }.dropLast().suffix(2)
+            .map { String($0.content.prefix(600)) }.joined(separator: "\n")
         // Инструкция собирается одним методом: имя, инструкция чата и память,
         // подобранная под текущий вопрос (пункты 18 и 24).
         var instruction = systemInstruction(forChat: chatID, query: query)
         instruction += HonerIdentity.context(for: query, recentContext: recentContext)
         // Переписка остальных чатов прикладывается, когда вопрос действительно про
         // чаты. Держать её в каждом запросе нельзя: это десятки тысяч знаков, из-за
-        // которых первый токен приходит заметно позже — ответ «зависает» на старте.
-        // Инструменты чтения и правки чатов доступны всегда, поэтому возможность
-        // остаётся полной (пункты 7 и 16 ТЗ).
-        if Self.queryMentionsChats(queryText: query, recentContext: recentContext) {
+        // которых первый токен приходит заметно позже, а модель отвлекается на чужие
+        // темы. Инструменты чтения и правки чатов доступны всегда (пункты 7 и 16 ТЗ).
+        if Self.queryMentionsChats(queryText: query, recentContext: recentUserContext) {
             instruction += otherChatsContext(excluding: chatID)
         }
         let client = injectedClient ?? DeepSeekClient(configuration: configuration)
         let russianNormalizer = client as? RussianTextNormalizing
+        // Пользователь сам пишет не по-русски — ответ на его языке переводить нельзя.
+        let userWritesForeign = RussianTextPolicy.isMostlyForeign(query)
         generationStatus = searching ? "Ищу в интернете…" : (thinking ? "Размышляю…" : "Отвечаю…")
         saveSnapshot()
 
@@ -658,8 +685,6 @@ final class ChatStore: ObservableObject {
                 var searchFailed = false
                 if searching {
                     // Пустой запрос искать нечем: отвечаем по своим знаниям.
-                    // Раньше здесь сразу возникала ошибка «Поиск недоступен», хотя
-                    // пользователь просто отправил вложение без текста.
                     if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         searchFailed = true
                     } else {
@@ -679,187 +704,163 @@ final class ChatStore: ObservableObject {
                         }
                     }
                 }
-                // Пометка «ответ без свежих данных из интернета» ставится до печати,
-                // чтобы её было видно рядом с первым же абзацем ответа.
                 if searchFailed {
                     self.mutateMessage(chatID: chatID, messageID: response.id) { $0.searchFailed = true }
                 }
                 var firstReasoningAt: Date?
                 var reasoningEndedAt: Date?
                 /// Начало этого запроса: по нему считается счётчик «Размышляю…».
-                /// Раньше отсчёт начинался только с первого куска рассуждения,
-                /// поэтому долгое ожидание первого токена выглядело как зависание.
                 let generationStartedAt = Date()
                 var pendingContent = ""
                 var pendingReasoning = ""
+                /// Ответ текущего прохода модели — именно он показывается пользователю.
                 var rawContent = ""
+                /// Рассуждение всех проходов подряд.
                 var rawReasoning = ""
-                var lastPublished = Date.distantPast
-                var lastSaved = Date()
+                /// Рассуждение текущего прохода: его нужно вернуть в API вместе с вызовом инструмента.
+                var passReasoning = ""
                 var finishReason: String?
-                /// Вызовы инструментов, собранные из потока (пункт 11 ТЗ).
+                /// Вызовы инструментов, собранные из потока текущего прохода (пункт 11 ТЗ).
                 var toolCalls: [ToolCallRequest] = []
 
                 @MainActor func flush() {
                     guard !pendingContent.isEmpty || !pendingReasoning.isEmpty else { return }
-                    // Секунды считаем от начала запроса: пока текста нет, счётчик идёт,
-                    // после начала ответа замирает на фактическом времени обдумывания.
-                    // Так пользователь видит, что приложение работает, а не зависло.
                     let window = (reasoningEndedAt ?? Date()).timeIntervalSince(
                         firstReasoningAt ?? generationStartedAt)
                     let seconds = max(1, Int(window.rounded()))
                     let contentChanged = !pendingContent.isEmpty
                     let reasoningChanged = !pendingReasoning.isEmpty
                     rawContent += pendingContent
-                    rawReasoning += pendingReasoning
-                    // Печатаемый текст идёт в отдельный буфер: перерисовывается только
-                    // последняя строка. Модель чата обновляем редко — по таймеру ниже.
+                    if reasoningChanged {
+                        // Рассуждение нового прохода (после инструмента) — с нового абзаца.
+                        if passReasoning.isEmpty, !rawReasoning.isEmpty { rawReasoning += "\n\n" }
+                        rawReasoning += pendingReasoning
+                        passReasoning += pendingReasoning
+                    }
+                    // Полученный текст идёт в живой буфер и в печать; модель чата
+                    // во время потока не трогаем — иначе перерисовывался бы весь список.
                     if contentChanged { self.live.content = rawContent }
                     if reasoningChanged { self.live.reasoning = rawReasoning }
-                    // Счётчик «Размышляю… N секунд» переносим в модель чата: строка
-                    // перерисовывается только когда число изменилось (раз в секунду),
-                    // а не на каждом куске текста. Раньше это не вызывалось вообще,
-                    // поэтому счётчик на экране стоял на месте — состояние выглядело
-                    // зависшим, хотя ответ уже печатался.
+                    self.pacer.update(content: rawContent, reasoning: rawReasoning)
                     if seconds != self.live.reasoningSeconds || (reasoningChanged && self.live.reasoningSeconds == 0) {
                         self.live.reasoningSeconds = seconds
                         self.mutateMessage(chatID: chatID, messageID: response.id) { $0.reasoningSeconds = seconds }
                     }
-                    pendingContent = ""; pendingReasoning = ""; lastPublished = Date()
+                    pendingContent = ""; pendingReasoning = ""
                 }
-                /// Переносит накопленный текст в модель чата: нужно для сохранения
-                /// истории, но делать это на каждом куске нельзя — перерисовывается
-                /// весь список сообщений.
-                @MainActor func publishToModel() {
-                    self.mutateMessage(chatID: chatID, messageID: response.id) {
-                        $0.reasoningSeconds = self.live.reasoningSeconds
-                    }
+                /// Заменить показываемый ответ целиком (повтор, очистка, перевод):
+                /// печать продолжится с общего начала, без пустого экрана.
+                @MainActor func show(_ text: String) {
+                    rawContent = text
+                    pendingContent = ""
+                    self.live.content = text
+                    self.pacer.update(content: text, reasoning: rawReasoning)
                 }
                 self.flushStreamingBuffer = { [weak self] in
                     guard self?.activeRunID == runID else { return }
                     flush()
                 }
 
-                // Цикл выполнения инструментов (пункт 11 ТЗ): модель может попросить
-                // вызвать функцию, приложение выполняет её и отправляет результат обратно,
-                // после чего модель формирует итоговый ответ.
-                var toolResults: [ToolCallResult] = []
+                // Проходы модели. Первый — с инструментами (пункты 11 и 16 ТЗ). Если
+                // модель вызвала инструменты, приложение выполняет их и делает следующий
+                // проход с результатами — снова с инструментами, чтобы работали цепочки
+                // вроде «list_chats → read_chat». Последний проход идёт с запретом новых
+                // вызовов: модель обязана ответить текстом.
+                var passMessages = input
+                var forceAnswer = false
                 var toolRounds = 0
-
-                do {
-                    // Инструменты передаём (пункт 16 ТЗ): чтение и переименование чатов,
-                    // запись в память, смена настроек. По документации DeepSeek при наличии
-                    // tools обязателен полный возврат reasoning_content предыдущих ответов
-                    // и результаты вызова отдельными сообщениями с ролью tool — это сделано
-                    // в DeepSeekClient.makeRequest, иначе API отвечает 400 и поток обрывается.
-                    for try await delta in client.stream(messages: input, thinking: thinking,
-                                                         systemInstruction: instruction, searchContext: context,
-                                                         tools: HonerTool.apiSchemas) {
-                        try Task.checkCancellation()
-                        guard self.activeRunID == runID else { return }
-                        if !delta.reasoning.isEmpty, firstReasoningAt == nil { firstReasoningAt = Date() }
-                        if !delta.content.isEmpty {
-                            if firstReasoningAt != nil && reasoningEndedAt == nil { reasoningEndedAt = Date() }
-                            if self.generationStatus != "Отвечаю…" { self.generationStatus = "Отвечаю…" }
-                        }
-                        // Собираем вызовы инструментов, склеивая аргументы по index.
-                        // Сопоставление только по id теряло куски: id приходит лишь
-                        // в первом куске, а в остальных есть только index. Из-за этого
-                        // вызовы дублировались, аргументы ломались, и вместо ответа
-                        // в чате оставался обрывок вроде одной буквы.
-                        for call in delta.toolCalls {
-                            Self.mergeToolCall(call, into: &toolCalls)
-                        }
-                        pendingContent += delta.content
-                        pendingReasoning += delta.reasoning
-                        finishReason = delta.finishReason ?? finishReason
-                        // Публикуем каждый кусок, который пришёл от сервиса. Раньше здесь
-                        // ждали накопления 12 символов, и при мелких кусках текст не появлялся
-                        // по ходу ответа — пользователь видел пустое место до самого конца.
-                        // Плавность обеспечивает аниматор вывода, а не задержка публикации.
-                        flush()
-                        if Date().timeIntervalSince(lastSaved) >= 1.5 { self.saveSnapshot(); lastSaved = Date() }
-                    }
-                    flush()
-                } catch {
-                    if self.activeRunID == runID { flush() }
-                    throw error
-                }
-
-                // Выполняем запрошенные инструменты и повторяем запрос с результатами.
-                // Включает расширенные права: чтение и правку других чатов, запись в них,
-                // запись в память и смена настроек (пункты 7 и 16 ТЗ).
-                while !toolCalls.isEmpty, toolRounds < 4, Self.toolsEnabled {
-                    toolRounds += 1
-                    // Имя не `context`: так уже называется строка с результатами поиска.
-                    let toolContext = self.toolExecutionContext()
-                    self.generationStatus = "Выполняю действие…"
-                    // Запоминаем вызовы этого прохода: их нужно вернуть в API вместе
-                    // с результатами, иначе сервис отвечает ошибкой 400.
-                    let executedCalls = toolCalls
-                    // Результаты отправляем только текущего прохода: накопленные
-                    // раньше повторять не нужно, иначе растёт запрос и модель путается.
-                    toolResults.removeAll()
-                    // Список чатов выполняем первым: модель иногда просит read_chat
-                    // в одном проходе с list_chats, а read_chat опирается на список.
-                    // Без этого порядка данные терялись и ответ получался пустым.
-                    let ordered = toolCalls.sorted { lhs, rhs in
-                        (lhs.name == HonerTool.listChats.rawValue ? 0 : 1)
-                            < (rhs.name == HonerTool.listChats.rawValue ? 0 : 1)
-                    }
-                    for call in ordered {
-                        let result = ToolExecutor.executeExtended(call, context: toolContext)
-                        if let effect = result.effect { self.apply(effect) }
-                        toolResults.append(result)
-                    }
+                var toolResults: [ToolCallResult] = []
+                var executedSignatures = Set<String>()
+                var announcement = ""
+                passLoop: while true {
                     toolCalls.removeAll()
-
-                    var followUp = input
-                    var assistant = ChatMessage(role: .assistant)
-                    assistant.content = rawContent
-                    assistant.reasoning = rawReasoning
-                    assistant.toolCallsRaw = Self.toolCallsJSON(executedCalls)
-                    followUp.append(assistant)
-                    // Результат обязан идти сообщением с ролью tool и ссылкой на вызов:
-                    // этого требует протокол DeepSeek, иначе запрос отклоняется.
-                    for result in toolResults where !result.callID.isEmpty {
-                        var toolMessage = ChatMessage(role: .tool)
-                        toolMessage.content = result.content
-                        toolMessage.toolCallID = result.callID
-                        followUp.append(toolMessage)
-                    }
-                    // Короткая просьба ответить по существу: без неё модель иногда
-                    // повторяет вызов инструмента вместо ответа.
-                    var nudge = ChatMessage(role: .user)
-                    nudge.content = "Используй полученные данные и дай итоговый ответ пользователю. Не вызывай этот инструмент повторно."
-                    followUp.append(nudge)
-
-                    self.generationStatus = "Отвечаю…"
+                    passReasoning = ""
                     do {
-                        // На повторном проходе инструменты НЕ передаём. Проверено живым
-                        // тестом: с инструментами модель снова и снова просит вызов
-                        // и возвращает пустой текст, а без них — сразу даёт ответ по
-                        // полученным данным. Все нужные действия уже выполнены выше.
-                        for try await delta in client.stream(messages: followUp, thinking: thinking,
+                        for try await delta in client.stream(messages: passMessages, thinking: thinking,
                                                              systemInstruction: instruction, searchContext: context,
-                                                             tools: nil) {
+                                                             tools: Self.toolsEnabled ? HonerTool.apiSchemas : nil,
+                                                             forceAnswer: forceAnswer) {
                             try Task.checkCancellation()
                             guard self.activeRunID == runID else { return }
+                            if !delta.reasoning.isEmpty, firstReasoningAt == nil { firstReasoningAt = Date() }
+                            if !delta.content.isEmpty {
+                                if firstReasoningAt != nil && reasoningEndedAt == nil { reasoningEndedAt = Date() }
+                                if self.generationStatus != "Отвечаю…" { self.generationStatus = "Отвечаю…" }
+                            }
+                            // Куски одного вызова склеиваются по index: id и имя приходят
+                            // только в первом куске, дальше идёт один index.
                             for call in delta.toolCalls {
                                 Self.mergeToolCall(call, into: &toolCalls)
                             }
                             pendingContent += delta.content
                             pendingReasoning += delta.reasoning
                             finishReason = delta.finishReason ?? finishReason
-                            // Каждый кусок публикуем сразу: см. пояснение в основном цикле.
                             flush()
                         }
                         flush()
                     } catch {
                         if self.activeRunID == runID { flush() }
+                        // Сбой первого прохода — это ошибка запроса, её увидит пользователь.
+                        // Сбой прохода после инструментов закрывается восстановлением ниже:
+                        // данные инструментов уже собраны.
+                        if toolRounds == 0 || Task.isCancelled || error is CancellationError { throw error }
+                        break passLoop
                     }
+                    var calls = toolCalls.filter { !$0.name.isEmpty }
+                    guard !calls.isEmpty, Self.toolsEnabled, !forceAnswer,
+                          toolRounds < Self.maximumToolRounds else { break passLoop }
+                    toolRounds += 1
+                    // У каждого вызова обязан быть id: по нему сервис связывает результат с вызовом.
+                    for position in calls.indices where calls[position].id.isEmpty {
+                        calls[position].id = "call_" + String(UUID().uuidString.prefix(12))
+                    }
+                    // Список чатов выполняем первым: read_chat опирается на номера из списка.
+                    calls.sort { lhs, rhs in
+                        (lhs.name == HonerTool.listChats.rawValue ? 0 : 1)
+                            < (rhs.name == HonerTool.listChats.rawValue ? 0 : 1)
+                    }
+                    self.generationStatus = Self.toolStatus(for: calls)
+                    let toolContext = self.toolExecutionContext()
+                    var roundResults: [ToolCallResult] = []
+                    var repeated = false
+                    for call in calls {
+                        let signature = call.name + "|" + call.arguments
+                        let isRepeat = executedSignatures.contains(signature)
+                        executedSignatures.insert(signature)
+                        let result = ToolExecutor.executeExtended(call, context: toolContext)
+                        // Повторный вызов с теми же аргументами не выполняем второй раз:
+                        // иначе одно и то же сообщение ушло бы в чат дважды.
+                        if isRepeat { repeated = true } else if let effect = result.effect { self.apply(effect) }
+                        roundResults.append(result)
+                    }
+                    toolResults.append(contentsOf: roundResults)
+                    // Вызов и результаты возвращаются в API строго по протоколу:
+                    // сообщение ассистента с tool_calls (и его рассуждением), затем
+                    // по сообщению с ролью tool на каждый вызов.
+                    var assistant = ChatMessage(role: .assistant)
+                    assistant.content = rawContent
+                    assistant.reasoning = passReasoning
+                    assistant.toolCallsRaw = Self.toolCallsJSON(calls)
+                    passMessages.append(assistant)
+                    for result in roundResults {
+                        var toolMessage = ChatMessage(role: .tool)
+                        toolMessage.content = result.content
+                        toolMessage.toolCallID = result.callID
+                        passMessages.append(toolMessage)
+                    }
+                    // Текст этого прохода был вступлением к действию («Сейчас посмотрю
+                    // чаты»). Итоговый ответ следующего прохода печатается с чистого листа.
+                    if !rawContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { announcement = rawContent }
+                    show("")
+                    finishReason = nil
+                    // Модель повторяет тот же вызов или исчерпала число шагов — следующий
+                    // проход только отвечает, без новых вызовов.
+                    if repeated || toolRounds >= Self.maximumToolRounds { forceAnswer = true }
                 }
                 guard self.activeRunID == runID else { return }
+                if rawContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !announcement.isEmpty {
+                    show(announcement)
+                }
                 // Поток закончился: переносим напечатанный текст в модель чата —
                 // дальше с ним работают перевод, сохранение и проверки.
                 let printedSeconds = self.live.reasoningSeconds
@@ -869,26 +870,17 @@ final class ChatStore: ObservableObject {
                     $0.reasoningSeconds = printedSeconds
                 }
                 if let russianNormalizer {
-                    let normalizeContent = RussianTextPolicy.needsNormalization(rawContent)
+                    let normalizeContent = !userWritesForeign && RussianTextPolicy.needsNormalization(rawContent)
                     let normalizeReasoning = RussianTextPolicy.needsReasoningNormalization(rawReasoning)
-                    self.mutateMessage(chatID: chatID, messageID: response.id) {
-                        // Пока идёт перевод, показываем ответ как есть: пустого места
-                        // быть не должно, даже если перевод не удастся.
-                        $0.content = rawContent
-                        if !normalizeReasoning { $0.reasoning = rawReasoning }
-                    }
                     if normalizeContent && normalizeReasoning {
-                        // Ответ и длинное рассуждение переводим одним запросом: иначе
-                        // отдельный перевод рассуждения не проходит по длине и
-                        // пользователь видит английский текст.
+                        // Ответ и длинное рассуждение переводим одним запросом.
                         self.generationStatus = "Перевожу на русский…"
                         do {
                             let pair = try await russianNormalizer.normalizeBoth(content: rawContent, reasoning: rawReasoning)
                             try Task.checkCancellation()
                             guard self.activeRunID == runID else { return }
-                            #if DEBUG
-                            print("HONER_WHY combined ok content=\(pair.content.count) reasoning=\(pair.reasoning.count)")
-                            #endif
+                            rawReasoning = pair.reasoning
+                            show(pair.content)
                             self.mutateMessage(chatID: chatID, messageID: response.id) {
                                 $0.content = pair.content
                                 $0.reasoning = pair.reasoning
@@ -896,9 +888,6 @@ final class ChatStore: ObservableObject {
                             }
                         } catch {
                             if Task.isCancelled { throw CancellationError() }
-                            #if DEBUG
-                            print("HONER_WHY combined failed: \(error)")
-                            #endif
                             // Не получилось одним запросом — пробуем по отдельности.
                             await self.normalizeSeparately(normalizer: russianNormalizer, chatID: chatID,
                                                            messageID: response.id, sourceContent: rawContent,
@@ -913,15 +902,11 @@ final class ChatStore: ObservableObject {
                                 let translated = try await russianNormalizer.normalizeRussian(rawContent, reasoning: false)
                                 try Task.checkCancellation()
                                 guard self.activeRunID == runID else { return }
+                                show(translated)
                                 self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = translated }
                             } catch {
                                 if Task.isCancelled { throw CancellationError() }
                                 // Перевод не удался — оставляем исходный ответ целиком.
-                                self.mutateMessage(chatID: chatID, messageID: response.id) {
-                                    if $0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                        $0.content = rawContent
-                                    }
-                                }
                             }
                         }
                         if normalizeReasoning {
@@ -932,10 +917,8 @@ final class ChatStore: ObservableObject {
                                 self.mutateMessage(chatID: chatID, messageID: response.id) { $0.reasoning = translated; $0.reasoningWasTranslated = true }
                             } catch {
                                 if Task.isCancelled { throw CancellationError() }
-                                // Перевод не удался — оставляем исходный текст рассуждения,
-                                // а не заглушку, и помечаем, что он на языке модели:
-                                // пользователь должен видеть, о чём думала модель, и понимать,
-                                // почему текст не по-русски.
+                                // Перевод не удался — оставляем исходный текст рассуждения
+                                // и честно помечаем, что он на языке модели.
                                 self.mutateMessage(chatID: chatID, messageID: response.id) {
                                     if $0.reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                         $0.reasoning = rawReasoning
@@ -945,20 +928,23 @@ final class ChatStore: ObservableObject {
                             }
                         }
                     }
+                    // Показываемый ответ — тот, что в модели после перевода.
+                    if let translated = self.conversations.first(where: { $0.id == chatID })?
+                        .messages.first(where: { $0.id == response.id })?.content, translated != rawContent {
+                        show(translated)
+                    }
                 }
-                // Страховка от пустого ответа и обрывка.
-                // Раньше при пустом ответе приложение просто молчало: пользователь видел
-                // только строку рассуждения и пустоту под ней. Теперь в этом случае
-                // запрос автоматически повторяется без режима рассуждения, а если и он
-                // ничего не дал — выводится понятное сообщение и кнопка «Повторить».
+                // Страховка от пустого ответа и обрывка: запрос повторяется без режима
+                // рассуждения, а если и он ничего не дал — выводится понятное сообщение
+                // и кнопка «Повторить».
                 let answerIsEmpty = rawContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 let answerIsFragment = Self.needsAnswerRecovery(rawContent)
                 let serverAnomaly = finishReason == "insufficient_system_resource" || finishReason == "aborted"
                 if answerIsEmpty || answerIsFragment || serverAnomaly {
                     self.generationStatus = "Дописываю ответ…"
-                    // Собираем запрос на повтор. Если модель уже что-то узнала через
-                    // инструменты, эти данные нужно приложить обычным сообщением —
-                    // иначе повтор не может ответить и снова обещает «сейчас найду».
+                    let original = rawContent
+                    // Если модель уже что-то узнала через инструменты, эти данные нужно
+                    // приложить обычным сообщением — иначе повтор снова обещает «сейчас найду».
                     var recoveryInput = input
                     if !toolResults.isEmpty {
                         if !rawContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -971,49 +957,36 @@ final class ChatStore: ObservableObject {
                         data.content = "Вот данные, которые ты запросил:\n\(collected)\n\nИспользуй их и дай итоговый ответ пользователю. Больше инструментов нет — отвечай текстом."
                         recoveryInput.append(data)
                     }
-                    // Сначала обычный запрос без потока: он приходит целиком и
-                    // обрываться на середине ему нечем. Если и он не дал текста —
-                    // повторяем потоком, уже без режима рассуждения.
+                    // Повтор идёт потоком: текст печатается так же плавно, как обычный ответ.
                     var retryContent = ""
                     do {
-                        retryContent = try await client.complete(messages: recoveryInput, thinking: false,
-                                                                 systemInstruction: instruction,
-                                                                 searchContext: context)
-                        if !retryContent.isEmpty {
-                            // Публикуем текст напрямую: flush() дописывает pendingContent
-                            // к rawContent, и раньше из-за этого текст на секунду удваивался.
-                            rawContent = retryContent
-                            pendingContent = ""
-                            self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = rawContent }
+                        var streamed = ""
+                        for try await delta in client.stream(messages: recoveryInput, thinking: false,
+                                                             systemInstruction: instruction,
+                                                             searchContext: context, tools: nil) {
+                            try Task.checkCancellation()
+                            guard self.activeRunID == runID else { return }
+                            streamed += delta.content
+                            if !streamed.isEmpty { show(streamed) }
                         }
+                        retryContent = streamed
                     } catch {
                         if Task.isCancelled { throw CancellationError() }
                     }
+                    // Поток не дал текста — обычный запрос без потока: он приходит целиком.
                     if Self.needsAnswerRecovery(retryContent) {
                         do {
-                            var streamed = ""
-                            for try await delta in client.stream(messages: recoveryInput, thinking: false,
-                                                                 systemInstruction: instruction,
-                                                                 searchContext: context, tools: nil) {
-                                try Task.checkCancellation()
-                                guard self.activeRunID == runID else { return }
-                                streamed += delta.content
-                                if !delta.reasoning.isEmpty { rawReasoning += delta.reasoning }
-                                rawContent = streamed
-                                pendingContent = ""
-                                if Date().timeIntervalSince(lastPublished) >= 1.0 / 30.0 {
-                                    self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = streamed }
-                                    lastPublished = Date()
-                                }
-                            }
-                            retryContent = streamed
+                            let whole = try await client.complete(messages: recoveryInput, thinking: false,
+                                                                  systemInstruction: instruction,
+                                                                  searchContext: context)
+                            try Task.checkCancellation()
+                            guard self.activeRunID == runID else { return }
+                            if !whole.isEmpty { retryContent = whole; show(whole) }
                         } catch {
                             if Task.isCancelled { throw CancellationError() }
                         }
                     }
-                    // Последняя попытка: модель уже дважды не дала ответ по существу,
-                    // хотя данные инструментов у неё есть. Просим строго ответить текстом,
-                    // без рассуждений и без обещаний что-то найти.
+                    // Последняя попытка: данные инструментов есть, а ответа по существу нет.
                     if Self.needsAnswerRecovery(retryContent), !toolResults.isEmpty {
                         self.generationStatus = "Формулирую ответ…"
                         do {
@@ -1021,37 +994,30 @@ final class ChatStore: ObservableObject {
                                                                    systemInstruction: "Отвечай только итоговым текстом по-русски. Никаких обещаний что-то найти или прочитать, никаких рассуждений о своих действиях. Сразу дай ответ по данным, которые есть в переписке.",
                                                                    searchContext: "")
                             if !Self.needsAnswerRecovery(forced), !forced.isEmpty {
-                                // Именно заменяем ответ, а не дописываем: накопленный текст
-                                // содержал объявление о действии, и склейка выглядела как
-                                // «Сначала найду чат…## Ответ».
                                 retryContent = forced
-                                rawContent = forced
-                                pendingContent = ""
-                                self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = forced }
+                                show(forced)
                             }
                         } catch {
                             if Task.isCancelled { throw CancellationError() }
                         }
                     }
-                    // Показываем повтор только если он что-то дал. Иначе сохраняем то,
-                    // что уже было: раньше неудачный повтор стирал полный ответ,
-                    // который пользователь уже видел.
+                    // Показываем повтор, только если он что-то дал. Иначе сохраняем то,
+                    // что уже было: неудачный повтор не должен стирать показанный ответ.
                     let retryIsAnswer = !Self.needsAnswerRecovery(retryContent)
-                    if retryIsAnswer || Self.needsAnswerRecovery(rawContent) {
-                        rawContent = retryContent
-                        self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = rawContent }
+                    if retryIsAnswer || (Self.needsAnswerRecovery(original) && !retryContent.isEmpty) {
+                        show(retryContent)
+                    } else {
+                        show(original)
                     }
-                    // Первый проход закончился ничем — его finish_reason
-                    // больше не относится к показанному ответу.
+                    self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = rawContent }
                     if retryIsAnswer { finishReason = nil }
                 }
-                // Последняя очистка перед показом: убираем из ответа объявления
-                // о действиях («Сначала найду чат…»). Если после очистки ничего
-                // не осталось, но данные инструментов есть — просим нормальный ответ.
+                // Последняя очистка: убираем из ответа объявления о действиях
+                // («Сначала найду чат…»).
                 if Self.isToolAnnouncement(rawContent) {
                     let cleaned = Self.strippingToolAnnouncements(rawContent)
                     if !Self.isTooShortToBeAnAnswer(cleaned) {
-                        rawContent = cleaned
+                        show(cleaned)
                         self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = cleaned }
                     } else if !toolResults.isEmpty {
                         self.generationStatus = "Формулирую ответ…"
@@ -1064,7 +1030,7 @@ final class ChatStore: ObservableObject {
                             messages: synthesisInput, thinking: false,
                             systemInstruction: "Ответь пользователю по-русски одним связным ответом, используя данные выше. Без вступлений, без описания своих действий и без markdown-заголовков первого уровня.",
                             searchContext: ""), !Self.isTooShortToBeAnAnswer(answer) {
-                            rawContent = answer
+                            show(answer)
                             self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = answer }
                         }
                     }
@@ -1093,7 +1059,12 @@ final class ChatStore: ObservableObject {
                         ? "Нет подключения к интернету. Проверьте соединение и повторите запрос."
                         : error.localizedDescription
                     self.errorMessage = description
-                    self.mutateMessage(chatID: chatID, messageID: response.id) { $0.error = description }
+                    self.mutateMessage(chatID: chatID, messageID: response.id) {
+                        // Напечатанная часть ответа остаётся видна вместе с ошибкой.
+                        if $0.content.isEmpty, !self.live.content.isEmpty { $0.content = self.live.content }
+                        if $0.reasoning.isEmpty, !self.live.reasoning.isEmpty { $0.reasoning = self.live.reasoning }
+                        $0.error = description
+                    }
                 }
             }
             guard self.activeRunID == runID else { return }
@@ -1117,12 +1088,32 @@ final class ChatStore: ObservableObject {
             }
             // Последняя проверка: сообщение не может остаться без текста и без ошибки.
             self.ensureVisibleOutcome(chatID: chatID, messageID: response.id)
+            // Печать получает окончательный текст и плавно допечатывает хвост.
+            let settled = self.conversations.first(where: { $0.id == chatID })?
+                .messages.first(where: { $0.id == response.id })
+            self.pacer.close(content: settled?.content ?? "", reasoning: settled?.reasoning ?? "")
             self.saveSnapshot()
             // Уведомление о готовом ответе, если пользователь вышел из приложения (пункт 36).
             if !(delivered?.content.isEmpty ?? true) {
                 NotificationCenterService.shared.notifyAnswerReady(delivered?.content ?? "")
             }
         }
+    }
+
+    /// Сколько раз подряд модель может вызвать инструменты в одном ответе.
+    static let maximumToolRounds = 4
+
+    /// Строка состояния, пока выполняются инструменты: пользователь видит, что именно
+    /// делает помощник, а не абстрактное «Выполняю действие…».
+    static func toolStatus(for calls: [ToolCallRequest]) -> String {
+        let names = Set(calls.map(\.name))
+        if names.contains(HonerTool.readChat.rawValue) { return "Читаю чат…" }
+        if names.contains(HonerTool.listChats.rawValue) { return "Смотрю список чатов…" }
+        if names.contains(HonerTool.sendToChat.rawValue) { return "Отправляю сообщение в чат…" }
+        if names.contains(HonerTool.saveMemory.rawValue) { return "Запоминаю…" }
+        if names.contains(HonerTool.renameChat.rawValue) || names.contains(HonerTool.pinChat.rawValue) { return "Обновляю чаты…" }
+        if names.contains(HonerTool.setAppSetting.rawValue) { return "Меняю настройку…" }
+        return "Выполняю действие…"
     }
 
     /// Вызов инструментов моделью включён: модель может читать и править другие чаты,
@@ -1172,8 +1163,12 @@ final class ChatStore: ObservableObject {
     /// продолжаться: «а теперь то же самое по второму чату»).
     static func queryMentionsChats(queryText: String, recentContext: String) -> Bool {
         let haystack = (queryText + "\n" + recentContext).lowercased()
-        let markers = ["чат", "переписк", "диалог", "бесед", "ветк", "истори",
-                       "мы говорили", "мы обсуждали", "обсуждали", "писали",
+        // «истори» и «писали» здесь больше нет: «расскажи историю Рима» или «как
+        // писали в XIX веке» — не вопрос про чаты, а переписка чужих чатов в запросе
+        // сбивала модель с темы.
+        let markers = ["чат", "переписк", "диалог", "бесед", "ветк",
+                       "мы говорили", "мы обсуждали", "обсуждали", "мы писали", "я писал",
+                       "прошлом разговоре", "другом разговоре",
                        "chat", "conversation", "thread"]
         return markers.contains { haystack.contains($0) }
     }

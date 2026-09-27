@@ -26,114 +26,101 @@ struct ScrollRequest: Equatable {
     let id: UUID
     let messageID: UUID
 }
-/// Плавный посимвольный вывод ответа и рассуждений.
+/// Как показывать текст, который ещё печатается.
 ///
-/// Раньше текст обновлялся рывками: движок присылает токены пачками, а вью
-/// перерисовывалась только на 22 обновлениях в секунду — получались «прыжки».
-/// Здесь видимая часть текста растёт по кадрам (до 60 в секунду) с адаптивной
-/// скоростью: медленно на старте, быстрее, если буфер сильно отстал.
-struct StreamText<Content: View>: View {
-    let target: String
-    let streaming: Bool
-    /// Скорость показа, символов в секунду. Заказчик отдельно просил плавность,
-    /// поэтому значения низкие: текст должен именно печататься, а не появляться.
-    var baseRate: Double = 30
-    /// Отставание, после которого начинаем мягко догонять буфер.
-    var comfortableLag: Int = 320
-    /// Сообщает, что печать закончилась и текст показан полностью: по этому сигналу
-    /// останавливается сопровождение прокрутки, иначе оно продолжало дёргать экран
-    /// ещё две минуты после ответа.
-    var onSettled: (() -> Void)? = nil
-    @ViewBuilder let content: (String) -> Content
+/// Пока ответ растёт, в последней строке бывают незакрытые конструкции: `**жир`,
+/// одиночная обратная кавычка, начало ссылки `[текст](htt`, открывающий тег цвета,
+/// одинокий маркер списка или заголовка. Раньше они на мгновение появлялись
+/// сырыми символами и потом «перещёлкивались» в оформление — текст мигал.
+/// Здесь такие хвосты временно скрываются; как только конструкция закрыта,
+/// текст показывается уже оформленным.
+enum LiveMarkdown {
+    static func displayable(_ text: String) -> String {
+        guard !text.isEmpty, !text.hasSuffix("\n") else { return text }
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        // Внутри незакрытого блока кода ничего не трогаем: это код.
+        let fences = lines.filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("```") }.count
+        if fences % 2 == 1 { return text }
+        guard var last = lines.popLast() else { return text }
+        let trimmed = last.trimmingCharacters(in: .whitespaces)
 
-    @State private var revealed: String = ""
-    @State private var lastTick: Date = .distantPast
-    /// Сколько символов уже достигнуто. Держим отдельно: пересчёт `revealed.count`
-    /// на каждом кадре — лишняя работа на длинных ответах.
-    @State private var revealedCount: Int = 0
-    /// Все правила скорости печати — в StreamPace: там же объяснено, почему
-    /// раньше текст шёл вдвое быстрее заданного и почему ответ начинался рывком.
-    @State private var pace = StreamPaceState()
-    /// Поток данных уже закончился — разрешаем дописать остаток быстрее.
-    @State private var streamEnded = false
-    @State private var reportedSettled = false
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: isSettled)) { context in
-            content(displayed)
-                .onChange(of: context.date) { now in advance(to: now) }
+        // Строки таблицы до строки-разделителя — это ещё не таблица: не показываем
+        // палочки, таблица появится сразу оформленной.
+        if trimmed.hasPrefix("|") {
+            var block: [String] = [last]
+            while let previous = lines.last, previous.trimmingCharacters(in: .whitespaces).hasPrefix("|") {
+                block.insert(previous, at: 0)
+                lines.removeLast()
+            }
+            if block.contains(where: { isAlignmentRow($0) }) {
+                return text
+            }
+            return lines.joined(separator: "\n")
         }
-        .onAppear { syncTarget() }
-        .onChange(of: target) { _ in syncTarget() }
-        .onChange(of: streaming) { _ in syncTarget() }
-        .onChange(of: isSettled) { settled in
-            if settled, !reportedSettled {
-                reportedSettled = true
-                onSettled?()
-            } else if !settled {
-                reportedSettled = false
+        // Одинокий маркер: «#», «-», «*», «>», «1.», начало разделителя «--».
+        if trimmed.range(of: #"^(#{1,6}|[-*+>]|\d+[.)])$"#, options: .regularExpression) != nil
+            || (!trimmed.isEmpty && trimmed.allSatisfy { "-=*_ ".contains($0) }) {
+            return lines.joined(separator: "\n")
+        }
+        last = hideUnclosedMarkup(in: last)
+        lines.append(last)
+        return lines.joined(separator: "\n")
+    }
+
+    private static func isAlignmentRow(_ line: String) -> Bool {
+        let value = line.trimmingCharacters(in: .whitespaces)
+        guard value.contains("-"), value.filter({ $0 == "|" }).count >= 1 else { return false }
+        return value.allSatisfy { "|-: ".contains($0) }
+    }
+
+    private static func occurrences(of marker: String, in text: String) -> Int {
+        text.components(separatedBy: marker).count - 1
+    }
+
+    private static func removingLast(_ marker: String, from text: String) -> String {
+        guard let range = text.range(of: marker, options: .backwards) else { return text }
+        var value = text
+        value.removeSubrange(range)
+        return value
+    }
+
+    private static func hideUnclosedMarkup(in source: String) -> String {
+        var line = source
+        // Незаконченная ссылка или картинка: «[текст», «[текст](htt».
+        if let open = line.range(of: "[", options: .backwards) {
+            let tail = line[open.lowerBound...]
+            let closedLabel = tail.contains("]")
+            let hasTarget = tail.contains("](")
+            let closedTarget = hasTarget && tail.hasSuffix(")")
+            if !closedLabel || (hasTarget && !closedTarget) {
+                var start = open.lowerBound
+                if start > line.startIndex, line[line.index(before: start)] == "!" { start = line.index(before: start) }
+                line = String(line[..<start])
             }
         }
-    }
-
-    /// Что реально показывается.
-    /// Пока идёт поток или текст ещё не дописан, показываем ровно то, что успел
-    /// напечатать аниматор: ответ не должен «вываливаться» целиком. Полный текст
-    /// показываем только если аниматор вообще не смог начать (пустое состояние).
-    private var displayed: String {
-        if revealedCount > target.count { return target }
-        if revealed.isEmpty { return target }
-        return revealed
-    }
-
-    /// Всё показано и поток закончился — таймер можно останавливать.
-    private var isSettled: Bool { !streaming && revealedCount >= target.count }
-
-    private func syncTarget() {
-        // Поток завершился: печать продолжается аниматором, но с этого момента
-        // разрешён разгон без ограничения бюджета — недописанный хвост ответа
-        // выглядел как зависание.
-        streamEnded = !streaming
-        if revealedCount > target.count {
-            revealed = target
-            revealedCount = target.count
-            pace.reset()
+        // Незакрытый фигурный тег: «{col», «{color:red}текст» без «{/color}».
+        if let open = line.range(of: "{", options: .backwards), !line[open.lowerBound...].contains("}") {
+            line = String(line[..<open.lowerBound])
         }
-        lastTick = .distantPast
-    }
-
-    private func advance(to now: Date) {
-        guard streaming || revealedCount < target.count else { return }
-        if lastTick == .distantPast { lastTick = now; return }
-        let elapsed = min(now.timeIntervalSince(lastTick), 0.12)
-        lastTick = now
-        guard elapsed > 0 else { return }
-
-        let total = target.count
-        let lag = total - revealedCount
-        guard lag > 0 else { return }
-
-        var rule = StreamPace(baseRate: baseRate, comfortableLag: comfortableLag)
-        let take = rule.step(state: &pace, lag: lag, elapsed: elapsed, streamEnded: streamEnded)
-        guard take > 0 else { return }
-        let end = target.index(target.startIndex, offsetBy: take)
-        // Не разрываем графемы (эмодзи, составные символы).
-        var slice = target[target.startIndex..<end]
-        if slice.unicodeScalars.last.map({ isCombining($0) }) == true, take > 1 {
-            slice = target[target.startIndex..<target.index(end, offsetBy: -1)]
+        for tag in ["color", "bg"] {
+            let opener = "{" + tag + ":"
+            let closer = "{/" + tag + "}"
+            if occurrences(of: opener, in: line) > occurrences(of: closer, in: line),
+               let range = line.range(of: opener, options: .backwards),
+               let end = line[range.upperBound...].firstIndex(of: "}") {
+                line.removeSubrange(range.lowerBound...end)
+            }
         }
-        revealed = String(slice)
-        revealedCount = revealed.count
-        // Полный текст появляется только когда он весь показан посимвольно;
-        // мгновенный показ допускаем лишь при завершённом потоке.
-        if revealedCount >= total, !streaming {
-            revealed = target
-            revealedCount = total
+        if occurrences(of: "{upper}", in: line) > occurrences(of: "{/upper}", in: line) {
+            line = removingLast("{upper}", from: line)
         }
-    }
-
-    private func isCombining(_ scalar: Unicode.Scalar) -> Bool {
-        (0x0300...0x036F).contains(Int(scalar.value)) || scalar.properties.isJoinControl
+        // Незакрытые жирный, зачёркнутый, маркер, спойлер и код.
+        for marker in ["**", "~~", "==", "||", "__"] where occurrences(of: marker, in: line) % 2 == 1 {
+            line = removingLast(marker, from: line)
+        }
+        let ticks = line.filter { $0 == "`" }.count
+        if ticks % 2 == 1 { line = removingLast("`", from: line) }
+        return line
     }
 }
 
@@ -199,7 +186,10 @@ enum MarkdownBlockParser {
         source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
     }
 
-    static func parse(_ source: String) -> [MarkdownBlockModel] {
+    /// - Parameter streaming: текст ещё печатается. Тогда растущая таблица рисуется
+    ///   сразу таблицей — из уже законченных строк, без сырых палочек, — а строка,
+    ///   которая ещё дописывается, появится, когда будет готова.
+    static func parse(_ source: String, streaming: Bool = false) -> [MarkdownBlockModel] {
         var blocks: [MarkdownBlockModel] = []
         let lines = Self.splitLines(source)
         var index = 0
@@ -329,6 +319,24 @@ enum MarkdownBlockParser {
                     // палочек («| | |») данными не считается.
                     if cells.contains(where: { hasText($0) }) { rows.append(cells) }
                     cursor += 1
+                }
+                if streaming {
+                    // Строка на конце текста без закрывающей палочки ещё печатается.
+                    let columns = max(headers.count, 1)
+                    if cursor == lines.count, !source.hasSuffix("\n"), !rows.isEmpty,
+                       let lastLine = lines.last?.trimmingCharacters(in: .whitespaces),
+                       isTableRow(lastLine), rows.last == splitRow(lastLine),
+                       !lastLine.hasSuffix("|") || splitRow(lastLine).count < columns {
+                        rows.removeLast()
+                    }
+                    flushParagraph()
+                    if !rows.isEmpty {
+                        blocks.append(MarkdownBlockModel(id: blocks.count,
+                                                         kind: .table(headers: headers, alignments: alignments, rows: rows),
+                                                         text: ""))
+                    }
+                    index = cursor
+                    continue
                 }
                 // Таблица без единой непустой строки данных не существует: именно из
                 // такой «таблицы» на экране оставалась пустая панель с полем
@@ -791,6 +799,25 @@ struct InlineContentView: View {
     }
 }
 
+/// Результат разбора, привязанный к тексту. Ссылочный тип: его обновление во время
+/// отрисовки не считается изменением состояния SwiftUI (раньше кэш писался прямо
+/// в `@State` из `body`, а это неопределённое поведение и лишние перерисовки).
+final class MarkdownParseMemo {
+    private var source = ""
+    private var streaming = false
+    private var blocks: [MarkdownBlockModel] = []
+    private var valid = false
+
+    func blocks(for text: String, streaming: Bool) -> [MarkdownBlockModel] {
+        if valid, text == source, streaming == self.streaming { return blocks }
+        blocks = MarkdownBlockParser.parse(text, streaming: streaming)
+        source = text
+        self.streaming = streaming
+        valid = true
+        return blocks
+    }
+}
+
 struct BlockMarkdownView: View {
     let content: String
     let fontSize: Double
@@ -798,21 +825,26 @@ struct BlockMarkdownView: View {
     let findQuery: String
     /// Нажатие варианта ответа в блоке ```ask (пункт 33).
     var onAnswer: ((String) -> Bool)? = nil
+    /// Текст ещё печатается: растущая таблица рисуется из законченных строк.
+    var streaming: Bool = false
 
-    /// Пока текст печатается, разбор всего ответа на каждом кадре — самая
-    /// дорогая работа в кадре, из-за неё длинный ответ «заикается». Поэтому
-    /// разбор идёт по мере роста текста шагами, а не каждый кадр.
-    @State private var parsed: [MarkdownBlockModel] = []
-    @State private var parsedLength: Int = -1
+    /// Разбор делается один раз на каждую новую версию текста. Раньше, чтобы
+    /// не разбирать текст каждый кадр, разбор обновлялся только через 24 новых
+    /// символа: текст на экране стоял и прыгал кусками, а хвост короче 24 символов
+    /// не появлялся вовсе, пока экран не пересоздавался («ответ не дописан, пока
+    /// не перезайдёшь»). Теперь блоки, которые не изменились, не перерисовываются
+    /// (`MarkdownBlockView` сравнивается), поэтому полный разбор на кадр дёшев.
+    @State private var memo = MarkdownParseMemo()
     /// Ширина сообщения: нужна таблицам, чтобы столбцы делили место по содержимому.
     @State private var measuredWidth: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(blocks) { block in
+            ForEach(memo.blocks(for: content, streaming: streaming)) { block in
                 MarkdownBlockView(block: block, fontSize: fontSize,
                                   sources: sources, findQuery: findQuery,
                                   containerWidth: measuredWidth, onAnswer: onAnswer)
+                    .equatable()
                     // Устойчивый идентификатор блока: без него при каждом шаге разбора
                     // SwiftUI считал блок новым и пересобирал его состояние — слетали
                     // фильтр и сортировка в таблицах, сворачивалось рассуждение.
@@ -827,31 +859,26 @@ struct BlockMarkdownView: View {
                     .onChange(of: geometry.size.width) { measuredWidth = $0 }
             }
         )
-        .onAppear { reparse(force: true) }
-        .onChange(of: content) { _ in reparse(force: false) }
-    }
-
-    private var blocks: [MarkdownBlockModel] {
-        // Между кадрами текст успевает вырасти на десятки символов; пересобираем
-        // блоки только когда накопилось 24 новых символа. Если текст стал короче
-        // (новый ответ в том же представлении), показываем точный разбор сразу —
-        // иначе на экране оставался текст предыдущего сообщения.
-        if parsedLength < 0 || content.count < parsedLength || abs(content.count - parsedLength) >= 24 {
-            return MarkdownBlockParser.parse(content)
-        }
-        return parsed
-    }
-
-    private func reparse(force: Bool) {
-        guard force || parsedLength < 0 || content.count < parsedLength || content.count - parsedLength >= 24 else { return }
-        parsed = MarkdownBlockParser.parse(content)
-        parsedLength = content.count
     }
 }
 
 /// Отрисовка одного блока. Вынесено в отдельный тип, чтобы компилятор не захлёбывался
 /// на одном огромном выражении.
-private struct MarkdownBlockView: View {
+/// Кэш инлайн-разметки абзацев. Общий и ссылочный: запись в него во время отрисовки
+/// безопасна, а абзац, который уже разобран, не разбирается повторно ни в одной строке.
+private enum InlineMarkupCache {
+    final class Entry {
+        let value: AttributedString
+        init(_ value: AttributedString) { self.value = value }
+    }
+    static let storage: NSCache<NSString, Entry> = {
+        let cache = NSCache<NSString, Entry>()
+        cache.countLimit = 800
+        return cache
+    }()
+}
+
+private struct MarkdownBlockView: View, Equatable {
     let block: MarkdownBlockModel
     let fontSize: Double
     let sources: [WebSource]
@@ -859,9 +886,13 @@ private struct MarkdownBlockView: View {
     /// Ширина сообщения: нужна таблицам, чтобы делить место по содержимому столбцов.
     var containerWidth: CGFloat = 320
     var onAnswer: ((String) -> Bool)? = nil
-    /// Кэш разметки абзаца: см. `attributed(for:)`.
-    @State private var cachedSource: String = ""
-    @State private var cached: AttributedString?
+
+    /// Блок, который не изменился, не перерисовывается: во время печати меняется
+    /// только последний блок, а остальные остаются как есть.
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.block == rhs.block && lhs.fontSize == rhs.fontSize && lhs.findQuery == rhs.findQuery
+            && lhs.containerWidth == rhs.containerWidth && lhs.sources.map(\.id) == rhs.sources.map(\.id)
+    }
 
     var body: some View {
         Group {
@@ -977,14 +1008,11 @@ private struct MarkdownBlockView: View {
     /// дорогая часть отрисовки абзаца, и делать её каждый кадр нельзя: длинный ответ
     /// начинал «заикаться». Здесь результат сохраняется, пока текст не изменился.
     private func attributed(for text: String) -> AttributedString {
-        if cachedSource == text, let cached { return cached }
+        let sourceKey = sources.map(\.url.absoluteString).joined(separator: " ")
+        let key = "\(text)\u{1F}\(findQuery)\u{1F}\(sourceKey)" as NSString
+        if let hit = InlineMarkupCache.storage.object(forKey: key) { return hit.value }
         let value = inlineAttributed(text)
-        // Запоминаем результат только когда текст действительно другой: тогда запись
-        // в состояние происходит не на каждом кадре, а лишь при росте абзаца.
-        if cachedSource != text {
-            cachedSource = text
-            cached = value
-        }
+        InlineMarkupCache.storage.setObject(InlineMarkupCache.Entry(value), forKey: key)
         return value
     }
 }

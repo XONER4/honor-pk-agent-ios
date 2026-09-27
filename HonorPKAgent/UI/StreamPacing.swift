@@ -1,141 +1,310 @@
 import Foundation
+import QuartzCore
+import Combine
 
-/// Расчёт плавности печати ответа.
+/// Скорость печати ответа: сколько символов показать в очередном кадре.
 ///
-/// Заказчик трижды просил одно и то же: текст должен идти плавно и ничего не
-/// должно «выскакивать». Здесь собраны все правила скорости в одном месте,
-/// чтобы их можно было покрыть тестами и проверить независимым прогоном.
+/// Прежняя схема держала базовую скорость 30 символов в секунду и переключала
+/// множитель ступенями (×1,8 → ×3 → ×6 → ×10) по величине отставания. Сервис
+/// присылает текст быстрее 30 символов в секунду, поэтому отставание росло,
+/// множитель прыгал со ступени на ступень, и печать то ползла, то срывалась
+/// вперёд — это и выглядело как рывки.
 ///
-/// Три ошибки, которые были в старой версии и которые закрыты здесь:
-///
-/// 1. **Печать шла вдвое быстрее заданной.** Шаг считался как
-///    `max(1, round(скорость × время кадра))`. При 60 кадрах в секунду и скорости
-///    30 символов в секунду это `round(0,5) = 1` символ за кадр, то есть ровно
-///    60 символов в секунду. Скорость ниже 60 была недостижима в принципе.
-///    Теперь дробная часть шага копится, и печать идёт ровно с заданной скоростью.
-///
-/// 2. **Ответ начинался рывком.** Пока счётчик времени «последнего роста» был пуст,
-///    считалось, что буфер молчит целую вечность, и включался режим догона:
-///    первым же кадром вываливалась восьмая часть ответа. Теперь отсчёт идёт от
-///    первого кадра с текстом, а долгий разрыв определяется по счётчику тишины.
-///
-/// 3. **Печать могла не успеть за потоком.** При лимите скорости 6× и длинном
-///    ответе (8–10 тысяч символов) хвост дописывался десятками секунд — со стороны
-///    это выглядело как зависание. Теперь у догона есть общий бюджет времени:
-///    на «догнать отставший буфер» уходит не больше `catchUpBudget` секунд, после
-///    чего печать возвращается к ровной базовой скорости.
+/// Здесь скорость меняется непрерывно: печать держится примерно на `targetLatency`
+/// секунд позади потока, а изменение скорости сглаживается, поэтому пачки текста
+/// из сети превращаются в ровный набор без скачков. После конца потока хвост
+/// дописывается ускоренно, но тоже плавно, и не дольше `maximumTail` секунд.
 struct StreamPace: Equatable {
-    /// Скорость показа, символов в секунду. Текст должен именно печататься,
-    /// а не появляться, поэтому значение намеренно невысокое.
-    var baseRate: Double = 30
-    /// Отставание, после которого начинаем мягко догонять буфер.
-    var comfortableLag: Int = 320
-    /// Тишина в потоке, после которой разрешено догнать всё, что уже пришло
-    /// (чтобы ответ не остался недописанным). Считается по кадрам, а не по времени
-    /// начала сессии: иначе первый же кадр считался бы «долгой тишиной».
-    var idleFramesBeforeCatchUp: Int = 240
-    /// Потолок разгона относительно базовой скорости.
-    var maximumMultiplier: Double = 10
+    /// Нижняя граница скорости, символов в секунду: с неё начинается ответ.
+    var minimumRate: Double = 45
+    /// Верхняя граница скорости, символов в секунду.
+    var maximumRate: Double = 1600
+    /// На сколько секунд печать отстаёт от потока, пока ответ идёт.
+    var targetLatency: Double = 0.9
+    /// То же после конца потока: хвост догоняется быстрее.
+    var closingLatency: Double = 0.4
+    /// Насколько быстро скорость подстраивается (1/с). Меньше — мягче.
+    var responsiveness: Double = 5
+    /// Хвост после конца потока показывается целиком не позже этого срока.
+    var maximumTail: Double = 2.2
+    /// Нижняя граница скорости после конца потока: последние символы не ползут.
+    var closingMinimumRate: Double = 120
 
-    /// Множитель скорости по величине отставания.
-    ///
-    /// Пороги подобраны так, чтобы редкие крупные пачки текста (сервис присылает их
-    /// после пауз в сети) доигрывались за секунду-две, а не растягивались на
-    /// полминуты: растянутый хвост выглядит как зависание. Ровный поток идёт на
-    /// базовой скорости, поэтому обычный ответ по-прежнему печатается плавно.
-    ///
-    /// `ceiling` — верхняя граница, которую задаёт вызывающий код: короткий ответ
-    /// не должен «выстреливать» только потому, что целиком пришёл за одну секунду.
-    static func multiplier(lag: Int, comfortable: Int, ceiling: Double) -> Double {
-        var value = 1.0
-        if lag * 2 > comfortable * 9 { value = 10 }        // отставание больше 4,5 порогов
-        else if lag > comfortable * 2 { value = 6 }
-        else if lag > comfortable { value = 3 }
-        else if lag * 2 > comfortable { value = 1.8 }      // отставание больше половины порога
-        return min(value, ceiling)
-    }
-}
-
-/// Состояние печати: сколько символов показано и сколько осталось в дробном шаге.
-struct StreamPaceState: Equatable {
-    var revealedCount = 0
-    /// Дробная часть шага: копится между кадрами, чтобы скорость была точной.
-    var carry: Double = 0
-    /// Кадры подряд, в которых текст не показывался (буфер не растёт).
-    var idleFrames = 0
-
-    mutating func reset() {
-        carry = 0
-        idleFrames = 0
-    }
-
-    /// Начать печать нового ответа с нуля (в этом же представлении мог печататься
-    /// предыдущий ответ — тогда счётчики нужно обнулить полностью).
-    mutating func restart() {
-        revealedCount = 0
-        reset()
-    }
-}
-
-extension StreamPace {
-    /// Верхняя граница разгона для этого шага.
-    ///
-    /// Чем больше текста уже пришло, тем быстрее можно показывать: зритель всё
-    /// равно видит поток целиком. Для маленького ответа (меньше двух порогов)
-    /// разгон ограничен, поэтому он печатается ровно и плавно даже если сервис
-    /// отдал его одним куском.
-    func ceiling(lag: Int, streamEnded: Bool) -> Double {
-        if streamEnded { return maximumMultiplier }
-        if lag > comfortableLag * 2 { return maximumMultiplier }
-        if lag > comfortableLag { return 6 }
-        if lag * 2 > comfortableLag { return 3 }
-        return 1.8
-    }
-
-    /// Сколько символов показать в этом кадре.
+    /// Сколько символов должно быть видно после этого кадра.
     ///
     /// - Parameters:
     ///   - state: состояние печати, изменяется на месте.
-    ///   - lag: сколько символов буфера ещё не показано.
+    ///   - available: сколько символов уже пришло.
     ///   - elapsed: сколько секунд прошло с прошлого кадра.
-    ///   - streamEnded: поток уже закончился, новых символов не будет.
-    /// - Returns: число символов к показу (0 — в этом кадре показывать нечего).
-    mutating func step(state: inout StreamPaceState,
-                       lag: Int,
-                       elapsed: Double,
-                       streamEnded: Bool) -> Int {
-        guard lag > 0, elapsed > 0 else {
-            state.idleFrames += 1
-            return 0
+    ///   - streamOpen: поток ещё идёт (могут прийти новые символы).
+    /// - Returns: число видимых символов (никогда не уменьшается и не превышает `available`).
+    func step(state: inout StreamPaceState, available: Int, elapsed: Double, streamOpen: Bool) -> Int {
+        // Кадр мог задержаться (приложение уходило в фон, система притормозила):
+        // большой шаг времени дал бы рывок, поэтому ограничиваем его.
+        let dt = max(0, min(elapsed, 1.0 / 20.0))
+        if !streamOpen { state.sinceClose += dt }
+        let lag = Double(available) - state.shown
+        guard lag > 0 else {
+            state.shown = min(state.shown, Double(available))
+            return Int(state.shown)
         }
-
-        var multiplier = Self.multiplier(lag: lag,
-                                         comfortable: comfortableLag,
-                                         ceiling: ceiling(lag: lag, streamEnded: streamEnded))
-        // Поток закончился, а текст ещё не дописан — это самый заметный случай:
-        // пользователь уже читает готовый ответ, а хвост всё ещё печатается.
-        // Дописываем быстрее, но не мгновенно: мгновенный показ — тоже рывок.
-        if streamEnded, lag > comfortableLag / 2 {
-            multiplier = max(multiplier, 3)
+        if !streamOpen, state.sinceClose >= maximumTail {
+            state.shown = Double(available)
+            return available
         }
-        let rate = min(baseRate * multiplier, baseRate * maximumMultiplier)
+        let latency = streamOpen ? targetLatency : closingLatency
+        let floor = streamOpen ? minimumRate : max(minimumRate, closingMinimumRate)
+        let desired = min(max(lag / latency, floor), maximumRate)
+        if state.rate <= 0 { state.rate = minimumRate }
+        // Экспоненциальное сглаживание: скорость тянется к нужной, но без скачков.
+        let blend = 1 - exp(-responsiveness * dt)
+        state.rate += (desired - state.rate) * blend
+        state.shown = min(state.shown + state.rate * dt, Double(available))
+        return Int(state.shown)
+    }
+}
 
-        state.carry += rate * elapsed
-        var step = Int(state.carry)
-        // Буфер молчит слишком долго — показываем всё, что есть: недописанный
-        // ответ хуже короткого рывка.
-        if state.idleFrames >= idleFramesBeforeCatchUp {
-            step = max(step, lag / 4)
+/// Состояние печати одного текста.
+struct StreamPaceState: Equatable {
+    /// Сколько символов видно (дробная часть копится между кадрами).
+    var shown: Double = 0
+    /// Текущая скорость, символов в секунду.
+    var rate: Double = 0
+    /// Сколько секунд прошло после конца потока.
+    var sinceClose: Double = 0
+
+    var revealedCount: Int { Int(shown) }
+
+    mutating func restart() { self = StreamPaceState() }
+}
+
+/// Печатаемый текст: полученная часть и показанная часть.
+///
+/// Показанная часть растёт от кадра к кадру и всегда является началом полученной.
+/// Если полученный текст заменили целиком (перевод, очистка служебной строки),
+/// показанная часть обрезается до общего начала и печать продолжается оттуда —
+/// без пустого экрана и без перепечатывания ответа с нуля.
+struct TypedText {
+    private(set) var target = ""
+    private(set) var shown = ""
+    private(set) var targetCount = 0
+    private(set) var shownCount = 0
+    /// Позиция конца показанной части в полученном тексте (байты UTF-8).
+    private var shownOffset = 0
+
+    var isComplete: Bool { shownCount >= targetCount }
+
+    /// Новая версия полученного текста. Возвращает, сколько символов уже показано.
+    @discardableResult
+    mutating func setTarget(_ text: String) -> Int {
+        guard text != target else { return shownCount }
+        if text.hasPrefix(target) {
+            // Обычный случай: к тексту дописали хвост.
+            let tail = text.utf8.index(text.utf8.startIndex, offsetBy: target.utf8.count)
+            targetCount += text[tail...].count
+            target = text
+            return shownCount
         }
-        guard step >= 1 else { return 0 }
+        // Текст заменили. Оставляем видимым общее начало, дальше печать продолжится.
+        var common = text.startIndex
+        var otherIndex = shown.startIndex
+        var kept = 0
+        while common < text.endIndex, otherIndex < shown.endIndex, text[common] == shown[otherIndex] {
+            common = text.index(after: common)
+            otherIndex = shown.index(after: otherIndex)
+            kept += 1
+        }
+        target = text
+        targetCount = text.count
+        shown = String(text[..<common])
+        shownCount = kept
+        shownOffset = text.utf8.distance(from: text.utf8.startIndex, to: common)
+        return kept
+    }
 
-        let take = min(step, lag)
-        state.carry -= Double(take)
-        // Страховка от накопления: остаток никогда не должен превышать один шаг.
-        if state.carry > 1 { state.carry = 0 }
+    /// Показать `count` символов (не больше полученных).
+    mutating func reveal(upTo count: Int) {
+        let wanted = min(count, targetCount)
+        guard wanted > shownCount else { return }
+        let start = target.utf8.index(target.utf8.startIndex, offsetBy: shownOffset)
+        let end = target.index(start, offsetBy: wanted - shownCount, limitedBy: target.endIndex) ?? target.endIndex
+        shown += target[start..<end]
+        shownOffset = target.utf8.distance(from: target.utf8.startIndex, to: end)
+        shownCount = end == target.endIndex ? targetCount : wanted
+    }
 
-        state.revealedCount += take
-        state.idleFrames = 0
-        return take
+    mutating func revealAll() {
+        shown = target
+        shownCount = targetCount
+        shownOffset = target.utf8.count
+    }
+
+    mutating func clear() { self = TypedText() }
+}
+
+/// Плавная печать текущего ответа: и рассуждения, и итогового текста.
+///
+/// Раньше за печать отвечало само представление (`TimelineView` в каждой строке).
+/// Оттуда было три беды: текст начинался с полного ответа и схлопывался до пары
+/// букв; разметка обновлялась шагами по 24 символа, поэтому текст стоял и прыгал;
+/// хвост короче 24 символов не показывался вовсе, пока экран не пересоздавался.
+/// Теперь печать ведёт один объект на весь ответ: он получает текст из потока,
+/// сам выдаёт видимую часть каждый кадр экрана и гарантированно доводит её до конца.
+@MainActor
+final class TypingPacer: ObservableObject {
+    /// Ответ, который сейчас печатается.
+    @Published private(set) var messageID: UUID?
+    /// Видимая часть ответа.
+    @Published private(set) var content = ""
+    /// Видимая часть рассуждения.
+    @Published private(set) var reasoning = ""
+    /// Время начала ответа: по нему идёт счётчик «Размышляю… N с».
+    @Published private(set) var startedAt = Date()
+    /// Когда закончилось рассуждение (пришёл первый символ ответа).
+    @Published private(set) var reasoningEndedAt: Date?
+    /// Срабатывает несколько раз в секунду, пока текст растёт: по нему лента
+    /// едет вслед за ответом.
+    let grew = PassthroughSubject<Void, Never>()
+
+    /// Печать закончилась: весь текст показан, поток закрыт.
+    var onFinished: ((UUID) -> Void)?
+
+    private var contentText = TypedText()
+    private var reasoningText = TypedText()
+    private var contentPace = StreamPaceState()
+    private var reasoningPace = StreamPaceState()
+    private var streamOpen = false
+    private var link: CADisplayLink?
+    private var lastFrame: CFTimeInterval = 0
+    private var lastGrowthSignal: CFTimeInterval = 0
+    private let rule = StreamPace()
+    /// Рассуждение печатается быстрее: его читают вполглаза.
+    private let reasoningRule = StreamPace(minimumRate: 70, targetLatency: 0.6, closingLatency: 0.25, maximumTail: 1.2)
+
+    var isActive: Bool { messageID != nil }
+
+    /// Начать новый ответ.
+    func begin(messageID: UUID) {
+        stopLink()
+        contentText.clear(); reasoningText.clear()
+        contentPace.restart(); reasoningPace.restart()
+        content = ""; reasoning = ""
+        startedAt = Date()
+        reasoningEndedAt = nil
+        streamOpen = true
+        self.messageID = messageID
+    }
+
+    /// Новый полученный текст ответа и рассуждения.
+    func update(content newContent: String, reasoning newReasoning: String) {
+        guard messageID != nil else { return }
+        if newReasoning != reasoningText.target {
+            let kept = reasoningText.setTarget(newReasoning)
+            if Double(kept) < reasoningPace.shown { reasoningPace.shown = Double(kept); reasoning = reasoningText.shown }
+        }
+        if newContent != contentText.target {
+            if reasoningEndedAt == nil, !newContent.isEmpty { reasoningEndedAt = Date() }
+            let kept = contentText.setTarget(newContent)
+            if Double(kept) < contentPace.shown { contentPace.shown = Double(kept); content = contentText.shown }
+        }
+        startLinkIfNeeded()
+    }
+
+    /// Поток закончен. Текст допечатывается плавно и быстро; потом печать завершается.
+    func close(content finalContent: String, reasoning finalReasoning: String) {
+        guard messageID != nil else { return }
+        update(content: finalContent, reasoning: finalReasoning)
+        streamOpen = false
+        contentPace.sinceClose = 0
+        reasoningPace.sinceClose = 0
+        if contentText.isComplete && reasoningText.isComplete { finish() } else { startLinkIfNeeded() }
+    }
+
+    /// Остановить печать сразу и показать всё полученное.
+    func cancel() {
+        guard messageID != nil else { return }
+        contentText.revealAll(); reasoningText.revealAll()
+        content = contentText.shown; reasoning = reasoningText.shown
+        streamOpen = false
+        finish()
+    }
+
+    private func finish() {
+        stopLink()
+        guard let id = messageID else { return }
+        streamOpen = false
+        messageID = nil
+        grew.send()
+        onFinished?(id)
+    }
+
+    private func startLinkIfNeeded() {
+        guard link == nil, messageID != nil else { return }
+        guard !contentText.isComplete || !reasoningText.isComplete || !streamOpen else { return }
+        let link = CADisplayLink(target: DisplayLinkProxy(self), selector: #selector(DisplayLinkProxy.tick(_:)))
+        if #available(iOS 15.0, *) {
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        }
+        link.add(to: .main, forMode: .common)
+        self.link = link
+        lastFrame = 0
+    }
+
+    private func stopLink() {
+        link?.invalidate()
+        link = nil
+        lastFrame = 0
+    }
+
+    fileprivate func tick(_ link: CADisplayLink) {
+        let now = link.timestamp
+        let elapsed = lastFrame == 0 ? link.duration : now - lastFrame
+        lastFrame = now
+        var changed = false
+
+        if !reasoningText.isComplete {
+            let count = reasoningRule.step(state: &reasoningPace, available: reasoningText.targetCount,
+                                           elapsed: elapsed, streamOpen: streamOpen)
+            if count > reasoningText.shownCount {
+                reasoningText.reveal(upTo: count)
+                reasoning = reasoningText.shown
+                changed = true
+            }
+        }
+        // Ответ начинает печататься, когда рассуждение уже показано целиком:
+        // иначе ответ и хвост рассуждения печатались бы одновременно.
+        if reasoningText.isComplete || !streamOpen, !contentText.isComplete {
+            let count = rule.step(state: &contentPace, available: contentText.targetCount,
+                                  elapsed: elapsed, streamOpen: streamOpen)
+            if count > contentText.shownCount {
+                contentText.reveal(upTo: count)
+                content = contentText.shown
+                changed = true
+            }
+        }
+        if changed, now - lastGrowthSignal >= 0.08 {
+            lastGrowthSignal = now
+            grew.send()
+        }
+        if contentText.isComplete && reasoningText.isComplete {
+            if streamOpen {
+                // Всё полученное показано — ждём новых символов без таймера.
+                stopLink()
+            } else {
+                finish()
+            }
+        }
+    }
+}
+
+/// CADisplayLink держит цель сильной ссылкой — прокладка не даёт утечь печати.
+/// Ссылка добавлена в главный цикл, поэтому вызов всегда приходит в главном потоке.
+@MainActor
+private final class DisplayLinkProxy: NSObject {
+    weak var owner: TypingPacer?
+    init(_ owner: TypingPacer) { self.owner = owner }
+    @objc func tick(_ link: CADisplayLink) {
+        guard let owner else { link.invalidate(); return }
+        owner.tick(link)
     }
 }

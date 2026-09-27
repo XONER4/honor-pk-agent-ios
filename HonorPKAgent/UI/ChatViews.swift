@@ -935,9 +935,15 @@ private struct MessageTimeline: View {
         }
         .onChange(of: tail?.content.count ?? 0) { (_: Int) in
             guard followLatest, findQuery.isEmpty else { return }
-            // Прокрутка идёт и во время печати, и после неё: аниматор дописывает текст
-            // уже после конца потока, и без этого конец ответа уходил под клавиатуру.
-            scheduleStreamFollow(proxy: proxy)
+            scheduleStreamFollow(proxy: proxy, timeout: 1.5)
+        }
+        .onReceive(store.pacer.grew) { _ in
+            // Лента едет вслед за печатью. Раньше прокрутка была привязана к длине
+            // текста в модели чата, а во время печати модель не меняется, — поэтому
+            // ответ дописывался ниже края экрана, и казалось, что его нет, пока не
+            // перезайдёшь в чат.
+            guard followLatest, findQuery.isEmpty else { return }
+            proxy.scrollTo("message-bottom", anchor: .bottom)
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
             // Клавиатура поднялась — сразу подтягиваем низ переписки, чтобы конец
@@ -1039,8 +1045,9 @@ private struct MessageTimeline: View {
         ForEach(Array(messages.suffix(visibleLimit))) { (message: ChatMessage) in
             MessageRow(message: message,
                        streaming: store.isGenerating && message.id == tail?.id,
+                       typing: store.typingMessageID == message.id,
                        status: store.generationStatus,
-                       live: store.live,
+                       pacer: store.pacer,
                        settings: settings,
                        findQuery: findQuery,
                        selectedMatch: selectedMatch == message.id,
@@ -1052,7 +1059,6 @@ private struct MessageTimeline: View {
                        onSources: onSources,
                        onRetry: { store.regenerate(messageID: message.id) },
                        onEdit: { store.edit(messageID: message.id) },
-                       onStreamSettled: { stopStreamFollow() },
                        onFeedback: { (value: MessageFeedback?) in
                            store.setFeedback(messageID: message.id, feedback: value)
                        },
@@ -1198,10 +1204,14 @@ struct AttachmentThumbnail: View {
 private struct MessageRow: View, Equatable {
     let message: ChatMessage
     let streaming: Bool
+    /// Ответ сейчас печатается на экране. Печать может закончиться чуть позже
+    /// потока: хвост допечатывается плавно, а не вываливается целиком.
+    let typing: Bool
     let status: String?
-    /// Живой буфер печатаемого ответа: пока строка печатается, текст берётся отсюда,
-    /// поэтому перерисовывается только она, а не весь список сообщений.
-    @ObservedObject var live: StreamBuffer
+    /// Печать текущего ответа. Сама строка за ней не следит — следит только
+    /// вложенное представление живого ответа. Раньше живой буфер наблюдала каждая
+    /// строка чата, и каждый кусок текста перерисовывал все сообщения сразу.
+    let pacer: TypingPacer
     @ObservedObject var settings: AppSettings
     let findQuery: String
     let selectedMatch: Bool
@@ -1213,8 +1223,6 @@ private struct MessageRow: View, Equatable {
     let onSources: (SourceSelection) -> Void
     let onRetry: () -> Void
     let onEdit: () -> Void
-    /// Печать закончилась: сопровождение прокрутки можно останавливать.
-    let onStreamSettled: () -> Void
     let onFeedback: (MessageFeedback?) -> Void
     let onReaction: (String?) -> Void
     /// Нажатие варианта в блоке вопросов агента (пункт 33).
@@ -1230,26 +1238,15 @@ private struct MessageRow: View, Equatable {
 
     private func text(_ ru: String, _ en: String) -> String { settings.text(ru, en) }
 
-    /// Текст ответа для показа: пока строка печатается, берём его из живого буфера
-    /// (модель чата обновляется редко — так не перерисовывается весь список).
-    private var visibleContent: String {
-        if streaming, message.content.isEmpty { return live.content }
-        return message.content
-    }
-
-    /// Текст рассуждения для показа — по тому же принципу.
-    private var visibleReasoning: String {
-        if streaming, message.reasoning.isEmpty { return live.reasoning }
-        return message.reasoning
-    }
-
-    private var visibleReasoningSeconds: Int {
-        max(message.reasoningSeconds, live.reasoningSeconds)
-    }
+    /// Готовый текст ответа. Пока ответ печатается, его показывает `LiveAssistantBody`.
+    private var visibleContent: String { message.content }
+    private var visibleReasoning: String { message.reasoning }
+    private var visibleReasoningSeconds: Int { message.reasoningSeconds }
+    private var scale: Double { settings.fontScale * dynamicScale }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.message == rhs.message && lhs.streaming == rhs.streaming && lhs.status == rhs.status &&
-        lhs.findQuery == rhs.findQuery && lhs.selectedMatch == rhs.selectedMatch
+        lhs.message == rhs.message && lhs.streaming == rhs.streaming && lhs.typing == rhs.typing &&
+        lhs.status == rhs.status && lhs.findQuery == rhs.findQuery && lhs.selectedMatch == rhs.selectedMatch
     }
 
     var body: some View {
@@ -1337,66 +1334,31 @@ private struct MessageRow: View, Equatable {
 
     private var assistantMessage: some View {
         VStack(alignment: .leading, spacing: 13) {
-            if !visibleReasoning.isEmpty || (streaming && visibleContent.isEmpty) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { reasoningOpen.toggle() }
-                } label: {
-                    HStack(spacing: 7) {
-                        if streaming && visibleContent.isEmpty { ProgressView().scaleEffect(0.7).tint(HonorTheme.secondary) }
-                        Text(reasoningTitle).font(.system(size: 18 * settings.fontScale * dynamicScale, weight: .medium))
-                        Image(systemName: reasoningOpen ? "chevron.down" : "chevron.right").font(.system(size: 12, weight: .medium))
+            if typing {
+                // Ответ печатается: за печатью следит только это представление.
+                LiveAssistantBody(pacer: pacer, message: message, streaming: streaming, status: status,
+                                  settings: settings, scale: scale, findQuery: findQuery,
+                                  reasoningOpen: $reasoningOpen, onAnswer: onAnswer, onSources: onSources)
+            } else {
+                if !visibleReasoning.isEmpty || streaming {
+                    ReasoningDisclosureButton(title: reasoningTitle, open: $reasoningOpen, busy: streaming && visibleContent.isEmpty,
+                                              messageID: message.id, settings: settings, scale: scale)
+                    if reasoningOpen && !visibleReasoning.isEmpty {
+                        ReasoningDetail(message: message, reasoning: visibleReasoning, settings: settings,
+                                        scale: scale, findQuery: findQuery, onSources: onSources)
                     }
-                    .foregroundStyle(HonorTheme.secondary)
-                    .frame(minHeight: 30, alignment: .leading)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(reasoningTitle)
-                .accessibilityHint(text("Открыть или свернуть рассуждение", "Expand or collapse reasoning"))
-                .accessibilityIdentifier("message.reasoning." + message.id.uuidString)
-                .accessibilityValue(text(reasoningOpen ? "Развёрнуто" : "Свёрнуто", reasoningOpen ? "Expanded" : "Collapsed"))
-                if reasoningOpen && !visibleReasoning.isEmpty {
-                    if message.reasoningWasTranslated == true {
-                        Text(text("Переведено на русский", "Translated into Russian"))
-                            .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
-                            .accessibilityIdentifier("message.reasoning.translated." + message.id.uuidString)
-                    } else if message.reasoningStayedForeign {
-                        // Перевод не удался. Показываем текст как есть, но честно помечаем:
-                        // иначе выглядит как сбой приложения, а не как недоступный перевод.
-                        Text(text("Перевод недоступен, показан текст на языке модели",
-                                  "Translation unavailable, showing the model's own wording"))
-                            .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
-                            .accessibilityIdentifier("message.reasoning.foreign." + message.id.uuidString)
-                    }
-                    StreamText(target: visibleReasoning, streaming: streaming, baseRate: 42,
-                               onSettled: streaming ? onStreamSettled : nil) { visible in
-                        BlockMarkdownView(content: visible, fontSize: 16 * settings.fontScale * dynamicScale,
-                                          sources: [], findQuery: findQuery)
-                            .foregroundStyle(HonorTheme.secondary)
-                            .padding(.leading, 13)
-                            .overlay(alignment: .leading) { Rectangle().fill(HonorTheme.divider).frame(width: 2) }
-                    }
-                        .accessibilityIdentifier("message.reasoning.text." + message.id.uuidString)
-                }
-                if reasoningOpen && !message.sources.isEmpty { sourceProgress }
-            }
-            if !visibleContent.isEmpty {
-                // Плавный посимвольный вывод: текст растёт по кадрам, а не рывками
-                // на каждом обновлении стрима.
-                // Размер текста увеличен до 19 pt: на 17 pt ответ читался мелко.
-                StreamText(target: visibleContent, streaming: streaming, baseRate: 30,
-                           onSettled: streaming ? onStreamSettled : nil) { visible in
-                    BlockMarkdownView(content: visible, fontSize: 21 * settings.fontScale * dynamicScale,
+                if !visibleContent.isEmpty {
+                    BlockMarkdownView(content: visibleContent, fontSize: 21 * scale,
                                       sources: message.sources, findQuery: findQuery,
                                       onAnswer: onAnswer)
-                }
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel(message.content)
-                .accessibilityIdentifier("message.content." + message.id.uuidString)
-                // Карточки-превью ссылок из ответа (OG-теги).
-                if !streaming {
-                    LinkPreviewListView(content: message.content,
-                                        fontSize: 21 * settings.fontScale * dynamicScale)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel(message.content)
+                        .accessibilityIdentifier("message.content." + message.id.uuidString)
+                    // Карточки-превью ссылок из ответа (OG-теги).
+                    if !streaming {
+                        LinkPreviewListView(content: message.content, fontSize: 21 * scale)
+                    }
                 }
             }
             if let error = message.error {
@@ -1483,7 +1445,7 @@ private struct MessageRow: View, Equatable {
                                          "Answer sources, \(sourceSummary). Tap to open the pages."))
                 .accessibilityIdentifier("message.sources." + message.id.uuidString)
             }
-            if !streaming && !message.content.isEmpty {
+            if !streaming && !typing && !message.content.isEmpty {
                 HStack(spacing: 0) {
                     // Реакция-эмодзи: пользователь ставит её на ответ агента,
                     // агент видит её в контексте следующего запроса (пункт 38 ТЗ).
@@ -1576,37 +1538,21 @@ private struct MessageRow: View, Equatable {
         }
     }
 
-    private var sourceProgress: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button { onSources(SourceSelection(sources: message.sources, readOnly: false)) } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: "magnifyingglass")
-                    Text(text("Найдено \(message.sources.count) веб-страниц", "Found \(message.sources.count) web pages"))
-                    SourceSiteMarks(sources: message.sources)
-                }.frame(minHeight: 36)
-            }.accessibilityIdentifier("message.sources.found." + message.id.uuidString)
-            Button { onSources(SourceSelection(sources: message.sources, readOnly: true)) } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: "doc.text")
-                    Text(text("Прочитано \(message.sources.filter { $0.content != nil }.count) страниц", "Read \(message.sources.filter { $0.content != nil }.count) pages"))
-                }.frame(minHeight: 36)
-            }.accessibilityIdentifier("message.sources.read." + message.id.uuidString)
-        }.font(.system(size: 14)).foregroundStyle(HonorTheme.secondary).buttonStyle(.plain)
-    }
-
     private var reasoningTitle: String {
         if streaming && visibleContent.isEmpty {
-            // Пока текста нет, показываем состояние и идущий счётчик: раньше здесь было
-            // просто «Размышляю…», и при долгом ожидании первого токена это выглядело
-            // как зависание. Счётчик растёт, значит приложение работает.
             let base = status ?? text("Размышляю…", "Thinking…")
             let seconds = visibleReasoningSeconds
             guard seconds > 0 else { return base }
             return base + " " + Self.secondsText(seconds, russian: settings.language == .russian)
         }
-        if message.reasoningWasTranslated == true { return text("Описание рассуждения · перевод", "Reasoning description · translation") }
-        let seconds = max(visibleReasoningSeconds, 1)
-        return text("Размышлял \(seconds) \(Self.secondsWord(seconds))", "Thought for \(seconds)s")
+        return Self.finishedReasoningTitle(seconds: visibleReasoningSeconds,
+                                           translated: message.reasoningWasTranslated == true, settings: settings)
+    }
+
+    static func finishedReasoningTitle(seconds: Int, translated: Bool, settings: AppSettings) -> String {
+        if translated { return settings.text("Описание рассуждения · перевод", "Reasoning description · translation") }
+        let value = max(seconds, 1)
+        return settings.text("Размышлял \(value) \(secondsWord(value))", "Thought for \(value)s")
     }
 
     /// «1 секунду», «2 секунды», «5 секунд» — правильная форма для счётчика.
@@ -1619,6 +1565,255 @@ private struct MessageRow: View, Equatable {
 
     static func secondsText(_ seconds: Int, russian: Bool) -> String {
         russian ? "\(seconds) \(secondsWord(seconds))" : "\(seconds)s"
+    }
+}
+
+/// Ответ, который печатается прямо сейчас.
+///
+/// Только это представление следит за печатью (`TypingPacer`): каждый кадр
+/// перерисовывается одна строка чата, а не весь список сообщений.
+private struct LiveAssistantBody: View {
+    @ObservedObject var pacer: TypingPacer
+    let message: ChatMessage
+    let streaming: Bool
+    let status: String?
+    let settings: AppSettings
+    let scale: Double
+    let findQuery: String
+    @Binding var reasoningOpen: Bool
+    let onAnswer: (String) -> Bool
+    let onSources: (SourceSelection) -> Void
+
+    /// Ответ ещё не начался: идёт поиск, ожидание или рассуждение.
+    private var waitingForAnswer: Bool { pacer.content.isEmpty && streaming }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            if waitingForAnswer {
+                ThinkingHeader(status: status ?? settings.text("Размышляю…", "Thinking…"),
+                               startedAt: pacer.startedAt, settings: settings, scale: scale,
+                               messageID: message.id)
+                if !pacer.reasoning.isEmpty {
+                    // Ход мысли виден, пока модель думает: последние строки в окошке,
+                    // которое плавно едет вслед за текстом.
+                    ThinkingPreview(text: pacer.reasoning, fontSize: 15 * scale)
+                        .transition(.opacity)
+                }
+            } else if !pacer.reasoning.isEmpty {
+                ReasoningDisclosureButton(title: finishedTitle, open: $reasoningOpen, busy: false,
+                                          messageID: message.id, settings: settings, scale: scale)
+                if reasoningOpen {
+                    ReasoningDetail(message: message, reasoning: pacer.reasoning, settings: settings,
+                                    scale: scale, findQuery: findQuery, onSources: onSources)
+                }
+            }
+            if !pacer.content.isEmpty {
+                BlockMarkdownView(content: LiveMarkdown.displayable(pacer.content), fontSize: 21 * scale,
+                                  sources: message.sources, findQuery: findQuery,
+                                  onAnswer: onAnswer, streaming: true)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(pacer.content)
+                    .accessibilityIdentifier("message.content." + message.id.uuidString)
+            }
+        }
+        // Когда начинается ответ, окошко рассуждения мягко сворачивается,
+        // а не исчезает скачком.
+        .animation(.easeInOut(duration: 0.25), value: waitingForAnswer)
+    }
+
+    private var finishedTitle: String {
+        var seconds = message.reasoningSeconds
+        if seconds <= 0 {
+            seconds = Int(((pacer.reasoningEndedAt ?? Date()).timeIntervalSince(pacer.startedAt)).rounded())
+        }
+        return MessageRow.finishedReasoningTitle(seconds: seconds,
+                                                 translated: message.reasoningWasTranslated == true,
+                                                 settings: settings)
+    }
+}
+
+/// Заголовок, пока ответа ещё нет: индикатор и живой счётчик секунд.
+/// Счётчик идёт от собственного таймера, а не от кусков потока: раньше при долгом
+/// ожидании первого символа число стояло на месте, и казалось, что всё зависло.
+private struct ThinkingHeader: View {
+    let status: String
+    let startedAt: Date
+    let settings: AppSettings
+    let scale: Double
+    let messageID: UUID
+
+    var body: some View {
+        TimelineView(.periodic(from: startedAt, by: 1)) { context in
+            let seconds = max(0, Int(context.date.timeIntervalSince(startedAt)))
+            HStack(spacing: 8) {
+                ProgressView()
+                    .scaleEffect(0.75)
+                    .tint(HonorTheme.secondary)
+                Text(seconds > 0
+                     ? status + " " + MessageRow.secondsText(seconds, russian: settings.language == .russian)
+                     : status)
+                    .font(.system(size: 17 * scale, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(HonorTheme.secondary)
+            }
+            .frame(minHeight: 30, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("message.reasoning." + messageID.uuidString)
+    }
+}
+
+/// Живой ход мысли: последние строки рассуждения в невысоком окошке.
+///
+/// Показывается хвост текста по абзацам (абзац не режется посередине, поэтому
+/// строки не перескакивают), верх мягко растворяется, низ всегда на виду.
+private struct ThinkingPreview: View {
+    let text: String
+    let fontSize: Double
+    private static let maximumHeight: CGFloat = 136
+
+    private struct Paragraph: Identifiable {
+        /// Номер абзаца от начала текста: устойчив, пока текст растёт.
+        let id: Int
+        let text: String
+    }
+
+    private var paragraphs: [Paragraph] {
+        let parts = text.split(separator: "\n", omittingEmptySubsequences: true)
+        var picked: [Paragraph] = []
+        var total = 0
+        for (offset, part) in parts.enumerated().reversed() {
+            let cleaned = part
+                .replacingOccurrences(of: "**", with: "")
+                .replacingOccurrences(of: "`", with: "")
+                .trimmingCharacters(in: .whitespaces)
+            guard !cleaned.isEmpty else { continue }
+            picked.insert(Paragraph(id: offset, text: cleaned), at: 0)
+            total += cleaned.count
+            if total >= 900 { break }
+        }
+        return picked
+    }
+
+    var body: some View {
+        let long = text.count > 220
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(paragraphs) { paragraph in
+                Text(paragraph.text)
+                    .font(.system(size: fontSize))
+                    .lineSpacing(3)
+                    .foregroundStyle(HonorTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(maxHeight: Self.maximumHeight, alignment: .bottom)
+        .clipped()
+        .mask(
+            LinearGradient(stops: [
+                .init(color: long ? .clear : .black, location: 0),
+                .init(color: .black, location: long ? 0.3 : 0),
+                .init(color: .black, location: 1)
+            ], startPoint: .top, endPoint: .bottom)
+        )
+        .padding(.leading, 13)
+        .overlay(alignment: .leading) { Rectangle().fill(HonorTheme.divider).frame(width: 2) }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Кнопка «Размышлял N секунд»: открывает и сворачивает рассуждение.
+private struct ReasoningDisclosureButton: View {
+    let title: String
+    @Binding var open: Bool
+    let busy: Bool
+    let messageID: UUID
+    let settings: AppSettings
+    let scale: Double
+
+    var body: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { open.toggle() }
+        } label: {
+            HStack(spacing: 7) {
+                if busy {
+                    ProgressView().scaleEffect(0.7).tint(HonorTheme.secondary)
+                } else {
+                    Image(systemName: "sparkles").font(.system(size: 13, weight: .medium))
+                }
+                Text(title).font(.system(size: 17 * scale, weight: .medium))
+                Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(HonorTheme.secondary)
+            .frame(minHeight: 30, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityHint(settings.text("Открыть или свернуть рассуждение", "Expand or collapse reasoning"))
+        .accessibilityIdentifier("message.reasoning." + messageID.uuidString)
+        .accessibilityValue(settings.text(open ? "Развёрнуто" : "Свёрнуто", open ? "Expanded" : "Collapsed"))
+    }
+}
+
+/// Развёрнутое рассуждение: пометки о переводе, сам текст и прочитанные источники.
+private struct ReasoningDetail: View {
+    let message: ChatMessage
+    let reasoning: String
+    let settings: AppSettings
+    let scale: Double
+    let findQuery: String
+    let onSources: (SourceSelection) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if message.reasoningWasTranslated == true {
+                Text(settings.text("Переведено на русский", "Translated into Russian"))
+                    .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
+                    .accessibilityIdentifier("message.reasoning.translated." + message.id.uuidString)
+            } else if message.reasoningStayedForeign {
+                // Перевод не удался. Показываем текст как есть, но честно помечаем.
+                Text(settings.text("Перевод недоступен, показан текст на языке модели",
+                                   "Translation unavailable, showing the model's own wording"))
+                    .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
+                    .accessibilityIdentifier("message.reasoning.foreign." + message.id.uuidString)
+            }
+            BlockMarkdownView(content: reasoning, fontSize: 16 * scale, sources: [], findQuery: findQuery)
+                .foregroundStyle(HonorTheme.secondary)
+                .padding(.leading, 13)
+                .overlay(alignment: .leading) { Rectangle().fill(HonorTheme.divider).frame(width: 2) }
+                .accessibilityIdentifier("message.reasoning.text." + message.id.uuidString)
+            if !message.sources.isEmpty {
+                SourceProgressView(message: message, settings: settings, onSources: onSources)
+            }
+        }
+        .transition(.opacity)
+    }
+}
+
+/// «Найдено N веб-страниц» и «Прочитано N страниц» внутри рассуждения.
+private struct SourceProgressView: View {
+    let message: ChatMessage
+    let settings: AppSettings
+    let onSources: (SourceSelection) -> Void
+
+    var body: some View {
+        let read = message.sources.filter { $0.content != nil }.count
+        VStack(alignment: .leading, spacing: 8) {
+            Button { onSources(SourceSelection(sources: message.sources, readOnly: false)) } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass")
+                    Text(settings.text("Найдено \(message.sources.count) веб-страниц", "Found \(message.sources.count) web pages"))
+                    SourceSiteMarks(sources: message.sources)
+                }.frame(minHeight: 36)
+            }.accessibilityIdentifier("message.sources.found." + message.id.uuidString)
+            Button { onSources(SourceSelection(sources: message.sources, readOnly: true)) } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "doc.text")
+                    Text(settings.text("Прочитано \(read) страниц", "Read \(read) pages"))
+                }.frame(minHeight: 36)
+            }.accessibilityIdentifier("message.sources.read." + message.id.uuidString)
+        }.font(.system(size: 14)).foregroundStyle(HonorTheme.secondary).buttonStyle(.plain)
     }
 }
 

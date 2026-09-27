@@ -496,56 +496,98 @@ final class HonorPKAgentTests: XCTestCase {
         XCTAssertTrue(store.errorMessage != nil || hasError || hasText)
     }
 
-    func testTypingPaceDoesNotDoubleTheRequestedSpeed() {
-        // Заказчик просил печатать медленнее и плавнее. Раньше шаг округлялся вверх
-        // и был не меньше одного символа за кадр, поэтому на 60 кадрах в секунду
-        // текст шёл со скоростью 60 символов в секунду вместо заданных 30 —
-        // ровно вдвое быстрее. Здесь проверяем, что дробный остаток копится.
-        var pace = StreamPace(baseRate: 30, comfortableLag: 320)
+    func testTypingPaceIsSmoothAndNeverJumps() {
+        // Заказчик просил, чтобы текст шёл плавно, без рывков. Раньше скорость
+        // переключалась ступенями (×1,8 → ×3 → ×6 → ×10), и печать то ползла, то
+        // срывалась вперёд. Теперь скорость меняется непрерывно: соседние кадры
+        // показывают почти одинаковое число символов.
+        let pace = StreamPace()
         var state = StreamPaceState()
-        var revealed = 0
-        var frames = 0
-        let total = 300
         let frame = 1.0 / 60.0
-        // Сервер уже отдал весь текст: печатает только аниматор.
-        while revealed < total, frames < 1200 {
-            frames += 1
-            revealed += pace.step(state: &state, lag: total - revealed,
-                                  elapsed: frame, streamEnded: false)
+        var available = 0
+        var shown = 0
+        var steps: [Int] = []
+        // Сервис присылает текст пачками по 60 символов каждые 0,4 с (≈150 символов/с).
+        for index in 0..<(60 * 8) {
+            if index % 24 == 0 { available += 60 }
+            let now = pace.step(state: &state, available: available, elapsed: frame, streamOpen: true)
+            XCTAssertGreaterThanOrEqual(now, shown, "Видимый текст не может уменьшаться")
+            steps.append(now - shown)
+            shown = now
         }
-        let seconds = Double(frames) * frame
-        XCTAssertEqual(revealed, total)
-        // Ответ на 300 символов не может «выстрелить» быстрее, чем за 9 секунд:
-        // это и есть требуемая заказчиком плавность.
-        XCTAssertGreaterThanOrEqual(seconds, 6.0, "Печать идёт быстрее заданной скорости: \(seconds) с")
-        // …и не должен тянуться бесконечно.
-        XCTAssertLessThanOrEqual(seconds, 20.0, "Печать идёт слишком медленно: \(seconds) с")
+        // Первый кадр — не больше пары символов: ответ не «выстреливает».
+        XCTAssertLessThanOrEqual(steps.first ?? 0, 2, "Ответ начинается рывком")
+        // После разгона (первые 2 с) шаг между соседними кадрами почти не меняется.
+        let settled = Array(steps.dropFirst(120))
+        let jumps = zip(settled, settled.dropFirst()).map { abs($0 - $1) }
+        XCTAssertLessThanOrEqual(jumps.max() ?? 0, 2, "Скорость печати скачет: \(jumps.max() ?? 0) символов между кадрами")
+        // Печать не отстаёт от потока больше чем на пару секунд.
+        XCTAssertGreaterThan(Double(shown), Double(available) - 150 * 2, "Печать безнадёжно отстала: \(shown) из \(available)")
     }
 
-    func testTypingPaceNeverJumpsAtTheStartAndFinishesTheTail() {
-        // Первый кадр раньше вываливал восьмую часть ответа: счётчик «буфер молчит»
-        // начинался с бесконечности, и первый же кадр попадал в режим догона.
-        var pace = StreamPace(baseRate: 30, comfortableLag: 320)
+    func testTypingPaceFinishesTheTailQuicklyAfterTheStreamEnds() {
+        // Хвост ответа не должен «висеть»: после конца потока остаток допечатывается
+        // быстро и гарантированно — не дольше maximumTail секунд.
+        let pace = StreamPace()
         var state = StreamPaceState()
-        let total = 900
         let frame = 1.0 / 60.0
-        let first = pace.step(state: &state, lag: total, elapsed: frame, streamEnded: false)
-        XCTAssertLessThanOrEqual(first, 3, "Ответ начинается рывком: \(first) символов за кадр")
-
-        // Хвост не должен «висеть»: после конца потока остаток дописывается быстро.
-        var revealed = first
-        var frames = 1
-        var ended = false
-        while revealed < total, frames < 1800 {
+        // Весь ответ пришёл разом, поток закрыт.
+        let total = 2400
+        var shown = 0
+        var frames = 0
+        while shown < total, frames < 600 {
             frames += 1
-            ended = frames > 300   // поток закончился на пятой секунде
-            revealed += pace.step(state: &state, lag: total - revealed,
-                                  elapsed: frame, streamEnded: ended)
+            shown = pace.step(state: &state, available: total, elapsed: frame, streamOpen: false)
         }
-        XCTAssertEqual(revealed, total, "Хвост ответа так и не допечатался")
-        let afterStreamEnd = Double(frames - 300) * frame
-        XCTAssertLessThanOrEqual(afterStreamEnd, 8.0,
-                                 "Хвост дописывается слишком долго: \(afterStreamEnd) с")
+        XCTAssertEqual(shown, total, "Хвост ответа так и не допечатался")
+        XCTAssertLessThanOrEqual(Double(frames) * frame, pace.maximumTail + 0.05,
+                                 "Хвост дописывается слишком долго: \(Double(frames) * frame) с")
+        // Короткий ответ из одного куска всё равно печатается, а не вываливается.
+        var short = StreamPaceState()
+        let first = pace.step(state: &short, available: 40, elapsed: frame, streamOpen: true)
+        XCTAssertLessThanOrEqual(first, 2)
+    }
+
+    func testTypedTextGrowsAndSurvivesReplacement() {
+        // Печатаемый текст: показанная часть — всегда начало полученной. Если текст
+        // заменили (перевод, очистка служебной строки), остаётся общее начало,
+        // а не пустой экран.
+        var text = TypedText()
+        text.setTarget("Привет, мир")
+        text.reveal(upTo: 7)
+        XCTAssertEqual(text.shown, "Привет,")
+        text.setTarget("Привет, мир! Как дела? 👍🏽")
+        XCTAssertEqual(text.shown, "Привет,")
+        text.reveal(upTo: 1000)
+        XCTAssertEqual(text.shown, "Привет, мир! Как дела? 👍🏽")
+        XCTAssertTrue(text.isComplete)
+        text.setTarget("Привет! Другой ответ")
+        XCTAssertEqual(text.shown, "Привет")
+        XCTAssertFalse(text.isComplete)
+        text.revealAll()
+        XCTAssertEqual(text.shown, "Привет! Другой ответ")
+        text.setTarget("")
+        XCTAssertEqual(text.shown, "")
+    }
+
+    @MainActor
+    func testPacerAlwaysDeliversTheWholeAnswer() async throws {
+        // Главная жалоба: итоговый ответ не дописывался, пока не перезайдёшь.
+        // Печать обязана довести текст до конца и сообщить о завершении.
+        let pacer = TypingPacer()
+        let id = UUID()
+        var finished: UUID?
+        pacer.onFinished = { finished = $0 }
+        pacer.begin(messageID: id)
+        pacer.update(content: "Первая часть ответа. ", reasoning: "Думаю.")
+        pacer.close(content: "Первая часть ответа. Хвост.", reasoning: "Думаю.")
+        for _ in 0..<400 where finished == nil {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(finished, id, "Печать не завершилась")
+        XCTAssertEqual(pacer.content, "Первая часть ответа. Хвост.")
+        XCTAssertEqual(pacer.reasoning, "Думаю.")
+        XCTAssertNil(pacer.messageID)
     }
 
     @MainActor
@@ -609,6 +651,37 @@ final class HonorPKAgentTests: XCTestCase {
     }
 
     @MainActor
+    @MainActor
+    func testToolChainRunsListThenReadAndPrintsTheFinalAnswer() async throws {
+        // Цепочка «list_chats → read_chat → ответ». Раньше второй проход шёл без
+        // инструментов, поэтому read_chat после списка вызвать было нельзя, а сам
+        // второй запрос уходил без сообщения с вызовом и отклонялся сервисом.
+        let client = ToolChainClient()
+        let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"), client: client,
+                              storageURL: temporaryHistory())
+        var vacation = Conversation(title: "Отпуск", messages: [
+            ChatMessage(role: .user, content: "Мы отдыхали в Сочи 12 дней."),
+            ChatMessage(role: .assistant, content: "Запомнил: 12 дней в Сочи.")
+        ])
+        vacation.pinned = true
+        store.conversations = [vacation]
+        store.newChat()
+        store.draft = "Сколько дней мы отдыхали? Посмотри в моём чате про отпуск."
+        store.send()
+        try await waitUntilIdle(store)
+        XCTAssertEqual(client.requests.count, 3, "Ожидались три прохода: список, чтение, ответ")
+        let second = try XCTUnwrap(client.requests.dropFirst().first)
+        XCTAssertTrue(second.contains { $0.role == .assistant && $0.toolCallsRaw.contains("list_chats") },
+                      "Во втором проходе нет сообщения с вызовом list_chats")
+        XCTAssertTrue(second.contains { $0.role == .tool && $0.toolCallID == "call_list" })
+        let third = try XCTUnwrap(client.requests.last)
+        XCTAssertTrue(third.contains { $0.role == .tool && $0.content.contains("12 дней") },
+                      "read_chat не вернул содержимое чата: \(third.map(\.content))")
+        let answer = try XCTUnwrap(store.messages.last)
+        XCTAssertEqual(answer.content, "Вы отдыхали в Сочи 12 дней.")
+        XCTAssertNil(answer.error)
+    }
+
     private func waitUntilIdle(_ store: ChatStore) async throws {
         // Раннер в CI медленный: генерация может занять секунды, поэтому ждём до 30 с.
         for _ in 0..<600 {
@@ -672,6 +745,38 @@ private struct ImmediateClient: DeepSeekStreaming {
                 searchContext: String, tools: [[String: Any]]?) -> AsyncThrowingStream<DeepSeekDelta, Error> {
         AsyncThrowingStream { continuation in
             events.forEach { continuation.yield($0) }
+            continuation.finish()
+        }
+    }
+}
+
+/// Модель, которая сначала просит список чатов, потом читает чат (номер строкой),
+/// потом отвечает.
+private final class ToolChainClient: DeepSeekStreaming {
+    var requests: [[ChatMessage]] = []
+    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
+                searchContext: String, tools: [[String: Any]]?) -> AsyncThrowingStream<DeepSeekDelta, Error> {
+        stream(messages: messages, thinking: thinking, systemInstruction: systemInstruction,
+               searchContext: searchContext, tools: tools, forceAnswer: false)
+    }
+    func stream(messages: [ChatMessage], thinking: Bool, systemInstruction: String,
+                searchContext: String, tools: [[String: Any]]?, forceAnswer: Bool) -> AsyncThrowingStream<DeepSeekDelta, Error> {
+        requests.append(messages)
+        let round = requests.count
+        return AsyncThrowingStream { continuation in
+            switch round {
+            case 1:
+                continuation.yield(DeepSeekDelta(toolCalls: [ToolCallRequest(id: "call_list", name: "list_chats", arguments: "", index: 0)]))
+                continuation.yield(DeepSeekDelta(toolCalls: [ToolCallRequest(id: "", name: "", arguments: "{}", index: 0)]))
+                continuation.yield(DeepSeekDelta(finishReason: "tool_calls"))
+            case 2:
+                continuation.yield(DeepSeekDelta(toolCalls: [ToolCallRequest(id: "call_read", name: "read_chat", arguments: "{\"number\": \"1\"}", index: 0)]))
+                continuation.yield(DeepSeekDelta(finishReason: "tool_calls"))
+            default:
+                continuation.yield(DeepSeekDelta(content: "Вы отдыхали в Сочи "))
+                continuation.yield(DeepSeekDelta(content: "12 дней."))
+                continuation.yield(DeepSeekDelta(finishReason: "stop"))
+            }
             continuation.finish()
         }
     }

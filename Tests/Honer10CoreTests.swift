@@ -597,6 +597,97 @@ final class Honer10CoreTests: XCTestCase {
                      "Без инструментов reasoning_content не нужен")
     }
 
+    @MainActor
+    func testToolCallMessageWithoutTextIsSentAndFinalPassForbidsNewCalls() throws {
+        // Сообщение ассистента с вызовом инструмента обычно не несёт текста. Раньше
+        // оно выбрасывалось из запроса как «пустое», результаты инструмента (роль tool)
+        // оставались без вызова, сервис отклонял второй проход, и ответ приходил
+        // запасным путём — целиком и с большой задержкой.
+        let client = DeepSeekClient(configuration: .init(apiKey: "test"))
+        var call = ChatMessage(role: .assistant)
+        call.reasoning = "Нужно посмотреть список чатов."
+        call.toolCallsRaw = ChatStore.toolCallsJSON([ToolCallRequest(id: "call_1", name: HonerTool.listChats.rawValue, arguments: "{}")])
+        var result = ChatMessage(role: .tool)
+        result.content = "Чаты пользователя: 1. «Отпуск»"
+        result.toolCallID = "call_1"
+        let messages = [ChatMessage(role: .user, content: "Какие у меня чаты?"), call, result]
+        let request = try client.makeRequest(messages: messages, thinking: true, systemInstruction: "",
+                                             searchContext: "[1] Источник", tools: HonerTool.apiSchemas,
+                                             forceAnswer: true)
+        let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+        let payload = try XCTUnwrap(body["messages"] as? [[String: Any]])
+        XCTAssertEqual(payload.compactMap { $0["role"] as? String }, ["system", "user", "user", "assistant", "tool"],
+                       "Порядок ходов нарушен: результаты поиска должны идти сразу за вопросом")
+        XCTAssertTrue((payload[2]["content"] as? String ?? "").contains("Результаты поиска"))
+        XCTAssertNotNil(payload[3]["tool_calls"], "Вызов инструмента потерялся")
+        XCTAssertEqual(payload[3]["reasoning_content"] as? String, "Нужно посмотреть список чатов.")
+        XCTAssertEqual(payload[4]["tool_call_id"] as? String, "call_1")
+        XCTAssertEqual(body["tool_choice"] as? String, "none", "Финальный проход обязан запрещать новые вызовы")
+        let normal = try client.makeRequest(messages: messages, thinking: false, systemInstruction: "",
+                                            searchContext: "", tools: HonerTool.apiSchemas)
+        let normalBody = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(normal.httpBody)) as? [String: Any])
+        XCTAssertEqual(normalBody["tool_choice"] as? String, "auto")
+    }
+
+    @MainActor
+    func testToolArgumentsAreReadTolerantly() throws {
+        // Модель присылает номер чата то числом, то строкой. Строгое `as? Int`
+        // отвечало «Не передан номер чата» вместо содержимого чата.
+        XCTAssertEqual(ToolArgument.int(3), 3)
+        XCTAssertEqual(ToolArgument.int("3"), 3)
+        XCTAssertEqual(ToolArgument.int("№2"), 2)
+        XCTAssertEqual(ToolArgument.int(2.0), 2)
+        XCTAssertNil(ToolArgument.int("второй"))
+        XCTAssertEqual(ToolArgument.bool("да"), true)
+        XCTAssertEqual(ToolArgument.bool("false"), false)
+        XCTAssertEqual(ToolArgument.bool(true), true)
+        XCTAssertEqual(ToolArgument.string(true), "true")
+        let chat = ChatOverview(number: 1, title: "Отпуск", messageCount: 1, lastMessageAt: nil,
+                                pinned: false, archived: false, preview: "")
+        let context = ToolExecutionContext(chats: [chat], transcripts: [1: [ChatTranscriptLine(role: "user", text: "Мы отдыхали 12 дней")]])
+        let read = ToolCallRequest(id: "c", name: HonerTool.readChat.rawValue, arguments: "{\"number\": \"1\"}")
+        XCTAssertTrue(ToolExecutor.executeExtended(read, context: context).content.contains("12 дней"))
+    }
+
+    func testLiveMarkdownHidesHalfTypedMarkupAndTablesGrowRowByRow() throws {
+        // Пока ответ печатается, незакрытая разметка не должна мелькать сырыми
+        // символами, а таблица не должна показываться палочками и потом прыгать.
+        XCTAssertEqual(LiveMarkdown.displayable("Это **важ"), "Это важ")
+        XCTAssertEqual(LiveMarkdown.displayable("Это **важно**"), "Это **важно**")
+        XCTAssertEqual(LiveMarkdown.displayable("Смотри [сайт](https://exa"), "Смотри ")
+        XCTAssertEqual(LiveMarkdown.displayable("Смотри [сайт](https://example.com)"), "Смотри [сайт](https://example.com)")
+        XCTAssertEqual(LiveMarkdown.displayable("Текст\n| Модель | Го"), "Текст")
+        XCTAssertEqual(LiveMarkdown.displayable("Текст\n##"), "Текст")
+        XCTAssertEqual(LiveMarkdown.displayable("{color:red}крас"), "крас")
+        XCTAssertEqual(LiveMarkdown.displayable("```swift\nlet a = **"), "```swift\nlet a = **")
+        XCTAssertEqual(LiveMarkdown.displayable("Готово.\n"), "Готово.\n")
+
+        let growing = MarkdownBlockParser.parse("Вот таблица:\n| Модель | Год |\n|---|---|\n| Motorola | 1983 |\n| IBM Si",
+                                                streaming: true)
+        guard case .table(let headers, _, let rows)? = growing.last?.kind else {
+            return XCTFail("Растущая таблица должна рисоваться таблицей: \(growing.map { "\($0.kind)" })")
+        }
+        XCTAssertEqual(headers, ["Модель", "Год"])
+        XCTAssertEqual(rows, [["Motorola", "1983"]], "Недописанная строка не должна появляться в таблице")
+        XCTAssertFalse(growing.contains { $0.text.contains("|") }, "Палочки таблицы попали в текст")
+        let complete = MarkdownBlockParser.parse("| Модель | Год |\n|---|---|\n| Motorola | 1983 |\n| IBM Simon | 1992 |",
+                                                 streaming: true)
+        guard case .table(_, _, let completeRows)? = complete.last?.kind else { return XCTFail("Таблица пропала") }
+        XCTAssertEqual(completeRows.count, 2)
+    }
+
+    @MainActor
+    func testQuestionsAboutHistoryTopicsDoNotPullOtherChats() throws {
+        // «Расскажи историю Рима» — не вопрос про чаты. Раньше из-за слова «истори»
+        // к запросу приклеивалась переписка чужих чатов, и модель путала темы.
+        XCTAssertFalse(ChatStore.queryMentionsChats(queryText: "Расскажи историю Рима", recentContext: ""))
+        XCTAssertFalse(ChatStore.queryMentionsChats(queryText: "Как писали письма в XIX веке?", recentContext: ""))
+        XCTAssertTrue(ChatStore.queryMentionsChats(queryText: "Что я писал в другом чате?", recentContext: ""))
+        XCTAssertTrue(RussianTextPolicy.isMostlyForeign("Explain how the sky gets its color"))
+        XCTAssertFalse(RussianTextPolicy.isMostlyForeign("Объясни, почему небо голубое"))
+        XCTAssertFalse(RussianTextPolicy.isMostlyForeign("ок"))
+    }
+
     private func historyURL() -> URL { FileManager.default.temporaryDirectory.appendingPathComponent("Honer10-\(UUID()).json") }
 }
 

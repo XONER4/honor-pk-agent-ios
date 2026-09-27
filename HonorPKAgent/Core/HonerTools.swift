@@ -193,6 +193,44 @@ struct ToolCallRequest: Equatable, Sendable {
     }
 }
 
+/// Терпимое чтение аргументов инструмента.
+///
+/// Модель не всегда соблюдает типы из схемы: номер чата приходит то числом, то
+/// строкой («3»), флаг — то `true`, то «true» или «да». Раньше строгое `as? Int`
+/// отвергало такие вызовы, и модель получала «Не передан номер чата» вместо данных.
+enum ToolArgument {
+    static func int(_ value: Any?) -> Int? {
+        if let number = value as? Int { return number }
+        if let number = value as? Double, number.rounded() == number { return Int(number) }
+        if let text = value as? String {
+            let digits = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "#№. "))
+            return Int(digits)
+        }
+        return nil
+    }
+
+    static func bool(_ value: Any?) -> Bool? {
+        if let flag = value as? Bool { return flag }
+        if let number = value as? Int { return number != 0 }
+        if let text = value as? String {
+            switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "true", "1", "yes", "да", "вкл", "on": return true
+            case "false", "0", "no", "нет", "выкл", "off": return false
+            default: return nil
+            }
+        }
+        return nil
+    }
+
+    static func string(_ value: Any?) -> String? {
+        if let text = value as? String { return text }
+        if let flag = value as? Bool { return flag ? "true" : "false" }
+        if let number = value as? NSNumber { return number.stringValue }
+        return nil
+    }
+}
+
 /// Обзор одного чата для списка, который видит модель.
 struct ChatOverview: Sendable {
     var number: Int
@@ -326,7 +364,7 @@ enum ToolExecutor {
                                   + "\n\nЧтобы прочитать переписку чата, вызови read_chat с его номером.")
 
         case .readChat:
-            guard let number = arguments["number"] as? Int else {
+            guard let number = ToolArgument.int(arguments["number"]) else {
                 return ToolCallResult(callID: call.id, name: call.name, content: "Не передан номер чата.")
             }
             guard let chat = context.chats.first(where: { $0.number == number }),
@@ -334,7 +372,7 @@ enum ToolExecutor {
                 return ToolCallResult(callID: call.id, name: call.name,
                                       content: "Чат с номером \(number) не найден. Сначала вызови list_chats.")
             }
-            let limit = max(1, min((arguments["messages"] as? Int) ?? 40, 120))
+            let limit = max(1, min(ToolArgument.int(arguments["messages"]) ?? 40, 120))
             let slice = transcript.suffix(limit)
             guard !slice.isEmpty else {
                 return ToolCallResult(callID: call.id, name: call.name, content: "Чат «\(chat.title)» пуст.")
@@ -347,8 +385,8 @@ enum ToolExecutor {
                                   content: "Чат «\(chat.title)», последние \(slice.count) сообщений:\n\(body)")
 
         case .renameChat:
-            guard let number = arguments["number"] as? Int,
-                  let title = arguments["title"] as? String,
+            guard let number = ToolArgument.int(arguments["number"]),
+                  let title = ToolArgument.string(arguments["title"]),
                   !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return ToolCallResult(callID: call.id, name: call.name, content: "Нужны номер чата и новое название.")
             }
@@ -361,8 +399,8 @@ enum ToolExecutor {
                                   effect: .renameChat(id: chat.id, title: title))
 
         case .pinChat:
-            guard let number = arguments["number"] as? Int,
-                  let pinned = arguments["pinned"] as? Bool else {
+            guard let number = ToolArgument.int(arguments["number"]),
+                  let pinned = ToolArgument.bool(arguments["pinned"]) else {
                 return ToolCallResult(callID: call.id, name: call.name, content: "Нужны номер чата и признак закрепления.")
             }
             guard let chat = context.chats.first(where: { $0.number == number }) else {
@@ -374,8 +412,8 @@ enum ToolExecutor {
                                   effect: .pinChat(id: chat.id, pinned: pinned))
 
         case .sendToChat:
-            guard let number = arguments["number"] as? Int,
-                  let text = arguments["text"] as? String,
+            guard let number = ToolArgument.int(arguments["number"]),
+                  let text = ToolArgument.string(arguments["text"]),
                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return ToolCallResult(callID: call.id, name: call.name, content: "Нужны номер чата и текст сообщения.")
             }
@@ -397,8 +435,8 @@ enum ToolExecutor {
                                   effect: .saveMemory(text))
 
         case .setAppSetting:
-            guard let name = arguments["name"] as? String,
-                  let value = arguments["value"] as? String else {
+            guard let name = ToolArgument.string(arguments["name"]),
+                  let value = ToolArgument.string(arguments["value"]) else {
                 return ToolCallResult(callID: call.id, name: call.name, content: "Нужны название настройки и значение.")
             }
             let allowed = ["reasoning", "search", "autoread", "notifications", "fontscale"]
