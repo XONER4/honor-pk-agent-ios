@@ -85,7 +85,12 @@ enum AttachmentService {
                 summary = "PDF"
             } else if DocumentReader.isSupported(fileExtension: fileExtension) {
                 // Word, Excel, PowerPoint, OpenDocument, EPUB, RTF, HTML, CSV, код и текст.
-                let document = try DocumentReader.extractText(from: data, fileExtension: fileExtension)
+                let document: DocumentText
+                do {
+                    document = try DocumentReader.extractText(from: data, fileExtension: fileExtension)
+                } catch DocumentReaderError.emptyDocument {
+                    throw AttachmentError.emptyDocument
+                }
                 text = document.text
                 summary = document.summary
                 let plain: Set<String> = ["txt", "md", "markdown", "text", "log"]

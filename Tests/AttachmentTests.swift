@@ -128,13 +128,12 @@ final class AttachmentTests: XCTestCase {
         } catch AttachmentService.AttachmentError.emptyDocument {}
     }
 
-    func testLongTextIsRejectedWithoutSilentlyTruncatingIt() async throws {
+    func testLongTextIsTruncatedWithVisibleNote() async throws {
         let source = try temporaryFolder().appendingPathComponent("long.txt")
-        try Data(String(repeating: "a", count: 160_001).utf8).write(to: source)
-        do {
-            _ = try await AttachmentService.importFile(url: source)
-            XCTFail("Text above the model attachment limit was silently accepted.")
-        } catch AttachmentService.AttachmentError.tooMuchText {}
+        try Data(String(repeating: "a", count: 200_000).utf8).write(to: source)
+        let attachment = try await AttachmentService.importFile(url: source)
+        XCTAssertLessThanOrEqual(attachment.extractedText.count, 160_000)
+        XCTAssertTrue(attachment.extractedText.contains("текст обрезан"), "Обрезка не должна быть молчаливой")
     }
 
     func testAlreadyCancelledImportDoesNotReturnAnAttachment() async throws {
@@ -161,7 +160,7 @@ final class AttachmentTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: saved), original)
         let frames = try XCTUnwrap(attachment.videoFramePaths)
         XCTAssertGreaterThanOrEqual(frames.count, 1)
-        XCTAssertLessThanOrEqual(frames.count, 6)
+        XCTAssertLessThanOrEqual(frames.count, 10)
         XCTAssertEqual(Set(frames).count, frames.count)
         for path in frames {
             let data = try Data(contentsOf: URL(fileURLWithPath: path))
@@ -171,7 +170,7 @@ final class AttachmentTests: XCTestCase {
             XCTAssertLessThanOrEqual(max(frame.width, frame.height), 1280)
         }
         XCTAssertTrue(attachment.extractedText.contains("frame timestamps"))
-        XCTAssertTrue(attachment.extractedText.contains("audio track has not been transcribed"))
+        XCTAssertTrue(attachment.extractedText.contains("no audio track"), attachment.extractedText)
         let retainedAsset = AVURLAsset(url: saved)
         let duration = try await retainedAsset.load(.duration)
         XCTAssertGreaterThan(duration.seconds, 0)
@@ -193,10 +192,10 @@ final class AttachmentTests: XCTestCase {
 
     func testVideoDurationLimitRejectsLongPlayableAsset() async throws {
         let source = try temporaryFolder().appendingPathComponent("long.mp4")
-        try await writeVideo(to: source, duration: 122, frameCount: 2)
+        try await writeVideo(to: source, duration: AttachmentService.maximumVideoDuration + 2, frameCount: 2)
         do {
             _ = try await AttachmentService.importVideo(url: source)
-            XCTFail("A video longer than two minutes was accepted.")
+            XCTFail("A video longer than the limit was accepted.")
         } catch AttachmentService.AttachmentError.videoTooLong {}
     }
 

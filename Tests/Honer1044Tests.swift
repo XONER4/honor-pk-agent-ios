@@ -91,6 +91,9 @@ final class Honer1044Tests: XCTestCase {
         XCTAssertTrue(TableEditing.markdown(table).contains("| № | Статья | Сумма | Комментарий |"))
         XCTAssertTrue(TableEditing.csv(table).hasPrefix("Статья,Сумма,Комментарий"))
         XCTAssertEqual(TableEditing.number("T2"), 2)
+        // Лишний номер строки из столбца «№» отбрасывается.
+        let shifted = try TableEditing.apply(["action": "add_row", "values": ["3", "Кафе", "540", ""]], to: table)
+        XCTAssertEqual(shifted.rows.last, ["Кафе", "540", ""])
     }
 
     func testTableToolsCreateAndUserEditsReachTheModel() throws {

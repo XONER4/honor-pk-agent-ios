@@ -156,7 +156,8 @@ final class LiveWebToolsTests: XCTestCase {
     func testLiveSafariEngineRendersJavaScriptPages() async throws {
         let page = try XCTUnwrap(URL(string: "https://example.com"))
         let started = Date()
-        let rendered = await WebPageRenderer.render(page, timeout: 20)
+        var rendered = await WebPageRenderer.render(page, timeout: 20)
+        if (rendered?.text ?? "").isEmpty { rendered = await WebPageRenderer.render(page, timeout: 25) }
         print("HONER_WEBKIT seconds=\(Date().timeIntervalSince(started)) text=\(rendered?.text.prefix(80) ?? "nil")")
         let text = rendered?.text ?? ""
         XCTAssertTrue(text.contains("Example Domain") || text.contains("documentation examples"), text)

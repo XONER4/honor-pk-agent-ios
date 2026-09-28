@@ -238,6 +238,10 @@ enum TableEditing {
         case "add_row", "append_row":
             guard table.rows.count < maximumRows else { throw EditError.message("В таблице уже \(maximumRows) строк.") }
             var values = strings(arguments["values"])
+            // Модель иногда передаёт первым значением номер строки из столбца «№».
+            if values.count == table.columns.count + 1, Int(values[0].trimmingCharacters(in: .whitespaces)) != nil {
+                values.removeFirst()
+            }
             if values.isEmpty, let dictionary = arguments["values"] as? [String: Any] {
                 values = table.columns.map { ToolArgument.string(dictionary[$0]) ?? "" }
             }
@@ -343,7 +347,7 @@ enum TableEditing {
             }
             parts.append(block)
         }
-        return "\n\n## Таблицы этого чата\nЭто актуальное содержимое таблиц, включая правки пользователя. Меняй их инструментом update_table, читай целиком — read_table.\n" + parts.joined(separator: "\n\n")
+        return "\n\n## Таблицы этого чата\nЭто актуальное содержимое таблиц, включая правки пользователя. Первый столбец «№» — номер строки для update_table, это не данные: в values его не передавай. Меняй таблицы инструментом update_table, читай целиком — read_table.\n" + parts.joined(separator: "\n\n")
     }
 }
 
