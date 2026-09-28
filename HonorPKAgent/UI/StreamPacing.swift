@@ -97,8 +97,8 @@ struct TypedText {
     /// Новая версия полученного текста. Возвращает, сколько символов уже показано.
     @discardableResult
     mutating func setTarget(_ text: String) -> Int {
-        guard text != target else { return shownCount }
-        if text.hasPrefix(target) {
+        guard !isTarget(text) else { return shownCount }
+        if Self.bytes(text, startWith: target) {
             // Обычный случай: к тексту дописали хвост.
             let tail = text.utf8.index(text.utf8.startIndex, offsetBy: target.utf8.count)
             targetCount += text[tail...].count
@@ -140,6 +140,26 @@ struct TypedText {
     }
 
     mutating func clear() { self = TypedText() }
+
+    /// Совпадает ли текст с полученным. Сравнение побайтовое: `==` и `hasPrefix`
+    /// у String сравнивают с Unicode-нормализацией, и на длинном русском ответе
+    /// каждый новый кусок потока обходился бы всё дороже.
+    func isTarget(_ text: String) -> Bool {
+        text.utf8.count == target.utf8.count && Self.bytes(text, startWith: target)
+    }
+
+    static func bytes(_ text: String, startWith prefix: String) -> Bool {
+        let count = prefix.utf8.count
+        guard count > 0 else { return true }
+        guard text.utf8.count >= count else { return false }
+        let fast: Bool?? = text.utf8.withContiguousStorageIfAvailable { whole in
+            prefix.utf8.withContiguousStorageIfAvailable { head in
+                memcmp(whole.baseAddress!, head.baseAddress!, count) == 0
+            }
+        }
+        if case .some(.some(let value)) = fast { return value }
+        return text.utf8.starts(with: prefix.utf8)
+    }
 }
 
 /// Плавная печать текущего ответа: и рассуждения, и итогового текста.
@@ -207,11 +227,11 @@ final class TypingPacer: ObservableObject {
     /// Новый полученный текст ответа и рассуждения.
     func update(content newContent: String, reasoning newReasoning: String) {
         guard messageID != nil else { return }
-        if newReasoning != reasoningText.target {
+        if !reasoningText.isTarget(newReasoning) {
             let kept = reasoningText.setTarget(newReasoning)
             if Double(kept) < reasoningPace.shown { reasoningPace.shown = Double(kept); reasoning = reasoningText.shown }
         }
-        if newContent != contentText.target {
+        if !contentText.isTarget(newContent) {
             if reasoningEndedAt == nil, !newContent.isEmpty { reasoningEndedAt = Date() }
             let kept = contentText.setTarget(newContent)
             if Double(kept) < contentPace.shown { contentPace.shown = Double(kept); content = contentText.shown }

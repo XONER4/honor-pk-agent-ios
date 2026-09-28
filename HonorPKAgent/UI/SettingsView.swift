@@ -377,6 +377,22 @@ private struct DataSettingsPage: View {
                 Text(settings.text("Резервная копия в JSON содержит переписку, вложения и память Honer AI. Импорт добавляет сохранённые чаты и факты в историю.",
                                    "The JSON backup contains conversations, attachments and Honer AI memory. Import adds saved conversations and memories."))
             }
+            // Итог действия — рядом с кнопками, а не внизу длинной страницы.
+            if isTransferring {
+                Section {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text(settings.text("Обрабатываю архив…", "Processing backup…"))
+                    }
+                    .accessibilityIdentifier("data.busy")
+                }
+            }
+            if let status {
+                Section {
+                    Text(status).font(.subheadline).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("data.status")
+                }
+            }
             Section {
                 Button(role: .destructive) { confirmsDeletion = true } label: {
                     Label(settings.text("Удалить всю историю", "Delete all history"), systemImage: "trash")
@@ -411,21 +427,6 @@ private struct DataSettingsPage: View {
             } footer: {
                 Text(settings.text("Автоудаление убирает чаты, в которых не было сообщений дольше выбранного срока. Закреплённые чаты сохраняются.",
                                    "Auto-delete removes chats with no messages for longer than the selected period. Pinned chats are kept."))
-            }
-            if isTransferring {
-                Section {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                        Text(settings.text("Обрабатываю архив…", "Processing backup…"))
-                    }
-                    .accessibilityIdentifier("data.busy")
-                }
-            }
-            if let status {
-                Section {
-                    Text(status).font(.subheadline).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("data.status")
-                }
             }
         }
         .navigationTitle(settings.text("Управление данными", "Data management"))
@@ -581,6 +582,19 @@ private struct VoiceSettingsPage: View {
                     .accessibilityIdentifier("voice.active.ru")
                 LabeledContent(settings.text("Английский", "English"), value: activeVoiceLine("en"))
                     .accessibilityIdentifier("voice.active.en")
+                Button {
+                    if speech.isSpeaking { speech.stopSpeaking() }
+                    else {
+                        speech.speak("Привет! Я Honer AI, твой личный помощник. Сегодня 25 °C, и я могу читать по-английски: Hello, how are you today?",
+                                     voiceIdentifier: settings.voiceIdentifier, gender: settings.speechGender, language: "ru-RU",
+                                     rate: settings.voiceRate)
+                    }
+                } label: {
+                    Label(settings.text(speech.isSpeaking ? "Остановить" : "Послушать голос", speech.isSpeaking ? "Stop" : "Preview voice"),
+                          systemImage: speech.isSpeaking ? "stop.circle" : "play.circle")
+                }
+                .accessibilityIdentifier("voice.preview")
+                .accessibilityValue(speech.isSpeaking ? "speaking" : "idle")
             } header: {
                 Text(settings.text("Голос озвучки", "Speaking voice"))
             } footer: {
@@ -659,21 +673,6 @@ private struct VoiceSettingsPage: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 52, alignment: .trailing)
                 }
-            }
-            Section {
-                Button {
-                    if speech.isSpeaking { speech.stopSpeaking() }
-                    else {
-                        speech.speak("Привет! Я Honer AI, твой личный помощник. Сегодня 25 °C, и я могу читать по-английски: Hello, how are you today?",
-                                     voiceIdentifier: settings.voiceIdentifier, gender: settings.speechGender, language: "ru-RU",
-                                     rate: settings.voiceRate)
-                    }
-                } label: {
-                    Label(settings.text(speech.isSpeaking ? "Остановить" : "Послушать голос", speech.isSpeaking ? "Stop" : "Preview voice"),
-                          systemImage: speech.isSpeaking ? "stop.circle" : "play.circle")
-                }
-                .accessibilityIdentifier("voice.preview")
-                .accessibilityValue(speech.isSpeaking ? "speaking" : "idle")
             }
             Section {
                 Text(settings.text("Автоматическое чтение включается кнопкой динамика вверху чата.",

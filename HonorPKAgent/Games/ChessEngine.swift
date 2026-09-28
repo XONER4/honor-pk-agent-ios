@@ -269,7 +269,9 @@ struct ChessBoard: Equatable, Sendable {
 /// Соперник в шахматах: поиск с отсечением и доигрыванием взятий.
 enum ChessAI {
     static func bestMove(for board: ChessBoard, depth: Int = 3) -> ChessBoard.Move? {
-        let moves = ordered(board.legalMoves(), board)
+        // Разнообразие партий — перемешиванием до сортировки: при отсечениях
+        // оценка хода лишь граница, поэтому равные оценки жребием не разыгрываются.
+        let moves = ordered(board.legalMoves().shuffled(), board)
         guard moves.count > 1 else { return moves.first }
         var best: ChessBoard.Move?
         var bestScore = Int.min + 1
@@ -278,7 +280,7 @@ enum ChessAI {
             var next = board
             next.apply(move)
             let score = -negamax(next, depth: depth - 1, alpha: -Int.max, beta: -alpha)
-            if score > bestScore || (score == bestScore && Bool.random()) {
+            if score > bestScore {
                 bestScore = score
                 best = move
             }

@@ -541,13 +541,25 @@ final class ChatStore: ObservableObject {
     static func relevantMemories(_ memories: [HonorMemory], for query: String, limit: Int = 40) -> [HonorMemory] {
         let words = Set(keywords(in: query))
         guard !words.isEmpty else { return Array(memories.suffix(limit)) }
-        let scored = memories.map { memory -> (HonorMemory, Int) in
-            let own = Set(memory.keywords.isEmpty ? keywords(in: memory.text) : memory.keywords)
-            return (memory, own.intersection(words).count)
+        // Один проход по памяти: даже 5000 фактов подбираются за миллисекунды.
+        var matched: [(index: Int, score: Int)] = []
+        for (index, memory) in memories.enumerated() {
+            let own = memory.keywords.isEmpty ? keywords(in: memory.text) : memory.keywords
+            var score = 0
+            for word in Set(own) where words.contains(word) { score += 1 }
+            if score > 0 { matched.append((index, score)) }
         }
-        let matched = scored.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }.map(\.0)
-        let rest = memories.filter { memory in !matched.contains(where: { $0.id == memory.id }) }
-        return Array((matched + rest).prefix(limit))
+        // Больше совпадений — выше; при равенстве новее — выше.
+        matched.sort { $0.score != $1.score ? $0.score > $1.score : $0.index > $1.index }
+        var result = matched.prefix(limit).map { memories[$0.index] }
+        guard result.count < limit else { return result }
+        // Остаток — самыми свежими фактами.
+        let taken = Set(result.map(\.id))
+        for memory in memories.reversed() where !taken.contains(memory.id) {
+            result.append(memory)
+            if result.count >= limit { break }
+        }
+        return result
     }
 
     private static func memoryBlock(for memories: [HonorMemory], query: String?) -> String {

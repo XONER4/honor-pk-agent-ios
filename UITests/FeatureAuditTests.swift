@@ -112,9 +112,10 @@ final class FeatureAuditTests: HonorAuditCase {
         let search = app.textFields["history.search"]
         search.tap()
         search.typeText("спросил")
-        XCTAssertTrue(app.buttons["history.row." + chatID].exists,
+        // Поиск идёт в фоне с короткой задержкой на ввод — ждём результат.
+        XCTAssertTrue(app.buttons["history.row." + chatID].waitForExistence(timeout: 5),
                       "Search must match assistant content even after the chat is renamed")
-        XCTAssertFalse(app.buttons["history.row." + pinnedID].exists)
+        waitAbsent(app.buttons["history.row." + pinnedID])
         app.buttons["history.clear"].tap()
         app.buttons["history.select"].tap()
         selectHistoryRow(chatID, app: app)

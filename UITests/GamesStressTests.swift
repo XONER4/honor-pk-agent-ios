@@ -4,10 +4,7 @@ import XCTest
 final class GamesStressTests: HonorAuditCase {
     func testGamesOpenAndPlay() {
         let app = launch(["-UITestDemo"])
-        app.buttons["chat.tools"].tap()
-        let games = app.buttons["chat.tools.games"]
-        XCTAssertTrue(games.waitForExistence(timeout: 5))
-        games.tap()
+        openGames(app)
         XCTAssertTrue(element(app, "games.hub").waitForExistence(timeout: 5))
         capture("50-games-hub")
 
@@ -20,8 +17,7 @@ final class GamesStressTests: HonorAuditCase {
         app.buttons["game.close"].tap()
 
         // Шашки: ход человека и ответ соперника.
-        app.buttons["chat.tools"].tap()
-        app.buttons["chat.tools.games"].tap()
+        openGames(app)
         app.buttons["games.play.checkers"].tap()
         let board = element(app, "checkers.board")
         XCTAssertTrue(board.waitForExistence(timeout: 5))
@@ -38,13 +34,24 @@ final class GamesStressTests: HonorAuditCase {
 
         // Шахматы и дурак открываются.
         for kind in ["chess", "durak"] {
-            app.buttons["chat.tools"].tap()
-            app.buttons["chat.tools.games"].tap()
+            openGames(app)
             app.buttons["games.play." + kind].tap()
             XCTAssertTrue(element(app, "game.screen." + kind).waitForExistence(timeout: 5))
             capture("53-" + kind)
             app.buttons["game.close"].tap()
         }
+    }
+
+    /// Меню «…» чата: у нативного Menu нет точки нажатия для доступности,
+    /// поэтому нажимаем по видимой кнопке, как в остальных тестах.
+    private func openGames(_ app: XCUIApplication) {
+        let tools = app.buttons["chat.tools"]
+        XCTAssertTrue(tools.waitForExistence(timeout: 8))
+        tools.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let games = app.buttons["chat.tools.games"]
+        XCTAssertTrue(games.waitForExistence(timeout: 5))
+        games.tap()
+        XCTAssertTrue(element(app, "games.hub").waitForExistence(timeout: 5))
     }
 
     func testHugeHistoryStaysResponsive() {
