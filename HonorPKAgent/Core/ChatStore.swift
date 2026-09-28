@@ -856,6 +856,11 @@ final class ChatStore: ObservableObject {
                             result = ToolExecutor.executeExtended(call, context: toolContext)
                         }
                         resultsBySignature[signature] = result.content
+                        if call.name == HonerTool.webSearch.rawValue, result.effect == nil {
+                            // Поиск ничего не дал: ответ честно помечается как ответ
+                            // без свежих данных из интернета.
+                            self.mutateMessage(chatID: chatID, messageID: response.id) { $0.searchFailed = true }
+                        }
                         if case .addSources(let found)? = result.effect {
                             self.mutateMessage(chatID: chatID, messageID: response.id) { message in
                                 for source in found where !message.sources.contains(where: { $0.url == source.url }) {

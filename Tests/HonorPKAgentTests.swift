@@ -214,8 +214,9 @@ final class HonorPKAgentTests: XCTestCase {
         let store = ChatStore(configuration: DeepSeekConfiguration(apiKey: "test-key"),
                               client: ImmediateClient(events: [.init(content: "Отвечаю по своим знаниям.")]),
                               searchClient: FailingSearch(), storageURL: temporaryHistory())
-        store.searchEnabled = true
-        store.draft = "Новости"
+        // Без кнопки «Поиск» явная просьба найти запускает поиск до ответа.
+        store.searchEnabled = false
+        store.draft = "Найди последние новости"
         store.send()
         try await waitUntilIdle(store)
         XCTAssertEqual(store.messages.last?.content, "Отвечаю по своим знаниям.")

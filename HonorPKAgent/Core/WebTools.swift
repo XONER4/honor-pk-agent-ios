@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import WebKit
 
 /// Ссылки на медиа: рисунки, скриншоты страниц, видео.
@@ -83,7 +84,8 @@ enum MediaLinks {
 final class WebPageRenderer: NSObject, WKNavigationDelegate {
     struct Rendered { let url: URL; let title: String; let text: String; let html: String }
 
-    private var continuation: CheckedContinuation<Bool, Never>?
+    private var finishedLoading = false
+    private var failedLoading = false
     private var webView: WKWebView?
 
     static func render(_ url: URL, timeout: TimeInterval = 14) async -> Rendered? {
@@ -99,23 +101,34 @@ final class WebPageRenderer: NSObject, WKNavigationDelegate {
         let view = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844), configuration: configuration)
         view.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
         view.navigationDelegate = self
+        view.alpha = 0.01
+        view.isUserInteractionEnabled = false
+        // Невидимый браузер прикрепляется к окну за пределами экрана: без окна
+        // система притормаживает WebKit, и загрузка не сообщает о завершении.
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.windows.first(where: \.isKeyWindow) ?? ($0 as? UIWindowScene)?.windows.first }
+            .first
+        view.frame.origin = CGPoint(x: -4000, y: 0)
+        window?.addSubview(view)
         webView = view
         defer {
             view.stopLoading()
             view.navigationDelegate = nil
+            view.removeFromSuperview()
             webView = nil
         }
-        let finished = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            self.continuation = continuation
-            view.load(URLRequest(url: url, timeoutInterval: timeout))
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                self?.resume(false)
-            }
+        view.load(URLRequest(url: url, timeoutInterval: timeout))
+        // Готовность страницы проверяем сами каждые 0,3 с: сообщение о завершении
+        // загрузки приходит не всегда, и раньше чтение ждало весь таймаут.
+        let deadline = Date().addingTimeInterval(timeout)
+        var complete = false
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if finishedLoading || failedLoading { complete = finishedLoading; break }
+            if await evaluate("document.readyState") == "complete" { complete = true; break }
         }
-        // Даже если страница не дождалась полной загрузки, то, что успело
-        // отрисоваться, забираем. Короткая пауза даёт скриптам вывести содержимое.
-        try? await Task.sleep(nanoseconds: finished ? 1_200_000_000 : 300_000_000)
+        // Короткая пауза даёт скриптам вывести содержимое.
+        try? await Task.sleep(nanoseconds: complete ? 900_000_000 : 200_000_000)
         let text = await evaluate("document.body ? document.body.innerText : ''")
         let title = await evaluate("document.title || ''")
         let html = await evaluate("document.documentElement ? document.documentElement.outerHTML.slice(0, 400000) : ''")
@@ -136,14 +149,9 @@ final class WebPageRenderer: NSObject, WKNavigationDelegate {
         }
     }
 
-    private func resume(_ value: Bool) {
-        continuation?.resume(returning: value)
-        continuation = nil
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { resume(true) }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { resume(false) }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { resume(false) }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finishedLoading = true }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failedLoading = true }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failedLoading = true }
 }
 
 extension WebSearchClient {

@@ -155,8 +155,10 @@ final class LiveWebToolsTests: XCTestCase {
     @MainActor
     func testLiveSafariEngineRendersJavaScriptPages() async throws {
         let page = try XCTUnwrap(URL(string: "https://example.com"))
+        let started = Date()
         let rendered = await WebPageRenderer.render(page)
         XCTAssertTrue(rendered?.text.contains("Example Domain") == true, rendered?.text ?? "nil")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 8, "Чтение простой страницы не должно ждать весь таймаут")
     }
 
     func testLiveFindImagesReturnsLoadableImages() async throws {
@@ -176,7 +178,12 @@ final class LiveWebToolsTests: XCTestCase {
     }
 
     func testLiveDrawingAndScreenshotLinksReturnImages() async throws {
-        let draw = await run("draw_image", "{\"prompt\": \"small red lighthouse on a rocky coast, watercolor\"}")
+        // Рисование выполняется без сети на стороне приложения — через общий исполнитель.
+        let draw = await MainActor.run {
+            ToolExecutor.executeExtended(ToolCallRequest(id: "d", name: "draw_image",
+                                                         arguments: "{\"prompt\": \"small red lighthouse on a rocky coast, watercolor\"}"),
+                                         context: ToolExecutionContext())
+        }
         let shot = await run("screenshot_page", "{\"url\": \"https://example.com\"}")
         for content in [draw.content, shot.content] {
             let raw = String(content.components(separatedBy: "](").last?.dropLast() ?? "")
