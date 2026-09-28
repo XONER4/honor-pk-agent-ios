@@ -12,6 +12,12 @@ import android.os.IBinder
 /** Дописывает ответ, пока приложение свёрнуто (служба переднего плана). */
 class GenerationService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
+
+    companion object {
+        /** Ответ идёт, приложение свёрнуто — держим процесс живым с тихим уведомлением. */
+        fun start(context: Context, title: String) {}
+        fun stop(context: Context) {}
+    }
 }
 
 /** Итог установки обновления от PackageInstaller. */

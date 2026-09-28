@@ -4,3 +4,5 @@
 *.yml text eol=lf
 *.plist text eol=lf
 *.png binary
+android/gradlew text eol=lf
+*.sh text eol=lf

@@ -46,7 +46,7 @@ Kotlin + Jetpack Compose (Material 3), один модуль `:app`, пакет 
 | chat — экран чата | `ui/HonerRoot.kt`, `ui/chat/**`, `ui/onboarding/**`, `ui/common/**` |
 | render — отображение ответов | `ui/markdown/**`, `ui/tables/**`, `ui/questions/**` |
 | settings — настройки | `ui/settings/**`, `ui/help/**`, `ui/parental/**`, `device/ParentalControl.kt` |
-| device — устройство | `device/**` (кроме ParentalControl.kt и HonerNotifications.kt), в т.ч. `device/Stubs.kt` |
+| device — устройство | `device/**` (кроме ParentalControl.kt), в т.ч. `device/Stubs.kt`, `device/HonerNotifications.kt` (сохранить createChannels, CHANNEL_*, notifyAnswer) |
 | games — игры и редактор | `ui/games/**`, `ui/editor/**`, `media/**` |
 
 ## Контракты между модулями (подписи в файлах-заготовках)

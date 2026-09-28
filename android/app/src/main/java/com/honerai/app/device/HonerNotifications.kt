@@ -19,6 +19,13 @@ object HonerNotifications {
     const val CHANNEL_WORK = "honer.work.v1"
     const val CHANNEL_UPDATES = "honer.updates.v1"
 
+    /**
+     * Уведомление «ответ готов»: заголовок — название чата, текст ответа (развёрнутый),
+     * картинка из ответа, если есть; нажатие открывает этот чат. Звук — фирменный.
+     * (Реализацию дописывает модуль «Устройство».)
+     */
+    fun notifyAnswer(context: Context, chatId: String, chatTitle: String, text: String, imageUrl: String? = null) {}
+
     fun soundUri(context: Context): Uri =
         Uri.parse("${ContentResolver.SCHEME_ANDROID_RESOURCE}://${context.packageName}/${R.raw.honer_notify}")
 
