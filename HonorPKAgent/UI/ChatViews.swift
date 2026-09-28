@@ -170,7 +170,7 @@ struct ChatRootView: View {
                 VoiceRecordingOverlay(speech: speech, cancelling: voiceCancelArmed, settings: settings)
                     .allowsHitTesting(false)
                     .transition(.opacity)
-                    .ignoresSafeArea(edges: .bottom)
+                    .padding(.bottom, 150)
             }
         }
         .sheet(isPresented: $settingsOpen) {
@@ -550,24 +550,38 @@ struct ChatRootView: View {
                 }
             }
             if voiceMode {
-                // Голосовой ввод — ОДНА кнопка в нижнем ряду (микрофон).
-                // Раньше здесь была вторая зона удержания, и в панели оказывались
-                // две кнопки голоса одновременно: пользователь не понимал, какая работает.
+                // Идёт голосовой ввод: распознанный текст виден сразу, отмена и
+                // отправка — отдельными кнопками. Раньше режим работал на удержании,
+                // а касание кнопки перехватывал жест перетаскивания — нажатие
+                // микрофона не делало ничего.
                 HStack(spacing: 10) {
-                    Image(systemName: voiceHolding ? "waveform" : "mic")
+                    Image(systemName: speech.isRecording ? "waveform" : "mic")
                         .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(voiceHolding ? HonorTheme.accent : HonorTheme.secondary)
+                        .foregroundStyle(HonorTheme.accent)
+                        .symbolEffectPulseIfAvailable(active: speech.isRecording)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(text(voiceHolding ? "Говорите…" : "Голосовой ввод", voiceHolding ? "Listening…" : "Voice input"))
+                        Text(voiceStatusTitle)
                             .font(.system(size: 16, weight: .semibold))
-                        Text(text("Удерживайте микрофон внизу, отпустите — отправка. Сдвиньте вверх — отмена.",
-                                  "Hold the mic below, release to send. Slide up to cancel."))
-                            .font(.system(size: 12))
+                        Text(speech.transcript.isEmpty
+                             ? text("Нажмите ■, чтобы отправить, или «Отмена».", "Tap ■ to send or Cancel.")
+                             : speech.transcript)
+                            .font(.system(size: 13))
                             .foregroundStyle(HonorTheme.secondary)
+                            .lineLimit(3)
+                            .accessibilityIdentifier("chat.voice.transcript")
                     }
                     Spacer(minLength: 0)
+                    Button(text("Отмена", "Cancel")) {
+                        cancelVoice()
+                        animate { voiceMode = false }
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(HonorTheme.secondary)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("chat.voice.cancel")
                 }
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("chat.voice.hint")
                 Rectangle().fill(HonorTheme.divider).frame(height: 0.5)
             }
@@ -647,58 +661,29 @@ struct ChatRootView: View {
         .overlay(RoundedRectangle(cornerRadius: 27, style: .continuous).stroke(HonorTheme.divider, lineWidth: 0.7))
     }
 
-    /// Единственная кнопка голосового ввода. Удержание — запись, отпускание — отправка,
-    /// сдвиг вверх во время удержания — отмена. Раньше рядом с ней была вторая зона
-    /// удержания над полем ввода, и в панели оказывались две кнопки голоса.
+    /// Кнопка голосового ввода. Касание — начать запись, второе касание — остановить
+    /// и отправить распознанный текст. Раньше на кнопке одновременно висели жест
+    /// перетаскивания с нулевым порогом и касание: перетаскивание срабатывало в момент
+    /// прикосновения и забирало касание себе, поэтому голосовой режим не включался.
     private var voiceButton: some View {
-        Image(systemName: voiceMode ? (voiceHolding ? "waveform.circle.fill" : "mic.circle.fill") : "waveform.circle")
-            .font(.system(size: 26))
-            .foregroundStyle(voiceMode ? HonorTheme.accent : HonorTheme.foreground)
-            .frame(width: 40, height: 44)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                    .onChanged { value in
-                        if !voiceMode { return }
-                        if !voiceHolding { beginVoice() }
-                        let cancelled = value.translation.height < -70
-                        if cancelled != voiceCancelArmed {
-                            voiceCancelArmed = cancelled
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        }
-                    }
-                    .onEnded { _ in
-                        if voiceMode, voiceHolding { finishVoice() }
-                    }
-            )
-            .onTapGesture {
-                if !voiceMode {
-                    // Включение голосового режима: дальше работает удержание.
-                    cancelVoice()
-                    animate { voiceMode = true }
-                    composerFocused = false
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                } else if !voiceHolding {
-                    // Короткое касание в голосовом режиме — вернуться к клавиатуре.
-                    cancelVoice()
-                    animate { voiceMode = false }
-                    composerFocused = true
-                }
-            }
-            .accessibilityLabel(text(voiceMode ? "Удерживайте для записи, касание — клавиатура" : "Голосовой ввод",
-                                     voiceMode ? "Hold to record, tap for keyboard" : "Voice input"))
-            .accessibilityIdentifier("chat.voice")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction {
-                if voiceMode { cancelVoice(); voiceMode = false; composerFocused = true }
-                else { voiceMode = true; composerFocused = false }
-            }
-            .onChange(of: voiceMode) { active in
-                // Любое выключение голосового режима обязано остановить запись.
-                if !active, voiceHolding || speech.isRecording || speech.isPreparingRecording {
-                    cancelVoice()
-                }
-            }
+        Button {
+            if voiceHolding { finishVoice() } else { beginVoice() }
+        } label: {
+            Image(systemName: voiceHolding ? "stop.circle.fill" : "mic.circle")
+                .font(.system(size: 27))
+                .foregroundStyle(voiceHolding ? HonorTheme.accent : HonorTheme.foreground)
+                .frame(width: 40, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(text(voiceHolding ? "Остановить и отправить" : "Голосовой ввод",
+                                 voiceHolding ? "Stop and send" : "Voice input"))
+        .accessibilityIdentifier("chat.voice")
+    }
+
+    private var voiceStatusTitle: String {
+        if speech.isPreparingRecording { return text("Подключаю микрофон…", "Starting microphone…") }
+        if speech.isFinalizingRecording { return text("Распознаю…", "Finishing…") }
+        return text("Говорите…", "Listening…")
     }
 
     private func modePill(symbol: String, label: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -720,7 +705,6 @@ struct ChatRootView: View {
 
     private func send(inputKind: MessageInputKind = .text) {
         cancelVoice(); speech.stopSpeaking()
-        store.systemInstruction = settings.customInstructions
         // Мост к настройкам: через него модель может менять их инструментом.
         store.settingsBridge = settings
         store.send(inputKind: inputKind)
@@ -760,7 +744,12 @@ struct ChatRootView: View {
     }
 
     private func beginVoice() {
-        guard !voiceHolding, !speech.isFinalizingRecording, !store.isGenerating else { return }
+        guard !voiceHolding, !speech.isFinalizingRecording else { return }
+        guard !store.isGenerating else {
+            showToast(text("Дождитесь конца ответа или остановите его", "Wait for the answer to finish or stop it"))
+            return
+        }
+        animate { voiceMode = true }
         // Страховка: если предыдущая запись осталась «висеть», начинаем с чистого состояния.
         if !speech.isRecording { speech.cancelRecording() }
         let session = UUID()
@@ -774,7 +763,12 @@ struct ChatRootView: View {
         Task { @MainActor in
             await speech.startRecording(language: settings.speechLanguage)
             guard voiceSessionID == session else { return }
-            if !speech.isRecording { voiceHolding = false; voiceSessionID = nil }
+            if !speech.isRecording {
+                // Запись не началась (нет разрешения, микрофон занят) — причину
+                // покажет сообщение об ошибке, режим записи снимаем.
+                voiceHolding = false; voiceSessionID = nil
+                animate { voiceMode = false }
+            }
         }
         // Сторож: если через 10 секунд запись так и не началась, но удержание
         // считается активным, снимаем состояние сами. Раньше при потерянном событии
@@ -790,7 +784,7 @@ struct ChatRootView: View {
     private func finishVoice() {
         voiceWatchdog?.cancel(); voiceWatchdog = nil
         guard let session = voiceSessionID else { return }
-        if voiceCancelArmed || speech.isPreparingRecording { cancelVoice(); return }
+        if voiceCancelArmed || speech.isPreparingRecording { cancelVoice(); animate { voiceMode = false }; return }
         animate { voiceHolding = false }
         Task { @MainActor in
             let transcript = await speech.finishRecording().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1076,7 +1070,6 @@ private struct MessageTimeline: View {
                                                      "Wait for the answer to finish, then tap again"))
                                return false
                            }
-                           store.systemInstruction = settings.customInstructions
                            store.settingsBridge = settings
                            let before = store.messages.count
                            store.draft = answer
@@ -2902,6 +2895,17 @@ private struct OriginalFilePreview: UIViewControllerRepresentable {    let url: 
     }
 }
 
+private extension View {
+    @ViewBuilder
+    func symbolEffectPulseIfAvailable(active: Bool) -> some View {
+        if #available(iOS 17.0, *) {
+            self.symbolEffect(.pulse, isActive: active)
+        } else {
+            self
+        }
+    }
+}
+
 private struct VoiceRecordingOverlay: View {
     @ObservedObject var speech: SpeechService
     let cancelling: Bool
@@ -2912,8 +2916,7 @@ private struct VoiceRecordingOverlay: View {
             Spacer(minLength: 55)
             Text(speech.isPreparingRecording ? settings.text("Подключаю микрофон…", "Starting microphone…") :
                     speech.isFinalizingRecording ? settings.text("Распознаю…", "Finishing…") :
-                    cancelling ? settings.text("Отпустите для отмены", "Release to cancel") :
-                    settings.text("Отпустите, чтобы отправить, сдвиньте вверх для отмены", "Release to send, slide up to cancel"))
+                    settings.text("Говорите. Нажмите ■, чтобы отправить", "Speak. Tap ■ to send"))
                 .font(.system(size: 14, weight: .medium)).foregroundStyle(HonorTheme.secondary)
                 .multilineTextAlignment(.center).frame(maxWidth: 340).padding(.horizontal, 20)
             HStack(alignment: .center, spacing: 2.5) {

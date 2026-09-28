@@ -782,7 +782,10 @@ struct InlineContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(parts) { part in
-                if let url = part.imageURL {
+                if let url = part.imageURL, MediaLinks.isVideo(url) {
+                    // Видео: обложка с кнопкой воспроизведения, ролик играет в приложении.
+                    VideoCardView(url: url, caption: part.caption, fontSize: size)
+                } else if let url = part.imageURL {
                     // Картинка грузится один раз и берётся из кэша: раньше она
                     // перезагружалась на каждом кадре печати и мигала.
                     CachedRemoteImage(url: url, caption: part.caption, fontSize: size)
@@ -838,12 +841,18 @@ struct BlockMarkdownView: View {
     /// Ширина сообщения: нужна таблицам, чтобы столбцы делили место по содержимому.
     @State private var measuredWidth: CGFloat = 0
 
+    /// Сколько последних символов печатаемого текста проявляются плавно.
+    static let fadeLength = 18
+
     var body: some View {
+        let blocks = memo.blocks(for: content, streaming: streaming)
+        let lastID = blocks.last?.id
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(memo.blocks(for: content, streaming: streaming)) { block in
+            ForEach(blocks) { block in
                 MarkdownBlockView(block: block, fontSize: fontSize,
                                   sources: sources, findQuery: findQuery,
-                                  containerWidth: measuredWidth, onAnswer: onAnswer)
+                                  containerWidth: measuredWidth, onAnswer: onAnswer,
+                                  fadeLength: streaming && block.id == lastID ? Self.fadeLength : 0)
                     .equatable()
                     // Устойчивый идентификатор блока: без него при каждом шаге разбора
                     // SwiftUI считал блок новым и пересобирал его состояние — слетали
@@ -864,6 +873,27 @@ struct BlockMarkdownView: View {
 
 /// Отрисовка одного блока. Вынесено в отдельный тип, чтобы компилятор не захлёбывался
 /// на одном огромном выражении.
+enum TextFade {
+    /// Последние символы печатаемого текста полупрозрачны: самый новый едва виден,
+    /// каждый следующий кадр делает его плотнее. Так текст проявляется плавно,
+    /// а не возникает резко по буквам.
+    static func tail(_ value: AttributedString, length: Int) -> AttributedString {
+        let total = value.characters.count
+        let count = min(length, total)
+        guard count > 1 else { return value }
+        var result = value
+        var index = result.characters.index(result.startIndex, offsetBy: total - count)
+        for step in 0..<count {
+            let next = result.characters.index(after: index)
+            let opacity = 1 - 0.85 * Double(step + 1) / Double(count + 1)
+            let base = result[index..<next].foregroundColor ?? HonorTheme.foreground
+            result[index..<next].foregroundColor = base.opacity(opacity)
+            index = next
+        }
+        return result
+    }
+}
+
 /// Кэш инлайн-разметки абзацев. Общий и ссылочный: запись в него во время отрисовки
 /// безопасна, а абзац, который уже разобран, не разбирается повторно ни в одной строке.
 private enum InlineMarkupCache {
@@ -886,22 +916,25 @@ private struct MarkdownBlockView: View, Equatable {
     /// Ширина сообщения: нужна таблицам, чтобы делить место по содержимому столбцов.
     var containerWidth: CGFloat = 320
     var onAnswer: ((String) -> Bool)? = nil
+    /// Последние символы печатаемого блока проявляются плавно (0 — без эффекта).
+    var fadeLength: Int = 0
 
     /// Блок, который не изменился, не перерисовывается: во время печати меняется
     /// только последний блок, а остальные остаются как есть.
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.block == rhs.block && lhs.fontSize == rhs.fontSize && lhs.findQuery == rhs.findQuery
-            && lhs.containerWidth == rhs.containerWidth && lhs.sources.map(\.id) == rhs.sources.map(\.id)
+            && lhs.containerWidth == rhs.containerWidth && lhs.fadeLength == rhs.fadeLength
+            && lhs.sources.map(\.id) == rhs.sources.map(\.id)
     }
 
     var body: some View {
         Group {
             switch block.kind {
             case .heading(let level):
-                inline(block.text, size: headingSize(level), weight: level <= 2 ? .bold : .semibold)
+                inline(block.text, size: headingSize(level), weight: level <= 2 ? .bold : .semibold, fade: fadeLength)
                     .padding(.top, level <= 2 ? 8 : 4)
             case .paragraph:
-                inline(block.text, size: fontSize, weight: .regular)
+                inline(block.text, size: fontSize, weight: .regular, fade: fadeLength)
             case .bullets(let items, let ordered):
                 bullets(items, ordered: ordered)
             case .checklist(let items):
@@ -948,7 +981,8 @@ private struct MarkdownBlockView: View, Equatable {
                         .font(.system(size: fontSize, weight: ordered ? .semibold : .regular))
                         .foregroundStyle(ordered ? HonorTheme.accent : HonorTheme.secondary)
                         .frame(minWidth: ordered ? 22 : 12, alignment: .trailing)
-                    inline(item, size: fontSize, weight: .regular)
+                    inline(item, size: fontSize, weight: .regular,
+                           fade: position == items.count - 1 ? fadeLength : 0)
                 }
             }
         }
@@ -987,10 +1021,12 @@ private struct MarkdownBlockView: View, Equatable {
         }
     }
 
-    private func inline(_ text: String, size: Double, weight: Font.Weight) -> some View {
-        InlineContentView(source: text, size: size, weight: weight,
-                          attributed: attributed(for: text))
+    private func inline(_ text: String, size: Double, weight: Font.Weight, fade: Int = 0) -> some View {
+        let value = attributed(for: text)
+        return InlineContentView(source: text, size: size, weight: weight,
+                                 attributed: fade > 0 ? TextFade.tail(value, length: fade) : value)
     }
+
 
     private func inlineAttributed(_ source: String) -> AttributedString {
         let cited = linkedCitations(source, sources: sources)

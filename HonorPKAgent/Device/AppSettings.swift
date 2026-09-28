@@ -17,7 +17,6 @@ final class AppSettings: ObservableObject {
     @Published var appearance: AppAppearance { didSet { defaults.set(appearance.rawValue, forKey: "honor.appearance") } }
     @Published var language: AppLanguage { didSet { defaults.set(language.rawValue, forKey: "honor.language") } }
     @Published var fontScale: Double { didSet { defaults.set(fontScale, forKey: "honor.fontScale") } }
-    @Published var customInstructions: String { didSet { defaults.set(customInstructions, forKey: "honor.customInstructions") } }
     @Published var voiceIdentifier: String { didSet { defaults.set(voiceIdentifier, forKey: "honor.voiceIdentifier") } }
     @Published var speechLanguage: String { didSet { defaults.set(speechLanguage, forKey: "honor.speechLanguage") } }
     @Published var autoRead: Bool { didSet { defaults.set(autoRead, forKey: "honor.autoRead") } }
@@ -43,7 +42,8 @@ final class AppSettings: ObservableObject {
         language = AppLanguage(rawValue: defaults.string(forKey: "honor.language") ?? "ru") ?? .russian
         let scale = defaults.object(forKey: "honor.fontScale") as? Double ?? 1
         fontScale = min(1.4, max(0.85, scale))
-        customInstructions = defaults.string(forKey: "honor.customInstructions") ?? ""
+        // Функция «Инструкции для Honer AI» удалена: старый текст больше не применяется.
+        defaults.removeObject(forKey: "honor.customInstructions")
         voiceIdentifier = defaults.string(forKey: "honor.voiceIdentifier") ?? ""
         speechLanguage = defaults.string(forKey: "honor.speechLanguage") ?? "ru-RU"
         autoRead = defaults.bool(forKey: "honor.autoRead")

@@ -13,6 +13,7 @@
 <key>LSRequiresIPhoneOS</key><true/>
 <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
+<key>CADisableMinimumFrameDurationOnPhone</key><true/>
 <key>UILaunchScreen</key><dict><key>UIColorName</key><string>LaunchBackground</string></dict>
 <key>NSCameraUsageDescription</key><string>Камера нужна, чтобы прикрепить фотографию к сообщению Honer AI.</string>
 <key>NSPhotoLibraryUsageDescription</key><string>Honer AI показывает недавние фото и видео для выбора вложения.</string>

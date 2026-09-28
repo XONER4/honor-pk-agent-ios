@@ -16,19 +16,19 @@ import Combine
 /// дописывается ускоренно, но тоже плавно, и не дольше `maximumTail` секунд.
 struct StreamPace: Equatable {
     /// Нижняя граница скорости, символов в секунду: с неё начинается ответ.
-    var minimumRate: Double = 45
+    var minimumRate: Double = 110
     /// Верхняя граница скорости, символов в секунду.
-    var maximumRate: Double = 1600
+    var maximumRate: Double = 3000
     /// На сколько секунд печать отстаёт от потока, пока ответ идёт.
-    var targetLatency: Double = 0.9
+    var targetLatency: Double = 0.35
     /// То же после конца потока: хвост догоняется быстрее.
-    var closingLatency: Double = 0.4
+    var closingLatency: Double = 0.18
     /// Насколько быстро скорость подстраивается (1/с). Меньше — мягче.
-    var responsiveness: Double = 5
+    var responsiveness: Double = 8
     /// Хвост после конца потока показывается целиком не позже этого срока.
-    var maximumTail: Double = 2.2
+    var maximumTail: Double = 1.0
     /// Нижняя граница скорости после конца потока: последние символы не ползут.
-    var closingMinimumRate: Double = 120
+    var closingMinimumRate: Double = 260
 
     /// Сколько символов должно быть видно после этого кадра.
     ///
@@ -179,7 +179,7 @@ final class TypingPacer: ObservableObject {
     private var lastGrowthSignal: CFTimeInterval = 0
     private let rule = StreamPace()
     /// Рассуждение печатается быстрее: его читают вполглаза.
-    private let reasoningRule = StreamPace(minimumRate: 70, targetLatency: 0.6, closingLatency: 0.25, maximumTail: 1.2)
+    private let reasoningRule = StreamPace(minimumRate: 160, targetLatency: 0.25, closingLatency: 0.12, maximumTail: 0.6)
 
     var isActive: Bool { messageID != nil }
 
@@ -243,7 +243,8 @@ final class TypingPacer: ObservableObject {
         guard !contentText.isComplete || !reasoningText.isComplete || !streamOpen else { return }
         let link = CADisplayLink(target: DisplayLinkProxy(self), selector: #selector(DisplayLinkProxy.tick(_:)))
         if #available(iOS 15.0, *) {
-            link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+            // На экранах 120 Гц печать идёт со 120 кадрами в секунду — ещё плавнее.
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         }
         link.add(to: .main, forMode: .common)
         self.link = link
@@ -282,7 +283,7 @@ final class TypingPacer: ObservableObject {
                 changed = true
             }
         }
-        if changed, now - lastGrowthSignal >= 0.08 {
+        if changed, now - lastGrowthSignal >= 0.05 {
             lastGrowthSignal = now
             grew.send()
         }

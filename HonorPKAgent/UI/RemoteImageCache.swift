@@ -24,7 +24,8 @@ enum RemoteImageCache {
         if let running = tasks[key] { return await running.value }
         let task = Task<UIImage?, Never> { () -> UIImage? in
             var request = URLRequest(url: url)
-            request.timeoutInterval = 20
+            // Нарисованная картинка создаётся в момент загрузки — это до минуты.
+            request.timeoutInterval = url.host?.contains("pollinations") == true ? 90 : 25
             request.setValue("HonorPKAgent/1.0", forHTTPHeaderField: "User-Agent")
             guard let (data, response) = try? await URLSession.shared.data(for: request),
                   data.count <= 8 * 1024 * 1024 else { return nil }

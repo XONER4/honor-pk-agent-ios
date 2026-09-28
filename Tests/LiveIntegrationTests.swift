@@ -142,6 +142,48 @@ final class LiveIntegrationTests: XCTestCase {
         XCTAssertTrue(chinese.content.lowercased().contains("лёд") || chinese.content.lowercased().contains("льд") || chinese.content.lowercased().contains("плав"))
     }
 
+    func testLiveDrawsAPictureWhenAsked() async throws {
+        let result = try await answer("Нарисуй кота-космонавта в стиле акварели.", thinking: false)
+        XCTAssertTrue(result.content.contains("image.pollinations.ai"), "Рисунок не вставлен: \(result.content)")
+        XCTAssertTrue(result.content.contains("!["))
+    }
+
+    func testLiveShowsRealPhotosWithSearchButton() async throws {
+        let result = try await answer("Покажи фотографию Эйфелевой башни ночью.", thinking: false, search: true)
+        XCTAssertTrue(result.content.contains("!["), "Фото не вставлено: \(result.content)")
+        XCTAssertFalse(result.content.contains("image.pollinations.ai"), "Вместо настоящего фото нарисовано: \(result.content)")
+    }
+
+    func testLiveSearchButtonDoesNotForceSearchForSimpleQuestions() async throws {
+        let result = try await answer("Сколько будет 17 умножить на 23? Ответь коротко.", thinking: false, search: true)
+        XCTAssertTrue(result.content.contains("391"), result.content)
+        XCTAssertTrue(result.sources.isEmpty, "Для простого расчёта модель не должна ходить в интернет")
+    }
+
+    func testLiveSearchButtonFindsFreshFacts() async throws {
+        let result = try await answer("Какой сейчас официальный курс доллара ЦБ РФ? Дай ссылку на источник.", thinking: false, search: true)
+        XCTAssertFalse(result.sources.isEmpty, "Для свежих данных модель обязана искать")
+        XCTAssertTrue(result.content.contains("http"), result.content)
+    }
+
+    func testLiveBuildsARealTable() async throws {
+        let result = try await answer("Сравни в таблице iPhone 13, iPhone 14 и iPhone 15: год выхода, процессор, основная камера.", thinking: false)
+        let blocks = MarkdownBlockParser.parse(result.content)
+        guard let table = blocks.first(where: { if case .table = $0.kind { return true } else { return false } }),
+              case .table(let headers, _, let rows) = table.kind else {
+            return XCTFail("Таблица не распознана: \(result.content)")
+        }
+        XCTAssertGreaterThanOrEqual(headers.count, 3)
+        XCTAssertGreaterThanOrEqual(rows.count, 3)
+    }
+
+    func testLiveKnowsTheUserSettings() async throws {
+        let result = try await answer("Проверь мои настройки: включён ли у меня сейчас поиск в интернете и рассуждение?", thinking: false, search: true)
+        let text = result.content.lowercased()
+        XCTAssertTrue(text.contains("поиск"), result.content)
+        XCTAssertTrue(text.contains("включ"), result.content)
+    }
+
     func testLiveReadSpecificWebPageWithCitation() async throws {
         let result = try await answer("Прочитай https://support.apple.com/en-us/111872 и скажи, какая диагональ экрана iPhone 13. Дай ссылку на эту страницу.", thinking: false, search: false)
         XCTAssertTrue(result.sources.contains { $0.url.host == "support.apple.com" && !($0.content ?? "").isEmpty })

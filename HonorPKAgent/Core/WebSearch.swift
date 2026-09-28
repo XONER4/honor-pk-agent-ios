@@ -67,15 +67,19 @@ struct WebSearchClient: WebSearching {
             return fetched
         }
         let searchQuery = SearchRelevance.compactQuery(query)
+        // Несколько поисковиков параллельно: Bing (Microsoft), DuckDuckGo, Brave и
+        // Википедия. Если один не ответил, остальные всё равно дают выдачу.
         async let bing = bingResults(searchQuery)
         async let duck = duckDuckGoResults(searchQuery)
-        let candidates = await (bing, duck)
+        async let brave = braveResults(searchQuery)
+        async let wiki = wikipediaResults(searchQuery)
+        let candidates = await (bing, duck, brave, wiki)
         try Task.checkCancellation()
         var seen = Set<String>()
         // Фильтр релевантности обязателен: без него в контекст попадали страницы
         // вида «Bing homepage quiz answers» — мусор, из-за которого ответы были
         // про что угодно, кроме темы вопроса.
-        let ranked = (candidates.0 + candidates.1).filter {
+        let ranked = (candidates.0 + candidates.1 + candidates.2 + candidates.3).filter {
             SearchRelevance.score(source: $0, query: searchQuery) > 0 && seen.insert($0.url.absoluteString).inserted
         }.sorted { SearchRelevance.score(source: $0, query: searchQuery) > SearchRelevance.score(source: $1, query: searchQuery) }
         if ranked.isEmpty {
@@ -95,14 +99,14 @@ struct WebSearchClient: WebSearching {
         return fetched
     }
 
-    private func bingResults(_ query: String) async -> [WebSource] {
+    func bingResults(_ query: String) async -> [WebSource] {
         var components = URLComponents(string: "https://www.bing.com/search")!
         components.queryItems = [URLQueryItem(name: "q", value: String(query.prefix(400))), URLQueryItem(name: "format", value: "rss"), URLQueryItem(name: "setlang", value: "ru-RU")]
         guard let document = try? await fetch(components.url!, maximumBytes: 1_500_000) else { return [] }
         return RSSResultsParser.parse(document.data)
     }
 
-    private func duckDuckGoResults(_ query: String) async -> [WebSource] {
+    func duckDuckGoResults(_ query: String) async -> [WebSource] {
         var components = URLComponents(string: "https://html.duckduckgo.com/html/")!
         components.queryItems = [URLQueryItem(name: "q", value: String(query.prefix(400))), URLQueryItem(name: "kl", value: "ru-ru")]
         guard let document = try? await fetch(components.url!, maximumBytes: 1_500_000),
@@ -110,7 +114,7 @@ struct WebSearchClient: WebSearching {
         return WebPageText.searchResults(html)
     }
 
-    private func readPages(_ sources: [WebSource], limit: Int, timeout: TimeInterval = 10) async -> [WebSource] {
+    func readPages(_ sources: [WebSource], limit: Int, timeout: TimeInterval = 10) async -> [WebSource] {
         await withTaskGroup(of: (Int, WebSource).self) { group in
             for (index, source) in sources.prefix(limit).enumerated() {
                 group.addTask {
@@ -137,7 +141,7 @@ struct WebSearchClient: WebSearching {
         }
     }
 
-    private func fetch(_ url: URL, maximumBytes: Int, timeout: TimeInterval = 10) async throws -> (data: Data, url: URL) {
+    func fetch(_ url: URL, maximumBytes: Int, timeout: TimeInterval = 10) async throws -> (data: Data, url: URL) {
         guard WebPageText.isPublicWebURL(url) else { throw HonorError.searchUnavailable }
         var request = URLRequest(url: url)
         request.timeoutInterval = timeout

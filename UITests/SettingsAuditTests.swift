@@ -13,10 +13,7 @@ final class SettingsAuditTests: HonorAuditCase {
         XCTAssertTrue(app.navigationBars["Font size"].exists)
         app.buttons["font.reset"].tap()
         back(app)
-        openSettingsRow("settings.personalization", app: app)
-        XCTAssertTrue(app.navigationBars["Personalization"].exists)
-        XCTAssertTrue(app.textViews["personalization.instructions"].exists)
-        back(app)
+        XCTAssertFalse(app.buttons["settings.instructions"].exists, "Instructions were removed from the app")
         openSettingsRow("settings.memory", app: app)
         XCTAssertTrue(app.buttons["memory.add"].exists)
         back(app)
@@ -39,29 +36,11 @@ final class SettingsAuditTests: HonorAuditCase {
         capture("35-english-chat")
     }
 
-    func testBundledPersonalizationVideoOpensAndCloses() {
-        let app = launch()
-        settings(app)
-        openSettingsRow("settings.personalization", app: app)
-        let video = app.buttons["personalization.video"]
-        for _ in 0..<4 where !video.isHittable { app.swipeUp() }
-        XCTAssertTrue(video.exists)
-        video.tap()
-        XCTAssertTrue(element(app, "personalization.video.player").waitForExistence(timeout: 8))
-        capture("36-personalization-video-player")
-        app.buttons["personalization.video.close"].tap()
-        XCTAssertTrue(app.textViews["personalization.instructions"].waitForExistence(timeout: 5))
-    }
-
     func testProfilePersonalizationAndLanguagePersist() {
         let app = launch(["-UITestDemo"])
         settings(app)
         openSettingsRow("settings.profile", app: app)
         replaceText("Alex Honor", in: app.textFields["profile.name"])
-        back(app)
-        openSettingsRow("settings.personalization", app: app)
-        let instructions = app.textViews["personalization.instructions"]
-        replaceText("Keep answers concise.", in: instructions)
         back(app)
         openSettingsRow("settings.language", app: app)
         app.buttons["language.en"].tap()
@@ -73,11 +52,6 @@ final class SettingsAuditTests: HonorAuditCase {
         settings(app)
         openSettingsRow("settings.profile", app: app)
         XCTAssertEqual(app.textFields["profile.name"].value as? String, "Alex Honor")
-        back(app)
-        openSettingsRow("settings.personalization", app: app)
-        XCTAssertEqual(app.textViews["personalization.instructions"].value as? String, "Keep answers concise.")
-        app.buttons["personalization.clear"].tap()
-        XCTAssertEqual(app.textViews["personalization.instructions"].value as? String, "")
     }
 
     func testAppearanceFontVoiceAndAboutControls() {

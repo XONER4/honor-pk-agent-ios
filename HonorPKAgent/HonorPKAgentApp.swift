@@ -53,7 +53,6 @@ struct HonorPKAgentApp: App {
                 // новой версии фото «терялось»: файл лежал на месте, а путь в настройках
                 // указывал в несуществующую папку. Здесь путь пересчитывается.
                 settings.repairProfilePhotoPath()
-                store.systemInstruction = settings.customInstructions
                 store.profileName = settings.displayName
                 // Автоудаление старых чатов по настройке (пункт 40).
                 if settings.autoDeleteDays > 0 {
@@ -69,7 +68,6 @@ struct HonorPKAgentApp: App {
                 UITestSupport.seedIfNeeded(store: store)
                 #endif
             }
-            .onChange(of: settings.customInstructions) { store.systemInstruction = $0 }
             .onChange(of: settings.displayName) { store.profileName = $0 }
             .onChange(of: settings.notificationsEnabled) { (enabled: Bool) in
                 NotificationCenterService.shared.isEnabled = enabled

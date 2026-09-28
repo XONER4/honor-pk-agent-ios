@@ -54,11 +54,6 @@ struct SettingsView: View {
                         }
                         .accessibilityIdentifier("settings.font")
                         SettingsDivider()
-                        NavigationLink { PersonalizationSettingsPage() } label: {
-                            SettingsRow(symbol: "text.bubble", title: settings.text("Инструкции для Honer AI", "Honer AI instructions"))
-                        }
-                        .accessibilityIdentifier("settings.instructions")
-                        SettingsDivider()
                         NavigationLink { MemorySettingsPage() } label: {
                             SettingsRow(symbol: "brain", title: settings.text("Память Honer AI", "Honer AI memory"),
                                         value: "\(store.memories.count)")
@@ -130,7 +125,6 @@ struct SettingsView: View {
         }
         .preferredColorScheme(settings.preferredColorScheme)
         .tint(Color(red: 0.49, green: 0.65, blue: 1))
-        .onChange(of: settings.customInstructions) { store.systemInstruction = $0 }
 
     }
 
@@ -531,34 +525,6 @@ private struct FontSettingsPage: View {
         .navigationTitle(settings.text("Размер шрифта", "Font size"))
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("settings.page.font")
-    }
-}
-
-private struct PersonalizationSettingsPage: View {
-    @EnvironmentObject private var settings: AppSettings
-    var body: some View {
-        Form {
-            Section {
-                TextEditor(text: $settings.customInstructions)
-                    .frame(minHeight: 200)
-                    .font(.system(size: 19 * settings.fontScale))
-                    .accessibilityLabel(settings.text("Пользовательские инструкции", "Custom instructions"))
-                    .accessibilityIdentifier("personalization.instructions")
-                if !settings.customInstructions.isEmpty {
-                    Button(settings.text("Очистить инструкции", "Clear instructions"), role: .destructive) {
-                        settings.customInstructions = ""
-                    }
-                    .accessibilityIdentifier("personalization.clear")
-                }
-            } header: { Text(settings.text("Как Honer AI должен отвечать?", "How should Honer AI respond?")) }
-              footer: {
-                Text(settings.text("Например: «Обращайся ко мне на ты. Отвечай кратко и по-русски». Изменения сохраняются автоматически и применяются к следующим сообщениям.",
-                                   "For example: “Use a friendly tone and keep answers concise.” Changes are saved automatically and apply to your next messages."))
-            }
-        }
-        .navigationTitle(settings.text("Инструкции для Honer AI", "Honer AI instructions"))
-        .navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("settings.page.instructions")
     }
 }
 

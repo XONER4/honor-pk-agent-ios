@@ -121,13 +121,16 @@ final class ChatToolsTests: HonorAuditCase {
     }
 
     func testVoiceModePreservesDraftAndDeleteRequiresConfirmation() {
-        let app = launch(["-UITestDemo"])
+        let app = launch(["-UITestDemo", "-UITestVoice"])
         typeMessage("Сохранённый черновик", app: app)
+        // Касание микрофона сразу начинает запись — раньше касание перехватывал
+        // жест перетаскивания, и кнопка не реагировала.
         app.buttons["chat.voice"].tap()
-        XCTAssertTrue(element(app, "chat.voice.hold").waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons["chat.voice"].label, "Клавиатура")
-        capture("honer10-hold-to-talk-composer")
-        app.buttons["chat.voice"].tap()
+        XCTAssertTrue(element(app, "chat.voice.hint").waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["chat.voice"].label, "Остановить и отправить")
+        capture("honer10-voice-recording")
+        app.buttons["chat.voice.cancel"].tap()
+        waitAbsent(element(app, "chat.voice.hint"))
         XCTAssertEqual(composer(app).value as? String, "Сохранённый черновик")
         openTools(app)
         choose("chat.tools.delete", title: "Удалить", app: app)
@@ -141,34 +144,31 @@ final class ChatToolsTests: HonorAuditCase {
         XCTAssertFalse(app.buttons["history.row." + chatID].exists)
     }
 
-    func testHoldVoiceSwipeCancelDiscardsAndReleaseSendsFinalTranscript() {
+    func testVoiceCancelDiscardsAndSecondTapSendsFinalTranscript() {
         let app = launch(["-UITestDemo", "-UITestVoice"])
         typeMessage("Не отправлять", app: app)
         app.buttons["chat.voice"].tap()
-        let hold = element(app, "chat.voice.hold")
-        XCTAssertTrue(hold.waitForExistence(timeout: 5))
-        let start = hold.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let cancel = start.withOffset(CGVector(dx: 0, dy: -150))
-        start.press(forDuration: 0.7, thenDragTo: cancel)
-        waitAbsent(element(app, "chat.voice.cancel.overlay"))
-        app.buttons["chat.voice"].tap()
+        XCTAssertTrue(element(app, "chat.voice.hint").waitForExistence(timeout: 5))
+        app.buttons["chat.voice.cancel"].tap()
+        waitAbsent(element(app, "chat.voice.hint"))
         XCTAssertEqual(composer(app).value as? String, "Не отправлять")
-        XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "message.content.")).count, 1)
+        XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "message.user.")).count, 1,
+                       "Cancel must not create a message")
         let field = composer(app)
-        // Typing an empty string leaves Select All unchanged; delete the selected draft.
         replaceText(XCUIKeyboardKey.delete.rawValue, in: field)
         let clearedValue = field.value as? String ?? ""
         XCTAssertTrue(clearedValue.isEmpty || clearedValue == field.placeholderValue,
                       "The next recording must start with an empty draft")
         app.buttons["chat.voice"].tap()
-        XCTAssertTrue(hold.waitForExistence(timeout: 5))
-        hold.press(forDuration: 0.7)
+        let transcript = element(app, "chat.voice.transcript")
+        XCTAssertTrue(transcript.waitForExistence(timeout: 5))
+        XCTAssertTrue(transcript.label.contains("Проверка голосового ввода"), "Live transcript is not shown: \(transcript.label)")
+        app.buttons["chat.voice"].tap()
         XCTAssertTrue(app.staticTexts["Проверка голосового ввода"].waitForExistence(timeout: 8),
-                      "Release must submit the finalized transcript exactly once")
-        XCTAssertEqual(app.staticTexts.matching(identifier: "Проверка голосового ввода").count, 1)
+                      "The second tap must submit the finalized transcript exactly once")
         XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "message.user.")).count, 2,
-                       "Cancel must not create a message and release must create exactly one")
-        waitAbsent(element(app, "chat.voice.recording.overlay"))
+                       "Cancel must not create a message and the second tap must create exactly one")
+        waitAbsent(element(app, "chat.voice.hint"))
     }
 
     private func openTools(_ app: XCUIApplication) {

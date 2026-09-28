@@ -20,6 +20,29 @@ enum HonerTool: String, CaseIterable {
     case sendToChat = "send_message_to_chat"
     case saveMemory = "save_memory"
     case setAppSetting = "set_app_setting"
+    /// Текущие настройки приложения: модель видит, что включено у пользователя.
+    case getAppSettings = "get_app_settings"
+    /// Нарисовать картинку по описанию.
+    case drawImage = "draw_image"
+    /// Интернет — доступен, только когда включена кнопка «Поиск». Модель сама решает,
+    /// нужен ли ей интернет для ответа.
+    case webSearch = "web_search"
+    case openPage = "open_page"
+    case findImages = "find_images"
+    case findVideos = "find_videos"
+    case screenshotPage = "screenshot_page"
+    case getWeather = "get_weather"
+
+    /// Инструмент ходит в интернет и выполняется асинхронно.
+    var isWeb: Bool {
+        switch self {
+        case .webSearch, .openPage, .findImages, .findVideos, .screenshotPage, .getWeather: return true
+        default: return false
+        }
+    }
+
+    /// Инструмент выполняется асинхронно (сеть, генерация картинки).
+    var isAsync: Bool { isWeb }
 
     /// Описание для API: имя, назначение и параметры в формате JSON Schema.
     var schema: [String: Any] {
@@ -154,6 +177,39 @@ enum HonerTool: String, CaseIterable {
                     ]
                 ]
             ]
+        case .getAppSettings:
+            return Self.function(rawValue, "Показывает текущие настройки приложения у пользователя: включены ли рассуждение, поиск, озвучивание, уведомления, стикеры, тема, язык, размер шрифта, голос, имя в профиле, число записей памяти. Вызывай, когда пользователь спрашивает про свои настройки или когда от них зависит ответ.", [:], [])
+        case .drawImage:
+            return Self.function(rawValue, "Рисует картинку по описанию (иллюстрация, арт, логотип, пейзаж, персонаж) и возвращает строку для вставки в ответ. Описание пиши на английском — так качество выше. Вставь возвращённую строку ![…](…) в ответ без изменений.", [
+                "prompt": ["type": "string", "description": "Подробное описание картинки на английском: объект, стиль, цвета, композиция"],
+                "orientation": ["type": "string", "description": "square, portrait или landscape; по умолчанию square"]
+            ], ["prompt"])
+        case .webSearch:
+            return Self.function(rawValue, "Ищет в интернете сразу в нескольких поисковиках (Bing, DuckDuckGo, Brave, Википедия) и читает найденные страницы. Вызывай, когда нужны свежие или точные данные, которых ты не знаешь наверняка: новости, цены, курсы, события, расписания, характеристики, факты о малоизвестном. Для общих знаний, расчётов, кода, советов и болтовни поиск не нужен.", [
+                "query": ["type": "string", "description": "Поисковый запрос: только тема, без слов-команд"]
+            ], ["query"])
+        case .openPage:
+            return Self.function(rawValue, "Открывает и читает страницу по ссылке, как браузер Safari: выполняет JavaScript, читает публичные каналы Telegram (t.me/…), страницы ВКонтакте, новости, документацию. Возвращает текст страницы и картинки на ней.", [
+                "url": ["type": "string", "description": "Полная ссылка https://…; для Telegram можно t.me/имя_канала"]
+            ], ["url"])
+        case .findImages:
+            return Self.function(rawValue, "Находит в интернете настоящие фотографии и изображения по теме и возвращает строки для вставки в ответ. Вызывай, когда пользователь просит показать фото, картинку, как что-то выглядит.", [
+                "query": ["type": "string", "description": "Что должно быть на изображении; лучше на английском"],
+                "count": ["type": "integer", "description": "Сколько изображений, 1–6, по умолчанию 3"]
+            ], ["query"])
+        case .findVideos:
+            return Self.function(rawValue, "Находит видео (YouTube и другие) по теме и возвращает строки для вставки в ответ: приложение покажет видео с кнопкой воспроизведения прямо в чате.", [
+                "query": ["type": "string", "description": "Тема видео"],
+                "count": ["type": "integer", "description": "Сколько видео, 1–4, по умолчанию 2"]
+            ], ["query"])
+        case .screenshotPage:
+            return Self.function(rawValue, "Делает скриншот страницы сайта и возвращает строку для вставки в ответ — пользователь увидит, как выглядит страница.", [
+                "url": ["type": "string", "description": "Полная ссылка https://…"]
+            ], ["url"])
+        case .getWeather:
+            return Self.function(rawValue, "Возвращает текущую погоду и прогноз на 7 дней для города (Open-Meteo).", [
+                "city": ["type": "string", "description": "Город, например «Клин» или «Москва»"]
+            ], ["city"])
         case .setAppSetting:
             return [
                 "type": "function",
@@ -174,6 +230,23 @@ enum HonerTool: String, CaseIterable {
     }
 
     static var apiSchemas: [[String: Any]] { allCases.map(\.schema) }
+
+    /// Инструменты для запроса: интернет — только когда включена кнопка «Поиск».
+    static func schemas(searchEnabled: Bool) -> [[String: Any]] {
+        allCases.filter { searchEnabled || !$0.isWeb }.map(\.schema)
+    }
+
+    private static func function(_ name: String, _ description: String,
+                                 _ properties: [String: Any], _ required: [String]) -> [String: Any] {
+        [
+            "type": "function",
+            "function": [
+                "name": name,
+                "description": description,
+                "parameters": ["type": "object", "properties": properties, "required": required]
+            ]
+        ]
+    }
 }
 
 /// Один вызов инструмента, собранный из потока (аргументы приходят кусками).
@@ -266,6 +339,8 @@ struct ToolExecutionContext: Sendable {
     var chats: [ChatOverview] = []
     /// Сообщения выбранного чата для read_chat.
     var transcripts: [Int: [ChatTranscriptLine]] = [:]
+    /// Текущие настройки приложения для get_app_settings.
+    var settingsSummary: String = ""
 }
 
 /// Что приложение должно сделать по просьбе модели.
@@ -277,6 +352,8 @@ enum ToolEffect: Sendable {
     case renameChat(id: UUID, title: String)
     case pinChat(id: UUID, pinned: Bool)
     case sendToChatID(id: UUID, text: String)
+    /// Прочитанные страницы: показываются карточкой «Источники ответа».
+    case addSources([WebSource])
 }
 
 /// Результат выполнения инструмента, который уходит обратно в модель.
@@ -332,7 +409,25 @@ enum ToolExecutor {
             }
             return ToolCallResult(callID: call.id, name: call.name, content: parts.joined(separator: ". ") + ".")
 
-        case .none, .listChats, .readChat, .renameChat, .pinChat, .sendToChat, .saveMemory, .setAppSetting:
+        case .getAppSettings:
+            let summary = context.settingsSummary.isEmpty ? "Настройки сейчас недоступны." : context.settingsSummary
+            return ToolCallResult(callID: call.id, name: call.name, content: "Настройки пользователя в приложении Honer AI:\n" + summary)
+
+        case .drawImage:
+            let prompt = ToolArgument.string(call.parsedArguments["prompt"])?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !prompt.isEmpty else {
+                return ToolCallResult(callID: call.id, name: call.name, content: "Не передано описание картинки.")
+            }
+            let orientation = ToolArgument.string(call.parsedArguments["orientation"]) ?? "square"
+            guard let url = MediaLinks.drawing(prompt: prompt, orientation: orientation) else {
+                return ToolCallResult(callID: call.id, name: call.name, content: "Не удалось составить ссылку на рисунок.")
+            }
+            return ToolCallResult(callID: call.id, name: call.name,
+                                  content: "Картинка готова. Вставь в ответ ровно эту строку, без изменений:\n![\(MediaLinks.caption(prompt))](\(url.absoluteString))")
+
+        case .none, .listChats, .readChat, .renameChat, .pinChat, .sendToChat, .saveMemory, .setAppSetting,
+             .webSearch, .openPage, .findImages, .findVideos, .screenshotPage, .getWeather:
             return ToolCallResult(callID: call.id, name: call.name,
                                   content: "Инструмент «\(call.name)» доступен только в расширенном режиме.")
         }

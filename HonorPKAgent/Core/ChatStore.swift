@@ -651,7 +651,14 @@ final class ChatStore: ObservableObject {
         let thinking = reasoningEnabled && !suppressThinkingOnce
         suppressThinkingOnce = false
         let query = input.last(where: { $0.role == .user })?.content ?? ""
-        let searching = SearchIntent.needsSearch(query: query, searchToggleOn: searchEnabled)
+        // Кнопка «Поиск» даёт модели инструменты интернета — искать или нет, модель
+        // решает сама. Раньше при включённой кнопке поиск запускался до ответа почти
+        // на любой вопрос: ответ начинался на несколько секунд позже, а модель
+        // получала страницы, которые были ей не нужны.
+        let webToolsOn = searchEnabled
+        // Без кнопки интернет открывается только по явной нужде: ссылка в сообщении,
+        // прямая просьба найти, погода или вопрос о свежих данных.
+        let searching = !webToolsOn && SearchIntent.needsSearch(query: query, searchToggleOn: false)
         let recentContext = input.suffix(4).map { String($0.content.prefix(1500)) }.joined(separator: "\n")
         // Для решения «вопрос про другие чаты» смотрим только на реплики пользователя:
         // ответы ассистента сами часто упоминают «чат», и раньше из-за этого переписка
@@ -769,6 +776,8 @@ final class ChatStore: ObservableObject {
                 var toolRounds = 0
                 var toolResults: [ToolCallResult] = []
                 var executedSignatures = Set<String>()
+                /// Результаты уже выполненных вызовов: повтор того же вызова не идёт в сеть снова.
+                var resultsBySignature: [String: String] = [:]
                 var announcement = ""
                 passLoop: while true {
                     toolCalls.removeAll()
@@ -776,7 +785,7 @@ final class ChatStore: ObservableObject {
                     do {
                         for try await delta in client.stream(messages: passMessages, thinking: thinking,
                                                              systemInstruction: instruction, searchContext: context,
-                                                             tools: Self.toolsEnabled ? HonerTool.apiSchemas : nil,
+                                                             tools: Self.toolsEnabled ? HonerTool.schemas(searchEnabled: webToolsOn) : nil,
                                                              forceAnswer: forceAnswer) {
                             try Task.checkCancellation()
                             guard self.activeRunID == runID else { return }
@@ -825,10 +834,37 @@ final class ChatStore: ObservableObject {
                         let signature = call.name + "|" + call.arguments
                         let isRepeat = executedSignatures.contains(signature)
                         executedSignatures.insert(signature)
-                        let result = ToolExecutor.executeExtended(call, context: toolContext)
                         // Повторный вызов с теми же аргументами не выполняем второй раз:
-                        // иначе одно и то же сообщение ушло бы в чат дважды.
-                        if isRepeat { repeated = true } else if let effect = result.effect { self.apply(effect) }
+                        // иначе одно и то же сообщение ушло бы в чат дважды, а поиск
+                        // снова ходил бы в сеть.
+                        if isRepeat, let previous = resultsBySignature[signature] {
+                            repeated = true
+                            roundResults.append(ToolCallResult(callID: call.id, name: call.name, content: previous))
+                            continue
+                        }
+                        let result: ToolCallResult
+                        if let tool = HonerTool(rawValue: call.name), tool.isAsync {
+                            // Интернет выполняется асинхронно; модель видит его только
+                            // при включённой кнопке «Поиск».
+                            result = webToolsOn
+                                ? await WebToolExecutor(client: self.webClient).execute(call)
+                                : ToolCallResult(callID: call.id, name: call.name,
+                                                 content: "Интернет выключен. Предложи пользователю включить кнопку «Поиск».")
+                            try Task.checkCancellation()
+                            guard self.activeRunID == runID else { return }
+                        } else {
+                            result = ToolExecutor.executeExtended(call, context: toolContext)
+                        }
+                        resultsBySignature[signature] = result.content
+                        if case .addSources(let found)? = result.effect {
+                            self.mutateMessage(chatID: chatID, messageID: response.id) { message in
+                                for source in found where !message.sources.contains(where: { $0.url == source.url }) {
+                                    message.sources.append(source)
+                                }
+                            }
+                        } else if let effect = result.effect {
+                            self.apply(effect)
+                        }
                         roundResults.append(result)
                     }
                     toolResults.append(contentsOf: roundResults)
@@ -1099,12 +1135,23 @@ final class ChatStore: ObservableObject {
     }
 
     /// Сколько раз подряд модель может вызвать инструменты в одном ответе.
-    static let maximumToolRounds = 4
+    static let maximumToolRounds = 5
+
+    /// Клиент интернета для инструментов модели.
+    private var webClient: WebSearchClient { (searchClient as? WebSearchClient) ?? WebSearchClient() }
 
     /// Строка состояния, пока выполняются инструменты: пользователь видит, что именно
     /// делает помощник, а не абстрактное «Выполняю действие…».
     static func toolStatus(for calls: [ToolCallRequest]) -> String {
         let names = Set(calls.map(\.name))
+        if names.contains(HonerTool.webSearch.rawValue) { return "Ищу в интернете…" }
+        if names.contains(HonerTool.openPage.rawValue) { return "Читаю страницу…" }
+        if names.contains(HonerTool.findImages.rawValue) { return "Ищу изображения…" }
+        if names.contains(HonerTool.findVideos.rawValue) { return "Ищу видео…" }
+        if names.contains(HonerTool.screenshotPage.rawValue) { return "Делаю скриншот страницы…" }
+        if names.contains(HonerTool.getWeather.rawValue) { return "Смотрю погоду…" }
+        if names.contains(HonerTool.drawImage.rawValue) { return "Рисую…" }
+        if names.contains(HonerTool.getAppSettings.rawValue) { return "Смотрю настройки…" }
         if names.contains(HonerTool.readChat.rawValue) { return "Читаю чат…" }
         if names.contains(HonerTool.listChats.rawValue) { return "Смотрю список чатов…" }
         if names.contains(HonerTool.sendToChat.rawValue) { return "Отправляю сообщение в чат…" }
@@ -1227,7 +1274,41 @@ final class ChatStore: ObservableObject {
             chatStartedAt: selectedConversation?.createdAt,
             lastMessageAt: messages.last?.createdAt,
             chats: overviews,
-            transcripts: transcripts)
+            transcripts: transcripts,
+            settingsSummary: settingsSummary())
+    }
+
+    /// Настройки пользователя словами — для инструмента get_app_settings.
+    private func settingsSummary() -> String {
+        func onOff(_ value: Bool) -> String { value ? "включено" : "выключено" }
+        var lines = [
+            "Рассуждение: \(onOff(reasoningEnabled))",
+            "Поиск в интернете: \(onOff(searchEnabled))",
+            "Память Honer AI: \(onOff(memoryEnabled)), записей: \(memories.count)",
+            "Чатов: \(conversations.filter { $0.archivedAt == nil }.count), в архиве: \(conversations.filter { $0.archivedAt != nil }.count)"
+        ]
+        if let settings = settingsBridge {
+            let theme: String
+            switch settings.appearance {
+            case .system: theme = "как в системе"
+            case .light: theme = "светлая"
+            case .dark: theme = "тёмная"
+            }
+            lines += [
+                "Озвучивать ответы автоматически: \(onOff(settings.autoRead))",
+                "Уведомления о готовом ответе: \(onOff(settings.notificationsEnabled))",
+                "Стикеры и эмодзи в ответах: \(onOff(settings.stickersEnabled))",
+                "Память между чатами: \(onOff(settings.crossChatMemoryEnabled))",
+                "Тема оформления: \(theme)",
+                "Язык интерфейса: \(settings.language == .russian ? "русский" : "английский")",
+                "Размер шрифта: \(Int((settings.fontScale * 100).rounded()))%",
+                "Скорость чтения вслух: \(String(format: "%.2f", settings.voiceRate))",
+                "Язык распознавания речи: \(settings.speechLanguage)",
+                "Автоудаление чатов: \(settings.autoDeleteDays == 0 ? "никогда" : "через \(settings.autoDeleteDays) дн.")",
+                "Имя в профиле: \(settings.displayName.isEmpty ? "не указано" : settings.displayName)"
+            ]
+        }
+        return lines.map { "• " + $0 }.joined(separator: "\n")
     }
 
     /// Применяет действие, которое попросила модель: сообщение в другой чат, память,
@@ -1256,6 +1337,9 @@ final class ChatStore: ObservableObject {
             _ = addMemory(text)
         case .setSetting(let name, let value):
             applySetting(name: name, value: value)
+        case .addSources:
+            // Источники добавляются к ответу прямо в цикле инструментов.
+            break
         }
     }
 
