@@ -275,6 +275,8 @@ enum HonerTool: String, CaseIterable {
                     ]
                 ]
             ]
+        default:
+            return ExtraToolSchemas.schema(for: self)
         }
     }
 
