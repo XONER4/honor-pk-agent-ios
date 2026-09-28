@@ -26,6 +26,8 @@ enum HonerTool: String, CaseIterable {
     case drawImage = "draw_image"
     /// Найти контакт в телефонной книге (с разрешения пользователя).
     case findContact = "find_contact"
+    /// Открыть мини-игру: шахматы, шашки, дурак, «Удача».
+    case startGame = "start_game"
     /// Интернет — доступен, только когда включена кнопка «Поиск». Модель сама решает,
     /// нужен ли ей интернет для ответа.
     case webSearch = "web_search"
@@ -186,6 +188,10 @@ enum HonerTool: String, CaseIterable {
                 "prompt": ["type": "string", "description": "Подробное описание картинки на английском: объект, стиль, цвета, композиция"],
                 "orientation": ["type": "string", "description": "square, portrait или landscape; по умолчанию square"]
             ], ["prompt"])
+        case .startGame:
+            return Self.function(rawValue, "Открывает на экране пользователя мини-игру против тебя: chess (шахматы), checkers (русские шашки), durak (дурак подкидной), slots (игровой автомат «Удача»). Вызывай, когда пользователь хочет поиграть.", [
+                "game": ["type": "string", "description": "chess, checkers, durak или slots"]
+            ], ["game"])
         case .findContact:
             return Self.function(rawValue, "Находит контакт в телефонной книге пользователя по имени: телефоны, почту, организацию, день рождения. Работает, если пользователь разрешил доступ к контактам.", [
                 "name": ["type": "string", "description": "Имя или фамилия"]
@@ -360,6 +366,8 @@ enum ToolEffect: Sendable {
     case sendToChatID(id: UUID, text: String)
     /// Прочитанные страницы: показываются карточкой «Источники ответа».
     case addSources([WebSource])
+    /// Открыть мини-игру.
+    case openGame(String)
 }
 
 /// Результат выполнения инструмента, который уходит обратно в модель.
@@ -414,6 +422,15 @@ enum ToolExecutor {
                 parts.append("Последнее сообщение: \(formatter.string(from: last))")
             }
             return ToolCallResult(callID: call.id, name: call.name, content: parts.joined(separator: ". ") + ".")
+
+        case .startGame:
+            guard let kind = GameKind.from(ToolArgument.string(call.parsedArguments["game"]) ?? "") else {
+                return ToolCallResult(callID: call.id, name: call.name,
+                                      content: "Доступны игры: шахматы, шашки, дурак, «Удача». Спроси, во что сыграть.")
+            }
+            return ToolCallResult(callID: call.id, name: call.name,
+                                  content: "Игра «\(kind.title)» открыта на экране пользователя. Коротко и весело пожелай удачи.",
+                                  effect: .openGame(kind.rawValue))
 
         case .getAppSettings:
             let summary = context.settingsSummary.isEmpty ? "Настройки сейчас недоступны." : context.settingsSummary

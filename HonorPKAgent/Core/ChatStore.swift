@@ -145,6 +145,24 @@ final class ChatStore: ObservableObject {
     /// Запрос текущего ответа — чтобы передать его фоновой загрузке.
     private var backgroundSnapshot: (input: [ChatMessage], instruction: String, context: String, chatTitle: String)?
 
+    /// Игра, которую попросила открыть модель.
+    @Published var requestedGame: GameKind?
+
+    /// Результат партии — сообщением в чат: Honer AI видит его в переписке.
+    func postGameResult(_ text: String) {
+        if selectedConversation == nil {
+            let chat = Conversation(title: "Игры с Honer AI")
+            conversations.insert(chat, at: 0)
+            selectedConversationID = chat.id
+        }
+        guard let chatID = selectedConversationID else { return }
+        mutateChat(chatID: chatID) { chat in
+            chat.messages.append(ChatMessage(role: .assistant, content: text))
+            chat.updatedAt = Date()
+        }
+        saveSnapshot()
+    }
+
     /// Ответ, который сейчас печатается на экране. Печать может закончиться чуть
     /// позже потока: хвост допечатывается плавно, а не вываливается целиком.
     @Published private(set) var typingMessageID: UUID?
@@ -259,6 +277,7 @@ final class ChatStore: ObservableObject {
         case .setAppSetting: return GenerationStep(kind: "settings", title: "Меняю настройку", detail: argument("name"))
         case .findContact: return GenerationStep(kind: "contact", title: "Ищу контакт", detail: argument("name"))
         case .copyToClipboard: return GenerationStep(kind: "settings", title: "Копирую в буфер обмена")
+        case .startGame: return GenerationStep(kind: "settings", title: "Открываю игру", detail: argument("game"))
         default: return GenerationStep(kind: "settings", title: "Выполняю действие")
         }
     }
@@ -1471,6 +1490,7 @@ final class ChatStore: ObservableObject {
         if names.contains(HonerTool.getWeather.rawValue) { return "Смотрю погоду…" }
         if names.contains(HonerTool.drawImage.rawValue) { return "Рисую…" }
         if names.contains(HonerTool.getAppSettings.rawValue) { return "Смотрю настройки…" }
+        if names.contains(HonerTool.startGame.rawValue) { return "Открываю игру…" }
         if names.contains(HonerTool.readChat.rawValue) { return "Читаю чат…" }
         if names.contains(HonerTool.listChats.rawValue) { return "Смотрю список чатов…" }
         if names.contains(HonerTool.sendToChat.rawValue) { return "Отправляю сообщение в чат…" }
@@ -1659,6 +1679,8 @@ final class ChatStore: ObservableObject {
         case .addSources:
             // Источники добавляются к ответу прямо в цикле инструментов.
             break
+        case .openGame(let raw):
+            requestedGame = GameKind(rawValue: raw)
         }
     }
 

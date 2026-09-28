@@ -33,6 +33,9 @@ struct ChatRootView: View {
     @State private var scrollRequest: ScrollRequest?
     /// Открытое окно инструкций чата.
     @State private var instructionsTarget: InstructionsTarget?
+    /// Витрина игр и открытая игра.
+    @State private var gameHubOpen = false
+    @State private var activeGame: GameKind?
     /// Сообщение, которое сейчас пишется, — подсвечивается на линиях навигации.
     @State private var streamingMessageID: UUID?
     @State private var findQuery = ""
@@ -236,6 +239,28 @@ struct ChatRootView: View {
             }
         }
         .onDisappear { cancelVoice(); speech.stopSpeaking(); toastTask?.cancel() }
+        .sheet(isPresented: $gameHubOpen) {
+            GameHubView { kind in
+                gameHubOpen = false
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    activeGame = kind
+                }
+            }
+        }
+        .fullScreenCover(item: $activeGame) { kind in
+            GameScreen(kind: kind) { result in store.postGameResult(result) }
+        }
+        .onChange(of: store.requestedGame) { requested in
+            guard let requested else { return }
+            store.requestedGame = nil
+            composerFocused = false
+            Task { @MainActor in
+                // Игра открывается, когда модель допечатает приглашение.
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                activeGame = requested
+            }
+        }
         .sheet(item: $instructionsTarget) { target in
             InstructionsSheet(chatID: target.id)
                 .environmentObject(store)
@@ -364,6 +389,15 @@ struct ChatRootView: View {
 
     private var chatToolsMenu: some View {
         Menu {
+            Button { composerFocused = false; gameHubOpen = true } label: {
+                Label(text("Игры с Honer AI", "Games with Honer AI"), systemImage: "gamecontroller")
+            }.accessibilityIdentifier("chat.tools.games")
+            if let chat = store.selectedConversation {
+                Button { composerFocused = false; instructionsTarget = InstructionsTarget(id: chat.id) } label: {
+                    Label(text("Инструкции чата", "Chat instructions"), systemImage: "pin")
+                }.accessibilityIdentifier("chat.tools.instructions")
+            }
+            Divider()
             Button {
                 guard let chat = store.selectedConversation else { return }
                 let transcript = chat.messages.map { message in
