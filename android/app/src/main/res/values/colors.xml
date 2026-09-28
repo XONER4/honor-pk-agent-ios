@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="honer_background">#101010</color>
+    <color name="honer_icon_background">#05080F</color>
+    <color name="honer_accent">#6E99FA</color>
+</resources>

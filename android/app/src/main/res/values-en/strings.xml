@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_channel_answers">Honer AI answers</string>
+    <string name="notification_channel_work">Background work</string>
+    <string name="notification_channel_updates">Updates</string>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Honer AI</string>
+    <string name="notification_channel_answers">Ответы Honer AI</string>
+    <string name="notification_channel_work">Работа в фоне</string>
+    <string name="notification_channel_updates">Обновления</string>
+</resources>
