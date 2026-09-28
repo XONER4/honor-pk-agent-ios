@@ -55,9 +55,49 @@ enum VoiceCatalog {
     private static let femaleNames: Set<String> = [
         "milena", "katya", "alyona", "alena", "elena", "irina", "marina", "tatyana", "tania",
         "oksana", "vera", "yulia", "julia", "svetlana", "anna", "daria", "dariya", "ksenia",
-        "lyudmila", "nadezhda", "olga", "polina", "sofia", "valentina", "yana", "alice", "alisa"
+        "lyudmila", "nadezhda", "olga", "polina", "sofia", "valentina", "yana", "alice", "alisa",
+        "samantha", "ava", "allison", "susan", "victoria", "karen", "moira", "tessa", "fiona", "kate", "serena",
+        "nicky", "zoe", "joelle", "noelle", "martha", "catherine"
     ]
+
+    /// Голоса-«новинки» и голоса Eloquence (Eddy, Flo, Grandpa, Rocko…) звучат как
+    /// робот. Раньше они могли выбираться первыми по алфавиту — отсюда «ужасный
+    /// робот» вместо нормального голоса. Их не используем.
+    static func isUsable(_ voice: AVSpeechSynthesisVoice) -> Bool {
+        let id = voice.identifier.lowercased()
+        return !id.contains("eloquence") && !id.contains("speech.synthesis.voice") && !id.contains("novelty")
+    }
+
+    /// Пол голоса: сначала из системы, затем по имени.
+    static func gender(of voice: AVSpeechSynthesisVoice) -> Gender {
+        switch voice.gender {
+        case .male: return .male
+        case .female: return .female
+        default: return gender(of: voice.name)
+        }
+    }
+
+    /// Лучший голос для языка («ru» или «en») и пола: сначала нужный пол,
+    /// затем качество (премиум → улучшенный → стандартный), затем основной вариант языка.
+    static func bestVoice(language: String, gender: Gender?) -> AVSpeechSynthesisVoice? {
+        let code = String(language.prefix(2)).lowercased()
+        let preferredRegion = code == "en" ? "en-US" : "ru-RU"
+        let candidates = AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.lowercased().hasPrefix(code) && isUsable($0) }
+        func score(_ voice: AVSpeechSynthesisVoice) -> Int {
+            var value = voice.quality.rawValue * 10
+            if let gender, self.gender(of: voice) == gender { value += 100 }
+            if voice.language == preferredRegion { value += 3 }
+            return value
+        }
+        return candidates.max { lhs, rhs in
+            let left = score(lhs), right = score(rhs)
+            if left != right { return left < right }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedDescending
+        }
+    }
     private static let maleNames: Set<String> = [
+        "aaron", "arthur", "evan", "nathan", "tom", "oliver", "gordon", "lee", "rishi", "fred", "alex", "reed",
         "yuri", "yuriy", "dmitri", "dmitry", "alexander", "aleksandr", "maxim", "maksim",
         "ivan", "sergey", "sergei", "nikolay", "pavel", "andrey", "andrei", "artem", "boris",
         "victor", "viktor", "george", "georgiy", "kostya", "konstantin", "mikhail", "oleg",
@@ -85,12 +125,12 @@ enum VoiceCatalog {
     /// Все русские голоса, установленные на устройстве: улучшенные и премиум — сверху.
     static func russianVoices() -> [Voice] {
         let voices = AVSpeechSynthesisVoice.speechVoices()
-            .filter { $0.language.hasPrefix("ru") }
+            .filter { $0.language.hasPrefix("ru") && isUsable($0) }
             .map { voice in
                 Voice(id: voice.identifier,
                       name: voice.name,
                       quality: quality(voice),
-                      gender: gender(of: voice.name),
+                      gender: gender(of: voice),
                       language: voice.language)
             }
         return voices.sorted { lhs, rhs in

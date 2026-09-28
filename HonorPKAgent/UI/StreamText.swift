@@ -646,74 +646,6 @@ enum MarkdownBlockParser {
 
 // MARK: - Отрисовка блоков
 
-// MARK: - Линии навигации по сообщениям
-
-/// Полоска линий справа: каждая линия — одно сообщение чата.
-/// Тап по линии плавно прокручивает чат к этому сообщению.
-struct MessageNavigationLines: View {
-    let messages: [ChatMessage]
-    let anchors: [UUID: Anchor<CGRect>]
-    let geometry: GeometryProxy
-    let streamingMessageID: UUID?
-    let settings: AppSettings
-    let onSelect: (UUID) -> Void
-
-    @State private var activeID: UUID?
-
-    private var visible: [ChatMessage] {
-        messages.filter { anchors[$0.id] != nil }
-    }
-
-    /// Позиция линии в координатах всего контента чата.
-    var body: some View {
-        let items = visible
-        let padded = geometry.safeAreaInsets.top + 56
-        let available = max(CGFloat(80), geometry.size.height - padded - geometry.safeAreaInsets.bottom - 90)
-        // При большом числе сообщений показываем каждое, но ограничиваем перекрытие.
-        let step = items.count > 1 ? available / CGFloat(items.count - 1) : 0
-
-        return VStack(alignment: .trailing, spacing: 0) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, message in
-                Capsule()
-                    .fill(color(for: message))
-                    .frame(width: width(for: message), height: message.role == .user ? 3.5 : 2.5)
-                    .frame(width: 16, height: max(4, min(step, 14)), alignment: .trailing)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        activeID = message.id
-                        UISelectionFeedbackGenerator().selectionChanged()
-                        onSelect(message.id)
-                    }
-                    .onLongPressGesture(minimumDuration: 0.25) {
-                        activeID = message.id
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        onSelect(message.id)
-                    }
-                    .accessibilityLabel(settings.text("Перейти к сообщению \(index + 1)",
-                                                      "Jump to message \(index + 1)"))
-                    .accessibilityIdentifier("chat.nav.line." + message.id.uuidString)
-                    .accessibilityAddTraits(.isButton)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.trailing, 3)
-        .padding(.top, padded)
-        .frame(width: 20, alignment: .trailing)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-    }
-
-    private func color(for message: ChatMessage) -> Color {
-        if message.id == activeID { return HonorTheme.accent }
-        if message.id == streamingMessageID { return HonorTheme.accent.opacity(0.75) }
-        if message.error != nil { return Color.orange.opacity(0.7) }
-        return message.role == .user ? HonorTheme.secondary.opacity(0.45) : HonorTheme.secondary.opacity(0.9)
-    }
-
-    private func width(for message: ChatMessage) -> CGFloat {
-        message.role == .user ? 12 : 9
-    }
-}
-
 /// Инлайн-содержимое абзаца: текст плюс картинки, если модель вставила
 /// Markdown-изображение `![подпись](url)` (пункт 3 ТЗ).
 struct InlineContentView: View {
@@ -794,7 +726,10 @@ struct InlineContentView: View {
                         .font(.system(size: size, weight: weight))
                         .lineSpacing(5)
                         .tint(HonorTheme.accent)
-                        .textSelection(.enabled)
+                        // Системное выделение текста здесь не включаем: оно перехватывало
+                        // долгое нажатие, и меню сообщения («Копировать», «Закрепить как
+                        // инструкцию», «Ветка»…) не открывалось на ответах Honer AI.
+                        // Выделить текст можно пунктом меню «Выбрать текст».
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1846,7 +1781,6 @@ struct CardBlockView: View {
                 Text(rendered)
                     .font(.system(size: fontSize))
                     .lineSpacing(5)
-                    .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.vertical, 2)

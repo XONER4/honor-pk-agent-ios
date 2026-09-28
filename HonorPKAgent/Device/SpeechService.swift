@@ -111,6 +111,8 @@ final class SpeechService: NSObject, ObservableObject {
             let request = SFSpeechAudioBufferRecognitionRequest()
             request.shouldReportPartialResults = true
             request.taskHint = .dictation
+            // Знаки препинания в распознанном тексте: сообщение читается как написанное.
+            request.addsPunctuation = true
             recognizer = speechRecognizer
             recognitionRequest = request
             let input = engine.inputNode
@@ -272,20 +274,27 @@ final class SpeechService: NSObject, ObservableObject {
 
     static func availableVoices(language: String = "ru-RU") -> [AVSpeechSynthesisVoice] {
         let code = String(language.prefix(2)).lowercased()
-        return AVSpeechSynthesisVoice.speechVoices().filter { $0.language.lowercased().hasPrefix(code) }.sorted {
+        return AVSpeechSynthesisVoice.speechVoices().filter { $0.language.lowercased().hasPrefix(code) && VoiceCatalog.isUsable($0) }.sorted {
             if $0.quality != $1.quality { return $0.quality.rawValue > $1.quality.rawValue }
             if ($0.language == language) != ($1.language == language) { return $0.language == language }
             return $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }
     }
-    static func preferredVoice(identifier: String = "", language: String = "ru-RU") -> AVSpeechSynthesisVoice? {
+    static func preferredVoice(identifier: String = "", language: String = "ru-RU",
+                               gender: VoiceCatalog.Gender? = nil) -> AVSpeechSynthesisVoice? {
         if !identifier.isEmpty, let voice = AVSpeechSynthesisVoice(identifier: identifier),
            voice.language.lowercased().hasPrefix(String(language.prefix(2)).lowercased()) { return voice }
+        if let gender, let voice = VoiceCatalog.bestVoice(language: language, gender: gender) { return voice }
         return availableVoices(language: language).first ?? AVSpeechSynthesisVoice(language: language)
     }
+
+    /// Читает текст вслух. Русские части читает русский голос, английские —
+    /// английский того же пола: раньше один русский голос читал и английские слова,
+    /// и половина слов звучала неправильно.
     /// - Parameter rate: множитель скорости чтения (1.0 — обычная). Настраивается в разделе «Голос».
-    func speak(_ text: String, voiceIdentifier: String = "", language: String = "ru-RU", rate: Double = 0.94) {
-        let spokenText = Self.sanitizedSpeechText(text)
+    func speak(_ text: String, voiceIdentifier: String = "", gender: VoiceCatalog.Gender = .male,
+               language: String = "ru-RU", rate: Double = 0.95) {
+        let spokenText = Self.spokenForm(Self.sanitizedSpeechText(text))
         guard !spokenText.isEmpty else { return }
         clearError(); cancelRecording()
         activeUtterance = nil; synthesizer.stopSpeaking(at: .immediate)
@@ -293,16 +302,87 @@ final class SpeechService: NSObject, ObservableObject {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .spokenAudio, options: .duckOthers)
             try session.setActive(true)
-            let utterance = AVSpeechUtterance(string: spokenText)
-            utterance.voice = Self.preferredVoice(identifier: voiceIdentifier, language: language)
+            let russian = Self.preferredVoice(identifier: voiceIdentifier, language: language, gender: gender)
+            let english = VoiceCatalog.bestVoice(language: "en", gender: gender)
             let clamped = Float(min(max(rate, 0.35), 1.8))
-            utterance.rate = min(AVSpeechUtteranceMaximumSpeechRate,
-                                 max(AVSpeechUtteranceMinimumSpeechRate,
-                                     AVSpeechUtteranceDefaultSpeechRate * clamped))
-            utterance.preUtteranceDelay = 0.04
-            activeUtterance = utterance; isSpeaking = true
-            synthesizer.speak(utterance)
+            let speed = min(AVSpeechUtteranceMaximumSpeechRate,
+                            max(AVSpeechUtteranceMinimumSpeechRate, AVSpeechUtteranceDefaultSpeechRate * clamped))
+            var last: AVSpeechUtterance?
+            for segment in Self.languageSegments(spokenText) {
+                let utterance = AVSpeechUtterance(string: segment.text)
+                utterance.voice = segment.english ? (english ?? russian) : russian
+                utterance.rate = speed
+                utterance.pitchMultiplier = 1.0
+                utterance.preUtteranceDelay = last == nil ? 0.04 : 0
+                synthesizer.speak(utterance)
+                last = utterance
+            }
+            activeUtterance = last; isSpeaking = last != nil
         } catch { activeUtterance = nil; isSpeaking = false; deactivateAudioIfIdle(); errorMessage = error.localizedDescription }
+    }
+
+    /// Текст делится на куски по языку: латиница — английский голос, остальное — русский.
+    /// Числа и знаки остаются в текущем куске.
+    nonisolated static func languageSegments(_ text: String) -> [(text: String, english: Bool)] {
+        guard let expression = try? NSRegularExpression(pattern: "\\S+\\s*") else { return [(text, false)] }
+        var segments: [(text: String, english: Bool)] = []
+        var current = ""
+        var currentEnglish: Bool?
+        for match in expression.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let range = Range(match.range, in: text) else { continue }
+            let token = String(text[range])
+            let hasCyrillic = token.unicodeScalars.contains { (0x0400...0x04FF).contains(Int($0.value)) }
+            let hasLatin = token.unicodeScalars.contains { ($0.value >= 65 && $0.value <= 90) || ($0.value >= 97 && $0.value <= 122) }
+            let kind: Bool? = hasCyrillic ? false : (hasLatin ? true : nil)
+            if let kind, let active = currentEnglish, kind != active, !current.isEmpty {
+                segments.append((current, active))
+                current = ""
+            }
+            if let kind { currentEnglish = kind }
+            current += token
+        }
+        if !current.isEmpty { segments.append((current, currentEnglish ?? false)) }
+        return segments.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    /// Текст для чтения по-русски: знаки и сокращения произносятся словами,
+    /// строки заканчиваются паузой.
+    nonisolated static func spokenForm(_ input: String) -> String {
+        var text = input
+        func replace(_ pattern: String, _ replacement: String) {
+            guard let expression = try? NSRegularExpression(pattern: pattern) else { return }
+            text = expression.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: replacement)
+        }
+        replace("\\s?°\\s?[CС]\\b", " градусов Цельсия")
+        replace("\\s?°", " градусов")
+        replace("\\s?%", " процентов")
+        replace("\\s?₽", " рублей")
+        replace("\\s?€", " евро")
+        replace("\\$\\s?(\\d[\\d\\s.,]*\\d|\\d)", "$1 долларов")
+        replace("\\s?\\$", " долларов")
+        replace("(?i)\\bкм/ч\\b", "километров в час")
+        replace("(?i)\\bм/с\\b", "метров в секунду")
+        replace("(?i)\\bт\\.\\s?е\\.", "то есть")
+        replace("(?i)\\bт\\.\\s?д\\.", "так далее")
+        replace("(?i)\\bт\\.\\s?п\\.", "тому подобное")
+        replace("(?i)\\bнапр\\.", "например")
+        replace("(?i)\\bтыс\\.", "тысяч")
+        replace("(?i)\\bмлн\\b\\.?", "миллионов")
+        replace("(?i)\\bмлрд\\b\\.?", "миллиардов")
+        replace("(\\d)\\s?[–—]\\s?(\\d)", "$1 до $2")
+        replace("\\s?×\\s?", " умножить на ")
+        replace("\\s?≈\\s?", " примерно ")
+        replace("\\s?±\\s?", " плюс-минус ")
+        replace("\\s?(→|⇒)\\s?", ", ")
+        replace("\\s=\\s", " равно ")
+        // Пауза в конце каждой строки: заголовки и пункты списка не сливаются.
+        text = text.components(separatedBy: "\n").map { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard let last = trimmed.last, !".!?…:;,".contains(last) else { return trimmed }
+            return trimmed + "."
+        }.joined(separator: "\n")
+        replace("[ \\t]{2,}", " ")
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     func stopSpeaking() {
         activeUtterance = nil; synthesizer.stopSpeaking(at: .immediate)

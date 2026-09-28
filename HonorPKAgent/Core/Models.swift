@@ -109,6 +109,28 @@ struct Conversation: Identifiable, Codable, Equatable, Sendable {
     var systemPrompt: String = ""
     /// Порядок среди закреплённых: закреплённые чаты можно менять местами.
     var pinOrder: Int = 0
+    /// Закреплённые инструкции этого чата: сообщения, которые пользователь закрепил,
+    /// чтобы нейросеть видела их в каждом ответе. Необязательное поле — старые
+    /// сохранённые истории без него открываются как раньше.
+    var instructions: [ChatInstruction]? = nil
+}
+
+/// Закреплённая инструкция чата.
+struct ChatInstruction: Identifiable, Codable, Equatable, Sendable {
+    var id: UUID = UUID()
+    var text: String
+    /// Кто написал текст: пользователь или Honer AI (закрепляет всегда пользователь).
+    var author: MessageRole = .user
+    /// Сообщение, из которого сделана инструкция.
+    var sourceMessageID: UUID? = nil
+    var createdAt: Date = Date()
+}
+
+/// Инструкция, сохранённая «в черновики», чтобы потом закрепить её в любом чате.
+struct SavedInstruction: Identifiable, Codable, Equatable, Sendable {
+    var id: UUID = UUID()
+    var text: String
+    var savedAt: Date = Date()
 }
 
 extension Conversation {
@@ -169,6 +191,8 @@ struct HistoryArchive: Codable, Sendable {
     var inFlightMessageID: UUID? = nil
     var memories: [HonorMemory]? = nil
     var memoryEnabled: Bool? = nil
+    /// Сохранённые инструкции («черновики»).
+    var instructionLibrary: [SavedInstruction]? = nil
 }
 
 struct DeepSeekConfiguration: Sendable {

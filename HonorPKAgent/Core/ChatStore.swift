@@ -36,6 +36,10 @@ final class ChatStore: ObservableObject {
     @Published private(set) var generationStatus: String?
     @Published private(set) var editingMessageID: UUID?
     @Published private(set) var memories: [HonorMemory] = []
+    /// Сохранённые инструкции («черновики»): их можно снова закрепить в любом чате.
+    @Published private(set) var instructionLibrary: [SavedInstruction] = []
+    static let maximumInstructionLength = 4000
+    static let maximumInstructionsPerChat = 12
     /// Реакция агента на сообщение пользователя: агент может поставить эмодзи
     /// отдельной строкой «РЕАКЦИЯ: 🙂» — она убирается из текста и показывается бейджем.
     private func extractAssistantReaction(chatID: UUID, messageID: UUID) {
@@ -236,18 +240,106 @@ final class ChatStore: ObservableObject {
         if !name.isEmpty {
             instruction += "\nИмя пользователя в локальном профиле (данные): \(String(reflecting: name)). Обращайся по имени естественно, без повторения в каждом ответе."
         }
+        // Закреплённые инструкции и память — разные сведения, и модель должна их
+        // различать. Инструкции — это правила, которые пользователь сам закрепил
+        // в этом чате: они действуют в каждом ответе. Память — справочные факты,
+        // которые нужны, только когда относятся к вопросу. Поэтому это два
+        // отдельных раздела с понятными заголовками, а не общий список.
+        if let chat = conversations.first(where: { $0.id == chatID }) {
+            let pinned = Self.instructionsBlock(chat.instructions ?? [], legacyPrompt: chat.systemPrompt)
+            if !pinned.isEmpty { instruction += "\n\n" + pinned }
+        }
         if memoryEnabled, !memories.isEmpty {
             let scoped = Self.relevantMemories(memories, for: query)
             let entries = scoped.map { "• \($0.text)" }.joined(separator: "\n")
-            instruction += "\n\nПамять Honer AI — факты и предпочтения, которые пользователь сохранил. Учитывай их, когда они относятся к запросу; последнее сообщение пользователя важнее сохранённых предпочтений.\n\(entries)"
-        }
-        if let chat = conversations.first(where: { $0.id == chatID }) {
-            let prompt = chat.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !prompt.isEmpty {
-                instruction += "\n\nИнструкция этого чата (задана пользователем, действует только здесь):\n\(prompt)"
-            }
+            instruction += "\n\n## Память Honer AI — справочные факты о пользователе\nЭто факты и предпочтения, сохранённые раньше (пользователем или тобой через save_memory). Это НЕ инструкции чата: используй их, только когда они относятся к вопросу, и не пересказывай без повода. Если память противоречит закреплённой инструкции или последнему сообщению пользователя — главнее инструкция и сообщение.\n\(entries)"
         }
         return instruction
+    }
+
+    /// Раздел «Закреплённые инструкции» для модели.
+    static func instructionsBlock(_ instructions: [ChatInstruction], legacyPrompt: String = "") -> String {
+        var items = instructions.map { item -> String in
+            let origin = item.author == .assistant
+                ? "твой прежний ответ, который пользователь закрепил как образец или правило"
+                : "написал пользователь"
+            return "[закрепил пользователь; \(origin)]\n\(item.text)"
+        }
+        let legacy = legacyPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !legacy.isEmpty { items.insert("[закрепил пользователь; написал пользователь]\n\(legacy)", at: 0) }
+        guard !items.isEmpty else { return "" }
+        let numbered = items.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n\n")
+        return "## Закреплённые инструкции этого чата\nПользователь сам закрепил эти сообщения как постоянные инструкции для этого чата. Ты видишь их в каждом ответе. Соблюдай их всегда, пока они закреплены; последнее сообщение пользователя может уточнить их для конкретного ответа. Это правила, а не память и не факты.\n\(numbered)"
+    }
+
+    // MARK: - Закреплённые инструкции
+
+    /// Закрепить сообщение как инструкцию текущего чата.
+    @discardableResult
+    func pinInstruction(fromMessage messageID: UUID) -> Bool {
+        guard let chatID = selectedConversationID,
+              let message = conversations.first(where: { $0.id == chatID })?.messages.first(where: { $0.id == messageID }) else { return false }
+        return addInstruction(chatID: chatID, text: message.content, author: message.role == .assistant ? .assistant : .user,
+                              sourceMessageID: messageID)
+    }
+
+    @discardableResult
+    func addInstruction(chatID: UUID, text: String, author: MessageRole = .user, sourceMessageID: UUID? = nil) -> Bool {
+        let value = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumInstructionLength))
+        guard !value.isEmpty, let index = conversations.firstIndex(where: { $0.id == chatID }) else { return false }
+        var list = conversations[index].instructions ?? []
+        guard !list.contains(where: { $0.text == value }) else {
+            errorMessage = "Такая инструкция уже закреплена."
+            return false
+        }
+        guard list.count < Self.maximumInstructionsPerChat else {
+            errorMessage = "В чате можно закрепить до \(Self.maximumInstructionsPerChat) инструкций."
+            return false
+        }
+        list.append(ChatInstruction(text: value, author: author, sourceMessageID: sourceMessageID))
+        conversations[index].instructions = list
+        saveSnapshot()
+        return true
+    }
+
+    func updateInstruction(chatID: UUID, id: UUID, text: String) {
+        let value = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumInstructionLength))
+        guard !value.isEmpty, let chat = conversations.firstIndex(where: { $0.id == chatID }),
+              let item = conversations[chat].instructions?.firstIndex(where: { $0.id == id }) else { return }
+        conversations[chat].instructions?[item].text = value
+        saveSnapshot()
+    }
+
+    /// Открепить инструкцию. По умолчанию она сохраняется в черновики.
+    func unpinInstruction(chatID: UUID, id: UUID, keepInLibrary: Bool = true) {
+        guard let chat = conversations.firstIndex(where: { $0.id == chatID }),
+              let item = conversations[chat].instructions?.first(where: { $0.id == id }) else { return }
+        conversations[chat].instructions?.removeAll { $0.id == id }
+        if keepInLibrary { saveInstructionToLibrary(item.text) }
+        saveSnapshot()
+    }
+
+    func deleteInstruction(chatID: UUID, id: UUID) {
+        unpinInstruction(chatID: chatID, id: id, keepInLibrary: false)
+    }
+
+    func saveInstructionToLibrary(_ text: String) {
+        let value = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumInstructionLength))
+        guard !value.isEmpty, !instructionLibrary.contains(where: { $0.text == value }) else { return }
+        instructionLibrary.insert(SavedInstruction(text: value), at: 0)
+        saveSnapshot()
+    }
+
+    func deleteSavedInstruction(id: UUID) {
+        instructionLibrary.removeAll { $0.id == id }
+        saveSnapshot()
+    }
+
+    /// Закрепить сохранённую инструкцию в чате.
+    @discardableResult
+    func applySavedInstruction(id: UUID, to chatID: UUID) -> Bool {
+        guard let saved = instructionLibrary.first(where: { $0.id == id }) else { return false }
+        return addInstruction(chatID: chatID, text: saved.text)
     }
 
     /// Отбирает факты памяти, относящиеся к текущему вопросу.
@@ -308,7 +400,9 @@ final class ChatStore: ObservableObject {
             return copy
         }
         let title = String(("Ветка · " + source.title).prefix(100))
-        let branch = Conversation(title: title, messages: copies, parentConversationID: source.id, forkedAtMessageID: messageID)
+        var branch = Conversation(title: title, messages: copies, parentConversationID: source.id, forkedAtMessageID: messageID)
+        // Ветка продолжает тот же разговор: закреплённые инструкции переходят в неё.
+        branch.instructions = currentSource.instructions
         conversations.insert(branch, at: 0)
         selectedConversationID = branch.id
         editingMessageID = nil
@@ -535,9 +629,8 @@ final class ChatStore: ObservableObject {
 
     /// Инструкция для конкретного чата (пункт «Промт чата» в меню трёх точек).
     func setChatPrompt(id: UUID, prompt: String) {
-        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
-        conversations[index].systemPrompt = String(prompt.prefix(4000))
-        saveSnapshot()
+        guard conversations.contains(where: { $0.id == id }) else { return }
+        addInstruction(chatID: id, text: prompt)
     }
 
     /// Список для панели чатов: закреплённые всегда сверху и в своём порядке,
@@ -1636,12 +1729,15 @@ final class ChatStore: ObservableObject {
         conversations += incoming.conversations.filter { !existing.contains($0.id) }
         conversations.sort { $0.updatedAt > $1.updatedAt }
         memories = mergedMemories
+        for saved in incoming.instructionLibrary ?? [] where !instructionLibrary.contains(where: { $0.text == saved.text }) {
+            instructionLibrary.append(saved)
+        }
         if wasEmpty { memoryEnabled = incoming.memoryEnabled ?? true }
         saveSnapshot()
     }
 
     private var archive: HistoryArchive {
-        HistoryArchive(conversations: conversations, selectedConversationID: selectedConversationID, draft: draft, attachments: attachments, inFlightMessageID: activeMessageID, memories: memories, memoryEnabled: memoryEnabled)
+        HistoryArchive(conversations: conversations, selectedConversationID: selectedConversationID, draft: draft, attachments: attachments, inFlightMessageID: activeMessageID, memories: memories, memoryEnabled: memoryEnabled, instructionLibrary: instructionLibrary)
     }
 
     private func applyLoadedHistory(_ result: HistoryReadResult) {
@@ -1652,6 +1748,16 @@ final class ChatStore: ObservableObject {
             attachments = loaded.attachments
             memories = Array((loaded.memories ?? []).filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.text.count <= Self.maximumMemoryLength }.prefix(Self.maximumMemoryCount))
             memoryEnabled = loaded.memoryEnabled ?? true
+            instructionLibrary = loaded.instructionLibrary ?? []
+            // Старый «Промт чата» становится закреплённой инструкцией этого чата.
+            for chatIndex in conversations.indices {
+                let legacy = conversations[chatIndex].systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !legacy.isEmpty else { continue }
+                var list = conversations[chatIndex].instructions ?? []
+                if !list.contains(where: { $0.text == legacy }) { list.insert(ChatInstruction(text: legacy), at: 0) }
+                conversations[chatIndex].instructions = list
+                conversations[chatIndex].systemPrompt = ""
+            }
             // A process termination can leave an incomplete placeholder; make the interrupted state visible.
             // Проверяем ВСЕ сообщения, а не только последнее: пустое сообщение ассистента,
             // после которого пользователь успел написать ещё одно, иначе осталось бы

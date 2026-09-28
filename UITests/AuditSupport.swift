@@ -40,8 +40,15 @@ class HonorAuditCase: XCTestCase {
 
     func replaceText(_ value: String, in field: XCUIElement) {
         field.tap()
-        field.press(forDuration: 1.1)
         let app = XCUIApplication()
+        if app.alerts.firstMatch.exists {
+            // В системном окне (алерте) меню «Выбрать всё» перехватывается как помеха.
+            let existing = field.value as? String ?? ""
+            let count = field.placeholderValue == existing ? 0 : existing.count
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: count + 2) + value)
+            return
+        }
+        field.press(forDuration: 1.1)
         let selectAll = app.menuItems["Select All"].exists ? app.menuItems["Select All"] : app.menuItems["Выбрать всё"]
         if selectAll.exists {
             selectAll.tap()

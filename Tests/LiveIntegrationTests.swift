@@ -184,6 +184,45 @@ final class LiveIntegrationTests: XCTestCase {
         XCTAssertTrue(text.contains("включ"), result.content)
     }
 
+    func testLiveAgentSavesFactsItselfAndRemembersThemInAnotherChat() async throws {
+        let store = try configuredStore()
+        store.draft = "Кстати, меня зовут Артём, я живу в Казани и работаю дизайнером интерфейсов. Посоветуй книгу по дизайну."
+        store.send()
+        try await waitIdle(store)
+        XCTAssertTrue(store.memories.contains { $0.text.lowercased().contains("казан") },
+                      "Агент должен сам сохранить важный факт: \(store.memories.map(\.text))")
+        // Новый чат: память общая для всех чатов.
+        store.newChat()
+        store.draft = "В каком городе я живу? Ответь одним словом."
+        store.send()
+        try await waitIdle(store)
+        XCTAssertTrue(store.messages.last?.content.lowercased().contains("казан") ?? false,
+                      "Долговременная память не сработала: \(store.messages.last?.content ?? "")")
+    }
+
+    func testLiveModelFollowsPinnedInstruction() async throws {
+        let store = try configuredStore()
+        let chat = Conversation(title: "Инструкция")
+        store.conversations = [chat]
+        store.selectedConversationID = chat.id
+        store.addInstruction(chatID: chat.id, text: "Каждый ответ заканчивай фразой «Готово, капитан!»")
+        store.draft = "Сколько будет 12 плюс 30?"
+        store.send()
+        try await waitIdle(store)
+        let answer = store.messages.last?.content ?? ""
+        XCTAssertTrue(answer.contains("42"), answer)
+        XCTAssertTrue(answer.contains("Готово, капитан"), "Закреплённая инструкция не соблюдена: \(answer)")
+    }
+
+    private func waitIdle(_ store: ChatStore) async throws {
+        let start = Date()
+        while store.isGenerating && Date().timeIntervalSince(start) < 150 {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertFalse(store.isGenerating, "Live response timed out")
+        XCTAssertNil(store.messages.last?.error)
+    }
+
     func testLiveReadSpecificWebPageWithCitation() async throws {
         let result = try await answer("Прочитай https://support.apple.com/en-us/111872 и скажи, какая диагональ экрана iPhone 13. Дай ссылку на эту страницу.", thinking: false, search: false)
         XCTAssertTrue(result.sources.contains { $0.url.host == "support.apple.com" && !($0.content ?? "").isEmpty })

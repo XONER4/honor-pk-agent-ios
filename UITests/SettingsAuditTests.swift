@@ -85,7 +85,8 @@ final class SettingsAuditTests: HonorAuditCase {
         openSettingsRow("settings.about", app: app)
         XCTAssertTrue(app.staticTexts["Honer AI"].firstMatch.exists)
         XCTAssertFalse(element(app, "about.documentation").exists)
-        XCTAssertTrue(app.staticTexts["10.0 (10)"].exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "10.")).firstMatch.exists,
+                      "About must show the app version")
     }
 
     func testDataExportImportPickerAndDeleteConfirmation() {

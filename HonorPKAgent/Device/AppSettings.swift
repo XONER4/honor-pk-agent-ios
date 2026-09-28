@@ -19,6 +19,8 @@ final class AppSettings: ObservableObject {
     @Published var fontScale: Double { didSet { defaults.set(fontScale, forKey: "honor.fontScale") } }
     @Published var voiceIdentifier: String { didSet { defaults.set(voiceIdentifier, forKey: "honor.voiceIdentifier") } }
     @Published var speechLanguage: String { didSet { defaults.set(speechLanguage, forKey: "honor.speechLanguage") } }
+    /// Голос озвучки: «male» или «female». По умолчанию мужской.
+    @Published var voiceGender: String { didSet { defaults.set(voiceGender, forKey: "honor.voiceGender") } }
     @Published var autoRead: Bool { didSet { defaults.set(autoRead, forKey: "honor.autoRead") } }
     @Published var displayName: String { didSet { defaults.set(displayName, forKey: "honor.displayName") } }
     @Published var apiKeyOverride: String { didSet { defaults.set(apiKeyOverride, forKey: "honor.apiKeyOverride") } }
@@ -36,6 +38,9 @@ final class AppSettings: ObservableObject {
     /// Фото профиля (путь в песочнице приложения).
     @Published var profilePhotoPath: String { didSet { defaults.set(profilePhotoPath, forKey: "honor.profilePhotoPath") } }
 
+    /// Пол голоса озвучки.
+    var speechGender: VoiceCatalog.Gender { voiceGender == "female" ? .female : .male }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         appearance = AppAppearance(rawValue: defaults.string(forKey: "honor.appearance") ?? "dark") ?? .dark
@@ -46,6 +51,7 @@ final class AppSettings: ObservableObject {
         defaults.removeObject(forKey: "honor.customInstructions")
         voiceIdentifier = defaults.string(forKey: "honor.voiceIdentifier") ?? ""
         speechLanguage = defaults.string(forKey: "honor.speechLanguage") ?? "ru-RU"
+        voiceGender = defaults.string(forKey: "honor.voiceGender") ?? "male"
         autoRead = defaults.bool(forKey: "honor.autoRead")
         let savedName = defaults.string(forKey: "honor.displayName") ?? ""
         displayName = savedName == "Honor" ? "" : savedName

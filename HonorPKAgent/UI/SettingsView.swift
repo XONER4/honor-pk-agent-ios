@@ -546,8 +546,49 @@ private struct VoiceSettingsPage: View {
         }
         return "выбран вручную"
     }
+    /// Голос, которым будет читаться текст на языке, — понятной строкой.
+    private func activeVoiceLine(_ language: String) -> String {
+        let voice = language == "ru"
+            ? SpeechService.preferredVoice(identifier: settings.voiceIdentifier, language: "ru-RU", gender: settings.speechGender)
+            : VoiceCatalog.bestVoice(language: "en", gender: settings.speechGender)
+        guard let voice else { return settings.text("нет голоса", "no voice") }
+        return "\(voice.name) · \(quality(voice))"
+    }
+
+    /// Установлен ли голос нужного пола в хорошем качестве.
+    private var needsBetterVoice: Bool {
+        guard let voice = SpeechService.preferredVoice(identifier: settings.voiceIdentifier, language: "ru-RU", gender: settings.speechGender) else { return true }
+        return voice.quality == .default || VoiceCatalog.gender(of: voice) != settings.speechGender
+    }
+
     var body: some View {
         Form {
+            Section {
+                Picker(settings.text("Голос", "Voice"), selection: $settings.voiceGender) {
+                    Text(settings.text("Мужской", "Male")).tag("male")
+                    Text(settings.text("Женский", "Female")).tag("female")
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("voice.gender")
+                LabeledContent(settings.text("Русский", "Russian"), value: activeVoiceLine("ru"))
+                    .accessibilityIdentifier("voice.active.ru")
+                LabeledContent(settings.text("Английский", "English"), value: activeVoiceLine("en"))
+                    .accessibilityIdentifier("voice.active.en")
+            } header: {
+                Text(settings.text("Голос озвучки", "Speaking voice"))
+            } footer: {
+                Text(settings.text("Русский текст читает русский голос, английские слова — английский голос того же пола.",
+                                   "Russian text is read by a Russian voice, English words by an English voice of the same gender."))
+            }
+            if needsBetterVoice {
+                Section {
+                    Label(settings.text("Для живого, не «роботного» звучания скачайте голос улучшенного качества: настройки iPhone → Универсальный доступ → Устный контент → Голоса → Русский → «\(settings.speechGender == .male ? "Юрий" : "Милена")» (Улучшенный). Для английского — там же, English → «\(settings.speechGender == .male ? "Evan" : "Ava")» (Улучшенный). После загрузки голос выберется сам.",
+                                        "For natural speech download an enhanced voice in iPhone Settings → Accessibility → Spoken Content → Voices."),
+                          systemImage: "arrow.down.circle")
+                        .font(.footnote)
+                        .accessibilityIdentifier("voice.download.hint")
+                }
+            }
             Section(settings.text("Голос для чтения", "Reading voice")) {
                 NavigationLink {
                     VoicePickerPage(settings: settings)
@@ -582,8 +623,8 @@ private struct VoiceSettingsPage: View {
                 Button {
                     if speech.isSpeaking { speech.stopSpeaking() }
                     else {
-                        speech.speak("Привет! Я Honer AI, твой личный помощник. Давай обсудим твои идеи.",
-                                     voiceIdentifier: settings.voiceIdentifier, language: "ru-RU",
+                        speech.speak("Привет! Я Honer AI, твой личный помощник. Сегодня 25 °C, и я могу читать по-английски: Hello, how are you today?",
+                                     voiceIdentifier: settings.voiceIdentifier, gender: settings.speechGender, language: "ru-RU",
                                      rate: settings.voiceRate)
                     }
                 } label: {
@@ -613,6 +654,11 @@ private struct VoiceSettingsPage: View {
         }
         .onDisappear { speech.stopSpeaking() }
         .onChange(of: settings.voiceIdentifier) { _ in speech.stopSpeaking() }
+        .onChange(of: settings.voiceGender) { _ in
+            // Смена пола сбрасывает ручной выбор голоса: дальше голос подбирается сам.
+            speech.stopSpeaking()
+            settings.voiceIdentifier = ""
+        }
     }
     private func quality(_ voice: AVSpeechSynthesisVoice) -> String {
         switch voice.quality {

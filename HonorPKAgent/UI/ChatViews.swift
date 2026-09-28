@@ -31,6 +31,8 @@ struct ChatRootView: View {
     @State private var findOpen = false
     /// Запрос на переход к сообщению по линиям навигации справа.
     @State private var scrollRequest: ScrollRequest?
+    /// Открытое окно инструкций чата.
+    @State private var instructionsTarget: InstructionsTarget?
     /// Сообщение, которое сейчас пишется, — подсвечивается на линиях навигации.
     @State private var streamingMessageID: UUID?
     @State private var findQuery = ""
@@ -120,18 +122,6 @@ struct ChatRootView: View {
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
                     .zIndex(5)
-                }
-                // Линии навигации по сообщениям справа: каждая линия — сообщение.
-                // Тап (или долгое нажатие) плавно прокручивает чат к нему.
-                if let request = scrollRequest, anchors.count > 1, menuMessage == nil {
-                    MessageNavigationLines(messages: store.messages,
-                                           anchors: anchors,
-                                           geometry: geometry,
-                                           streamingMessageID: streamingMessageID,
-                                           settings: settings) { id in
-                        scrollRequest = ScrollRequest(id: UUID(), messageID: id)
-                    }
-                    .zIndex(4)
                 }
                 }
                 // A fading-out menu must stop intercepting the next touch immediately.
@@ -246,6 +236,11 @@ struct ChatRootView: View {
             }
         }
         .onDisappear { cancelVoice(); speech.stopSpeaking(); toastTask?.cancel() }
+        .sheet(item: $instructionsTarget) { target in
+            InstructionsSheet(chatID: target.id)
+                .environmentObject(store)
+                .environmentObject(settings)
+        }
     }
 
     private var mainScreen: some View {
@@ -255,6 +250,13 @@ struct ChatRootView: View {
         return VStack(spacing: 0) {
             header
             branchLineage
+            if let chat = store.selectedConversation, let pinned = chat.instructions, !pinned.isEmpty {
+                PinnedInstructionBar(instructions: pinned, settings: settings) {
+                    composerFocused = false
+                    instructionsTarget = InstructionsTarget(id: chat.id)
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
             if findOpen { findBar(matches: matches) }
             if messages.isEmpty {
                 welcome
@@ -272,8 +274,22 @@ struct ChatRootView: View {
                                 },
                                 onToast: showToast,
                                 composing: composerFocused)
+                .overlay {
+                    if messages.count >= 2 && !findOpen && menuMessage == nil {
+                        MessageNavigationStrip(messages: messages, settings: settings, onJump: { id in
+                            scrollRequest = ScrollRequest(id: UUID(), messageID: id)
+                        }, onBranch: { id in
+                            cancelVoice(); speech.stopSpeaking()
+                            if store.forkConversation(at: id) != nil {
+                                showToast(text("Новая ветка: продолжайте с этого сообщения", "New branch: continue from this message"))
+                                composerFocused = true
+                            }
+                        })
+                    }
+                }
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: store.selectedConversation?.instructions?.count ?? 0)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 if let toast {
@@ -740,6 +756,14 @@ struct ChatRootView: View {
                 composerFocused = true
             }
         case .remember: memoryDraft = SelectedText(content: message.content)
+        case .pinInstruction:
+            if store.pinInstruction(fromMessage: message.id) {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                showToast(text("Закреплено как инструкция — Honer AI видит её в каждом ответе",
+                               "Pinned as an instruction"))
+            } else if let error = store.errorMessage {
+                showToast(error)
+            }
         }
     }
 
@@ -815,7 +839,7 @@ struct ChatRootView: View {
             speech.stopSpeaking()
             speakingContent = nil
         } else {
-            speech.speak(content, voiceIdentifier: settings.voiceIdentifier, language: "ru-RU",
+            speech.speak(content, voiceIdentifier: settings.voiceIdentifier, gender: settings.speechGender, language: "ru-RU",
                          rate: settings.voiceRate)
             speakingContent = content
         }
@@ -966,8 +990,21 @@ private struct MessageTimeline: View {
             followLatest = false
             pendingScroll?.cancel()
             pendingScroll = nil
-            withAnimation(.easeInOut(duration: 0.5)) {
-                proxy.scrollTo(request.messageID.uuidString, anchor: .center)
+            // Сообщение может быть старше показанного окна (последние 40): тогда
+            // сначала показываем его, а прокручиваем на следующем кадре.
+            if let index = messages.firstIndex(where: { $0.id == request.messageID }),
+               index < messages.count - visibleLimit {
+                visibleLimit = messages.count - index + 6
+                pendingScroll = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 120_000_000)
+                    guard !Task.isCancelled else { return }
+                    withAnimation(.easeInOut(duration: 0.45)) { proxy.scrollTo(request.messageID.uuidString, anchor: .top) }
+                    pendingScroll = nil
+                }
+                return
+            }
+            withAnimation(.easeInOut(duration: 0.45)) {
+                proxy.scrollTo(request.messageID.uuidString, anchor: .top)
             }
         }
         .onDisappear {
@@ -1810,6 +1847,10 @@ private struct SourceProgressView: View {
     }
 }
 
+struct InstructionsTarget: Identifiable, Equatable {
+    let id: UUID
+}
+
 /// Понятное название модели iPhone по внутреннему идентификатору.
 enum DeviceModel {
     /// Версия приложения из бандла. Раньше она была вписана руками в трёх местах,
@@ -1985,12 +2026,12 @@ private struct MessageBoundsKey: PreferenceKey {
 }
 
 private enum MessageMenuAction: String {
-    case copy, select, edit, share, retry, like, dislike, speak, fork, remember
+    case copy, select, edit, share, retry, like, dislike, speak, fork, remember, pinInstruction
 
     static func available(for message: ChatMessage) -> [MessageMenuAction] {
         message.role == .user
-            ? [.copy, .select, .edit, .fork, .remember, .share]
-            : [.copy, .select, .retry, .fork, .remember, .like, .dislike, .speak, .share]
+            ? [.copy, .pinInstruction, .select, .edit, .fork, .remember, .share]
+            : [.copy, .pinInstruction, .select, .retry, .fork, .remember, .like, .dislike, .speak, .share]
     }
 
     var symbol: String {
@@ -2005,6 +2046,7 @@ private enum MessageMenuAction: String {
         case .speak: return "speaker.wave.2"
         case .fork: return "arrow.triangle.branch"
         case .remember: return "bookmark"
+        case .pinInstruction: return "pin"
         }
     }
 
@@ -2020,6 +2062,7 @@ private enum MessageMenuAction: String {
         case .speak: return settings.text("Читать вслух", "Read aloud")
         case .fork: return settings.text("Продолжить в ветке", "Continue in a branch")
         case .remember: return settings.text("Запомнить", "Remember")
+        case .pinInstruction: return settings.text("Закрепить как инструкцию", "Pin as instruction")
         }
     }
 }
@@ -2072,7 +2115,7 @@ private struct MessageActionPopup: View {
     }
 
     private func requiresContent(_ action: MessageMenuAction) -> Bool {
-        [.copy, .select, .remember, .speak, .share].contains(action)
+        [.copy, .select, .remember, .speak, .share, .pinInstruction].contains(action)
     }
 
     private func isSelected(_ action: MessageMenuAction) -> Bool {
@@ -2102,7 +2145,6 @@ private struct HistoryDrawer: View {
     /// Промт (инструкция) конкретного чата — пункт меню «три точки».
     @State private var chatPromptPresented = false
     @State private var chatPromptTarget: UUID?
-    @State private var chatPromptDraft = ""
     @FocusState private var searchFocused: Bool
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1.0
 
@@ -2301,44 +2343,11 @@ private struct HistoryDrawer: View {
             Button(text("Отмена", "Cancel"), role: .cancel) { deleteTargets.removeAll() }
                 .accessibilityIdentifier("history.delete.cancel")
         }
-        .sheet(isPresented: $chatPromptPresented) { chatPromptSheet }
-    }
-
-    /// Инструкция только для выбранного чата.
-    private var chatPromptSheet: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(text("Инструкция действует только в этом чате и применяется к каждому ответу.",
-                         "This instruction applies only to this chat."))
-                    .font(.system(size: 13))
-                    .foregroundStyle(HonorTheme.secondary)
-                TextEditor(text: $chatPromptDraft)
-                    .font(.system(size: 15))
-                    .frame(minHeight: 200)
-                    .padding(8)
-                    .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(HonorTheme.divider, lineWidth: 0.7))
-                    .accessibilityIdentifier("chat.prompt.editor")
-                Spacer(minLength: 0)
-            }
-            .padding(16)
-            .background(HonorTheme.background.ignoresSafeArea())
-            .navigationTitle(text("Промт чата", "Chat prompt"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(text("Отмена", "Cancel")) { chatPromptPresented = false }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(text("Сохранить", "Save")) {
-                        if let id = chatPromptTarget {
-                            store.setChatPrompt(id: id, prompt: chatPromptDraft)
-                        }
-                        chatPromptPresented = false
-                    }
-                    .fontWeight(.semibold)
-                    .accessibilityIdentifier("chat.prompt.save")
-                }
+        .sheet(isPresented: $chatPromptPresented) {
+            if let id = chatPromptTarget {
+                InstructionsSheet(chatID: id)
+                    .environmentObject(store)
+                    .environmentObject(settings)
             }
         }
     }
@@ -2423,8 +2432,8 @@ private struct HistoryDrawer: View {
                 Label(chat.pinned ? text("Открепить", "Unpin") : text("Закрепить", "Pin"), systemImage: chat.pinned ? "pin.slash" : "pin")
             }
             .accessibilityIdentifier("history.menu.pin")
-            Button { chatPromptTarget = chat.id; chatPromptDraft = chat.systemPrompt; chatPromptPresented = true } label: {
-                Label(text("Промт чата", "Chat prompt"), systemImage: "text.badge.star")
+            Button { chatPromptTarget = chat.id; chatPromptPresented = true } label: {
+                Label(text("Инструкции чата", "Chat instructions"), systemImage: "pin")
             }
             .accessibilityIdentifier("history.menu.prompt")
             Button { renameTitle = chat.title; renameTarget = chat.id; renamePresented = true } label: {

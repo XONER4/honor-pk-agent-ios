@@ -88,7 +88,7 @@ final class WebPageRenderer: NSObject, WKNavigationDelegate {
     private var failedLoading = false
     private var webView: WKWebView?
 
-    static func render(_ url: URL, timeout: TimeInterval = 14) async -> Rendered? {
+    static func render(_ url: URL, timeout: TimeInterval = 12) async -> Rendered? {
         guard WebPageText.isPublicWebURL(url) else { return nil }
         let renderer = WebPageRenderer()
         return await renderer.load(url, timeout: timeout)
@@ -101,20 +101,10 @@ final class WebPageRenderer: NSObject, WKNavigationDelegate {
         let view = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844), configuration: configuration)
         view.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
         view.navigationDelegate = self
-        view.alpha = 0.01
-        view.isUserInteractionEnabled = false
-        // Невидимый браузер прикрепляется к окну за пределами экрана: без окна
-        // система притормаживает WebKit, и загрузка не сообщает о завершении.
-        let window = UIApplication.shared.connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.windows.first(where: \.isKeyWindow) ?? ($0 as? UIWindowScene)?.windows.first }
-            .first
-        view.frame.origin = CGPoint(x: -4000, y: 0)
-        window?.addSubview(view)
         webView = view
         defer {
             view.stopLoading()
             view.navigationDelegate = nil
-            view.removeFromSuperview()
             webView = nil
         }
         view.load(URLRequest(url: url, timeoutInterval: timeout))
