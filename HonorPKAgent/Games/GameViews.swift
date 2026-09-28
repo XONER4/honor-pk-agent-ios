@@ -317,51 +317,7 @@ struct ChessGameView: View {
         VStack(spacing: 18) {
             GameStatusBar(text: status, thinking: thinking)
             GeometryReader { geometry in
-                let side = min(geometry.size.width, geometry.size.height)
-                let cell = side / 8
-                let checkSquare: Int? = board.inCheck(board.turn) ? board.kingSquare(board.turn) : nil
-                ZStack(alignment: .topLeading) {
-                    ForEach(0..<64, id: \.self) { square in
-                        let light = (ChessBoard.row(square) + ChessBoard.column(square)) % 2 == 0
-                        let isLast = board.lastMove.map { $0.from == square || $0.to == square } ?? false
-                        Rectangle()
-                            .fill(light ? Color(red: 0.93, green: 0.93, blue: 0.82) : Color(red: 0.46, green: 0.59, blue: 0.34))
-                            .overlay(isLast ? Color.yellow.opacity(0.3) : Color.clear)
-                            .overlay(selected == square ? Color.yellow.opacity(0.4) : Color.clear)
-                            .overlay(checkSquare == square ? Color.red.opacity(0.5) : Color.clear)
-                            .overlay {
-                                if targets.contains(square) {
-                                    if board.cells[square] != nil {
-                                        Circle().stroke(Color.black.opacity(0.3), lineWidth: cell * 0.08).padding(cell * 0.04)
-                                    } else {
-                                        Circle().fill(Color.black.opacity(0.22)).padding(cell * 0.36)
-                                    }
-                                }
-                            }
-                            .frame(width: cell, height: cell)
-                            .contentShape(Rectangle())
-                            .onTapGesture { tap(square) }
-                            .position(x: CGFloat(ChessBoard.column(square)) * cell + cell / 2,
-                                      y: CGFloat(ChessBoard.row(square)) * cell + cell / 2)
-                    }
-                    ForEach(pieces, id: \.piece.id) { entry in
-                        Text(Self.glyph(entry.piece.kind))
-                            .font(.system(size: cell * 0.78))
-                            .foregroundStyle(entry.piece.side == .white ? Color.white : Color.black)
-                            .shadow(color: entry.piece.side == .white ? .black.opacity(0.9) : .white.opacity(0.35), radius: 0.8)
-                            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
-                            .position(x: CGFloat(ChessBoard.column(entry.square)) * cell + cell / 2,
-                                      y: CGFloat(ChessBoard.row(entry.square)) * cell + cell / 2)
-                            .allowsHitTesting(false)
-                            .transition(.scale.combined(with: .opacity))
-                    }
-                }
-                .frame(width: side, height: side)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .animation(.easeInOut(duration: 0.3), value: board)
-                .accessibilityIdentifier("chess.board")
+                chessBoard(side: min(geometry.size.width, geometry.size.height))
             }
             .aspectRatio(1, contentMode: .fit)
             HStack {
@@ -370,11 +326,42 @@ struct ChessGameView: View {
             }
         }
         .padding(16)
-        .confirmationDialog("Во что превратить пешку?", isPresented: Binding(get: { !promotionChoices.isEmpty }, set: { if !$0 { promotionChoices = [] } })) {
+        .confirmationDialog("Во что превратить пешку?", isPresented: promotionShown) {
             ForEach(promotionChoices, id: \.self) { move in
                 Button(Self.promotionTitle(move.promotion)) { promotionChoices = []; commit(move) }
             }
         }
+    }
+
+    private var promotionShown: Binding<Bool> {
+        Binding(get: { !promotionChoices.isEmpty }, set: { if !$0 { promotionChoices = [] } })
+    }
+
+    private func chessBoard(side: CGFloat) -> some View {
+        let cell = side / 8
+        let checkSquare: Int? = board.inCheck(board.turn) ? board.kingSquare(board.turn) : nil
+        let targetSet = targets
+        return ZStack(alignment: .topLeading) {
+            ForEach(0..<64, id: \.self) { square in
+                ChessSquareView(square: square, cell: cell, selected: selected == square,
+                                target: targetSet.contains(square), occupied: board.cells[square] != nil,
+                                lastMove: board.lastMove.map { $0.from == square || $0.to == square } ?? false,
+                                check: checkSquare == square) { tap(square) }
+            }
+            ForEach(pieces, id: \.piece.id) { entry in
+                ChessPieceView(piece: entry.piece, cell: cell)
+                    .position(x: CGFloat(ChessBoard.column(entry.square)) * cell + cell / 2,
+                              y: CGFloat(ChessBoard.row(entry.square)) * cell + cell / 2)
+                    .allowsHitTesting(false)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .frame(width: side, height: side)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeInOut(duration: 0.3), value: board)
+        .accessibilityIdentifier("chess.board")
     }
 
     private var pieces: [(square: Int, piece: ChessBoard.Piece)] {
@@ -466,6 +453,68 @@ struct ChessGameView: View {
         selected = nil
         finished = false
         thinking = false
+    }
+}
+
+/// Клетка шахматной доски.
+private struct ChessSquareView: View {
+    let square: Int
+    let cell: CGFloat
+    let selected: Bool
+    let target: Bool
+    let occupied: Bool
+    let lastMove: Bool
+    let check: Bool
+    let onTap: () -> Void
+
+    private var light: Bool { (ChessBoard.row(square) + ChessBoard.column(square)) % 2 == 0 }
+
+    private var baseColor: Color {
+        light ? Color(red: 0.93, green: 0.93, blue: 0.82) : Color(red: 0.46, green: 0.59, blue: 0.34)
+    }
+
+    private var highlight: Color {
+        if check { return Color.red.opacity(0.5) }
+        if selected { return Color.yellow.opacity(0.4) }
+        if lastMove { return Color.yellow.opacity(0.3) }
+        return Color.clear
+    }
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(baseColor)
+            Rectangle().fill(highlight)
+            if target { marker }
+        }
+        .frame(width: cell, height: cell)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
+        .position(x: CGFloat(ChessBoard.column(square)) * cell + cell / 2,
+                  y: CGFloat(ChessBoard.row(square)) * cell + cell / 2)
+    }
+
+    @ViewBuilder
+    private var marker: some View {
+        if occupied {
+            Circle().stroke(Color.black.opacity(0.3), lineWidth: cell * 0.08).padding(cell * 0.04)
+        } else {
+            Circle().fill(Color.black.opacity(0.22)).padding(cell * 0.36)
+        }
+    }
+}
+
+/// Шахматная фигура.
+private struct ChessPieceView: View {
+    let piece: ChessBoard.Piece
+    let cell: CGFloat
+
+    var body: some View {
+        let white = piece.side == .white
+        Text(ChessGameView.glyph(piece.kind))
+            .font(.system(size: cell * 0.78))
+            .foregroundStyle(white ? Color.white : Color.black)
+            .shadow(color: white ? Color.black.opacity(0.9) : Color.white.opacity(0.35), radius: 0.8)
+            .shadow(color: Color.black.opacity(0.35), radius: 2, y: 1)
     }
 }
 
@@ -590,8 +639,16 @@ struct DurakGameView: View {
     }
 
     private var layoutSignature: [Int] {
-        game.hand(.human).map(\.id) + [-1] + game.hand(.ai).map(\.id) + [-2]
-            + game.table.flatMap { [$0.attack.id, $0.defense?.id ?? 0] } + [game.deck.count]
+        var result: [Int] = game.hand(.human).map(\.id)
+        result.append(-1)
+        result.append(contentsOf: game.hand(.ai).map(\.id))
+        result.append(-2)
+        for pair in game.table {
+            result.append(pair.attack.id)
+            result.append(pair.defense?.id ?? 0)
+        }
+        result.append(game.deck.count)
+        return result
     }
 
     private func actionButton(_ title: String, id: String, action: @escaping () -> Void) -> some View {
