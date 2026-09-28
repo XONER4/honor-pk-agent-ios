@@ -64,6 +64,11 @@ final class Honer1044Tests: XCTestCase {
         XCTAssertTrue(message.contains("1 из 3"), message)
         XCTAssertTrue(message.contains("правильно: нет"), message)
         XCTAssertTrue(message.contains("нет ответа"), message)
+        // Тест без отмеченных правильных ответов: оценку ставит нейросеть.
+        let unmarked = MarkdownBlockParser.parseQuestions("? A?\n- да\n- нет")
+        XCTAssertFalse(QuestionnaireReport.isGradable(unmarked))
+        let review = QuestionnaireReport.message(answers: ["да"], questions: unmarked, quiz: true, title: "", english: false)
+        XCTAssertTrue(review.contains("Проверь мои ответы"), review)
         let silent = QuestionnaireReport.message(answers: [""], questions: [questions[0]], quiz: false, title: "", english: false)
         XCTAssertTrue(silent.contains("Реши сам"), "Без ответа модель решает сама: \(silent)")
         let single = QuestionnaireReport.message(answers: ["учёба"], questions: [QuickQuestion(text: "Цель?", options: ["учёба"], allowsCustom: false)],

@@ -184,6 +184,11 @@ enum QuestionnaireReport {
         question.correct.compactMap { $0 < question.options.count ? question.options[$0] : nil }.joined(separator: " / ")
     }
 
+    /// Счёт можно показать, только если у каждого вопроса отмечен правильный ответ.
+    static func isGradable(_ questions: [QuickQuestion]) -> Bool {
+        !questions.isEmpty && questions.allSatisfy { !$0.correct.isEmpty }
+    }
+
     static func score(_ answers: [String?], _ questions: [QuickQuestion]) -> Int {
         zip(answers, questions).filter { isCorrect($0.0, $0.1) }.count
     }
@@ -202,11 +207,15 @@ enum QuestionnaireReport {
             return answers.first.flatMap { $0 } ?? ""
         }
         var lines: [String] = []
-        if quiz {
+        let name = title.isEmpty ? "" : (english ? " \"\(title)\"" : " «\(title)»")
+        if quiz && isGradable(questions) {
             let points = score(answers, questions)
-            let name = title.isEmpty ? "" : (english ? " \"\(title)\"" : " «\(title)»")
             lines.append(english ? "Test results\(name): \(points) of \(questions.count)."
                                  : "Результаты теста\(name): \(points) из \(questions.count).")
+        } else if quiz {
+            // Правильные ответы не отмечены — оценку ставит сама нейросеть.
+            lines.append(english ? "Check my answers to the test\(name) and grade each one:"
+                                 : "Проверь мои ответы на тест\(name) и оцени каждый:")
         } else {
             lines.append(english ? "My answers:" : "Мои ответы:")
         }
@@ -792,7 +801,7 @@ private struct QuestionnaireSummaryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if quiz { scoreHeader }
+            if quiz && QuestionnaireReport.isGradable(questions) { scoreHeader }
             ForEach(Array(questions.enumerated()), id: \.offset) { index, question in
                 row(index: index, question: question)
             }
