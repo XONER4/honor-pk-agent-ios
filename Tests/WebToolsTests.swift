@@ -187,11 +187,10 @@ final class LiveWebToolsTests: XCTestCase {
         let shot = await run("screenshot_page", "{\"url\": \"https://example.com\"}")
         for content in [draw.content, shot.content] {
             let raw = String(content.components(separatedBy: "](").last?.dropLast() ?? "")
-            var request = URLRequest(url: try XCTUnwrap(URL(string: raw), content))
-            request.timeoutInterval = 120
-            let (data, response) = try await URLSession.shared.data(for: request)
-            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200, content)
-            XCTAssertNotNil(UIImage(data: data), "По ссылке не картинка: \(content)")
+            let url = try XCTUnwrap(URL(string: raw), content)
+            // Загрузка тем же путём, что и в чате: с повторами, если сервис занят.
+            let image = await RemoteImageCache.load(url)
+            XCTAssertNotNil(image, "Картинка не загрузилась: \(content)")
         }
     }
 

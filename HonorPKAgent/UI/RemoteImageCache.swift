@@ -23,13 +23,7 @@ enum RemoteImageCache {
         if let ready = images.object(forKey: key as NSString) { return ready }
         if let running = tasks[key] { return await running.value }
         let task = Task<UIImage?, Never> { () -> UIImage? in
-            var request = URLRequest(url: url)
-            // Нарисованная картинка создаётся в момент загрузки — это до минуты.
-            request.timeoutInterval = url.host?.contains("pollinations") == true ? 90 : 25
-            request.setValue("HonorPKAgent/1.0", forHTTPHeaderField: "User-Agent")
-            guard let (data, response) = try? await URLSession.shared.data(for: request),
-                  data.count <= 8 * 1024 * 1024 else { return nil }
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) { return nil }
+            guard let data = await download(url) else { return nil }
             guard let image = UIImage(data: data) else { return nil }
             // Уменьшаем большие картинки: держать в памяти оригинал на 12 Мп нельзя.
             let side: CGFloat = 1400
@@ -45,6 +39,33 @@ enum RemoteImageCache {
         if let image { images.setObject(image, forKey: key as NSString) }
         return image
     }
+}
+
+/// Загрузка картинки. Рисунок создаётся сервисом в момент загрузки: он бывает
+/// занят и отвечает ошибкой, поэтому для рисунков есть повторы с паузой, а на
+/// последней попытке — запасная модель рисования.
+private func download(_ url: URL) async -> Data? {
+    let generated = url.host?.contains("pollinations") == true
+    var attempts = [url]
+    if generated {
+        attempts.append(url)
+        if var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            components.queryItems = (components.queryItems ?? []).map { $0.name == "model" ? URLQueryItem(name: "model", value: "turbo") : $0 }
+            if let fallback = components.url { attempts.append(fallback) }
+        }
+    }
+    for (index, attempt) in attempts.enumerated() {
+        if index > 0 { try? await Task.sleep(nanoseconds: UInt64(index) * 2_500_000_000) }
+        var request = URLRequest(url: attempt)
+        request.timeoutInterval = generated ? 90 : 25
+        request.setValue("HonorPKAgent/1.0", forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              data.count <= 8 * 1024 * 1024 else { continue }
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) { continue }
+        guard UIImage(data: data) != nil else { continue }
+        return data
+    }
+    return nil
 }
 
 /// Картинка превью ссылки: полоса высотой 120 pt, из кэша.

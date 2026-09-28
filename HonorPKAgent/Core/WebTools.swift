@@ -125,7 +125,11 @@ final class WebPageRenderer: NSObject, WKNavigationDelegate {
         while Date() < deadline {
             try? await Task.sleep(nanoseconds: 300_000_000)
             if finishedLoading || failedLoading { complete = finishedLoading; break }
-            if await evaluate("document.readyState") == "complete" { complete = true; break }
+            // Сразу после запуска в браузере ещё пустая страница about:blank, и она
+            // тоже «готова» — поэтому проверяем, что загружается уже нужный адрес.
+            guard !view.isLoading else { continue }
+            let state = await evaluate("document.readyState + '|' + location.href")
+            if state.hasPrefix("complete|"), !state.hasSuffix("about:blank") { complete = true; break }
         }
         // Короткая пауза даёт скриптам вывести содержимое.
         try? await Task.sleep(nanoseconds: complete ? 900_000_000 : 200_000_000)
