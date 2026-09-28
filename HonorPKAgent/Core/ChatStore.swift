@@ -671,8 +671,6 @@ final class ChatStore: ObservableObject {
         }
         let client = injectedClient ?? DeepSeekClient(configuration: configuration)
         let russianNormalizer = client as? RussianTextNormalizing
-        // Пользователь сам пишет не по-русски — ответ на его языке переводить нельзя.
-        let userWritesForeign = RussianTextPolicy.isMostlyForeign(query)
         generationStatus = searching ? "Ищу в интернете…" : (thinking ? "Размышляю…" : "Отвечаю…")
         saveSnapshot()
 
@@ -870,7 +868,7 @@ final class ChatStore: ObservableObject {
                     $0.reasoningSeconds = printedSeconds
                 }
                 if let russianNormalizer {
-                    let normalizeContent = !userWritesForeign && RussianTextPolicy.needsNormalization(rawContent)
+                    let normalizeContent = RussianTextPolicy.needsNormalization(rawContent)
                     let normalizeReasoning = RussianTextPolicy.needsReasoningNormalization(rawReasoning)
                     if normalizeContent && normalizeReasoning {
                         // Ответ и длинное рассуждение переводим одним запросом.

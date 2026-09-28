@@ -683,9 +683,6 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertFalse(ChatStore.queryMentionsChats(queryText: "Расскажи историю Рима", recentContext: ""))
         XCTAssertFalse(ChatStore.queryMentionsChats(queryText: "Как писали письма в XIX веке?", recentContext: ""))
         XCTAssertTrue(ChatStore.queryMentionsChats(queryText: "Что я писал в другом чате?", recentContext: ""))
-        XCTAssertTrue(RussianTextPolicy.isMostlyForeign("Explain how the sky gets its color"))
-        XCTAssertFalse(RussianTextPolicy.isMostlyForeign("Объясни, почему небо голубое"))
-        XCTAssertFalse(RussianTextPolicy.isMostlyForeign("ок"))
     }
 
     private func historyURL() -> URL { FileManager.default.temporaryDirectory.appendingPathComponent("Honer10-\(UUID()).json") }
