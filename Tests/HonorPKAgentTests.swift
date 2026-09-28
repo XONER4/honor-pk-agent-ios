@@ -651,7 +651,6 @@ final class HonorPKAgentTests: XCTestCase {
     }
 
     @MainActor
-    @MainActor
     func testToolChainRunsListThenReadAndPrintsTheFinalAnswer() async throws {
         // Цепочка «list_chats → read_chat → ответ». Раньше второй проход шёл без
         // инструментов, поэтому read_chat после списка вызвать было нельзя, а сам
@@ -682,6 +681,7 @@ final class HonorPKAgentTests: XCTestCase {
         XCTAssertNil(answer.error)
     }
 
+    @MainActor
     private func waitUntilIdle(_ store: ChatStore) async throws {
         // Раннер в CI медленный: генерация может занять секунды, поэтому ждём до 30 с.
         for _ in 0..<600 {
