@@ -15,7 +15,7 @@ val localProps = Properties().apply {
 }
 fun secret(name: String): String = System.getenv(name) ?: localProps.getProperty(name) ?: ""
 
-val appVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1044
+val appVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 104400
 val appVersionName = (project.findProperty("versionName") as String?) ?: "10.44.0"
 
 android {
