@@ -513,7 +513,8 @@ enum MarkdownBlockParser {
                 guard current != nil else { continue }
                 let option = Self.parseOption(String(line.dropFirst()))
                 if !option.text.isEmpty {
-                    if option.correct { current?.correct.append(current?.options.count ?? 0) }
+                    let position = current?.options.count ?? 0
+                    if option.correct { current?.correct.append(position) }
                     current?.options.append(option.text)
                 }
             } else if current != nil && current?.options.isEmpty == true && current?.media.isEmpty == true {
