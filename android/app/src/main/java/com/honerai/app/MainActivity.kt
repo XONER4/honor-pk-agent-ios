@@ -36,6 +36,10 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent?.action == Intent.ACTION_SEND) _sharedIntent.value = intent
+        // Нажали уведомление «ответ готов» — открываем этот чат.
+        intent?.getStringExtra(com.honerai.app.device.HonerNotifications.EXTRA_CHAT_ID)?.let { chatId ->
+            AppContainer.get(this).store.selectChat(chatId)
+        }
     }
 
     /**
