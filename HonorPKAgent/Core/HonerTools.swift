@@ -36,20 +36,57 @@ enum HonerTool: String, CaseIterable {
     case findVideos = "find_videos"
     case screenshotPage = "screenshot_page"
     case getWeather = "get_weather"
+    /// Таблицы в чате.
+    case createTable = "create_table"
+    case updateTable = "update_table"
+    case readTable = "read_table"
+    /// Память: просмотр, исправление и удаление фактов.
+    case listMemory = "list_memory"
+    case updateMemory = "update_memory"
+    case deleteMemory = "delete_memory"
+    /// Массовое чтение сайтов.
+    case readManyPages = "read_many_pages"
+    /// Интеграции.
+    case youtubeSearch = "youtube_search"
+    case youtubeVideo = "youtube_video"
+    case github = "github"
+    case marketplaceSearch = "marketplace_search"
+    case vkPage = "vk_page"
+    case telegramChannel = "telegram_channel"
+    /// Медиа: рассмотреть картинку, расшифровать запись, отредактировать фото.
+    case viewImage = "view_image"
+    case transcribeMedia = "transcribe_media"
+    case editImage = "edit_image"
 
     /// Инструмент ходит в интернет и выполняется асинхронно.
     var isWeb: Bool {
         switch self {
         case .webSearch, .openPage, .findImages, .findVideos, .screenshotPage, .getWeather: return true
+        case .readManyPages, .youtubeSearch, .youtubeVideo, .github, .marketplaceSearch, .vkPage, .telegramChannel: return true
         default: return false
         }
     }
 
-    /// Инструмент выполняется асинхронно (сеть, контакты).
-    var isAsync: Bool { isWeb || self == .findContact }
+    /// Новые инструменты (ExtraTools.swift).
+    var isExtra: Bool {
+        switch self {
+        case .createTable, .updateTable, .readTable, .listMemory, .updateMemory, .deleteMemory,
+             .readManyPages, .youtubeSearch, .youtubeVideo, .github, .marketplaceSearch, .vkPage, .telegramChannel,
+             .viewImage, .transcribeMedia, .editImage:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Инструмент выполняется асинхронно (сеть, контакты, медиа).
+    var isAsync: Bool {
+        isWeb || self == .findContact || self == .viewImage || self == .transcribeMedia || self == .editImage
+    }
 
     /// Описание для API: имя, назначение и параметры в формате JSON Schema.
     var schema: [String: Any] {
+        if isExtra { return ExtraToolSchemas.schema(for: self) }
         switch self {
         case .copyToClipboard:
             return [
@@ -353,6 +390,14 @@ struct ToolExecutionContext: Sendable {
     var transcripts: [Int: [ChatTranscriptLine]] = [:]
     /// Текущие настройки приложения для get_app_settings.
     var settingsSummary: String = ""
+    /// Таблицы текущего чата (T1, T2…).
+    var tables: [ChatTable] = []
+    /// Факты памяти по порядку (номера для list_memory).
+    var memoryItems: [MemoryRef] = []
+    /// Вложения текущего чата: фото для редактора и просмотра, записи для расшифровки.
+    var chatAttachments: [MessageAttachment] = []
+    /// Настройки сервиса — для просмотра изображений.
+    var configuration: DeepSeekConfiguration? = nil
 }
 
 /// Что приложение должно сделать по просьбе модели.
@@ -368,6 +413,14 @@ enum ToolEffect: Sendable {
     case addSources([WebSource])
     /// Открыть мини-игру.
     case openGame(String)
+    /// Таблица: новая или изменённая.
+    case createTable(ChatTable)
+    case replaceTable(ChatTable)
+    /// Память: исправить или удалить факт.
+    case updateMemory(id: UUID, text: String)
+    case deleteMemory(UUID)
+    /// Файл (например, отредактированное фото) под ответом.
+    case attachFile(MessageAttachment)
 }
 
 /// Результат выполнения инструмента, который уходит обратно в модель.
@@ -450,7 +503,10 @@ enum ToolExecutor {
                                   content: "Картинка готова. Вставь в ответ ровно эту строку, без изменений:\n![\(MediaLinks.caption(prompt))](\(url.absoluteString))")
 
         case .none, .listChats, .readChat, .renameChat, .pinChat, .sendToChat, .saveMemory, .setAppSetting,
-             .webSearch, .openPage, .findImages, .findVideos, .screenshotPage, .getWeather, .findContact:
+             .webSearch, .openPage, .findImages, .findVideos, .screenshotPage, .getWeather, .findContact,
+             .createTable, .updateTable, .readTable, .listMemory, .updateMemory, .deleteMemory,
+             .readManyPages, .youtubeSearch, .youtubeVideo, .github, .marketplaceSearch, .vkPage, .telegramChannel,
+             .viewImage, .transcribeMedia, .editImage:
             return ToolCallResult(callID: call.id, name: call.name,
                                   content: "Инструмент «\(call.name)» доступен только в расширенном режиме.")
         }

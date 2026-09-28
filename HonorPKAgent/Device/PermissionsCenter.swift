@@ -113,6 +113,10 @@ final class PermissionsCenter: NSObject, ObservableObject, CLLocationManagerDele
 
     /// Обновить город пользователя, если разрешена геопозиция (не чаще раза в час).
     func updateLocation(force: Bool = false) {
+        guard ParentalControl.shared.rules.canUseLocation else {
+            UserDefaults.standard.removeObject(forKey: DeviceContext.cityKey)
+            return
+        }
         let status = locationManager.authorizationStatus
         guard status == .authorizedWhenInUse || status == .authorizedAlways else { return }
         if !force, let updated = UserDefaults.standard.object(forKey: DeviceContext.cityUpdatedKey) as? Date,
@@ -152,6 +156,7 @@ enum DeviceContext {
 
     static func summary(now: Date = Date()) -> String {
         var lines: [String] = []
+        lines.append("Устройство: \(DeviceModel.name), \(DeviceModel.osDescription)")
         if let city = UserDefaults.standard.string(forKey: cityKey), !city.isEmpty {
             lines.append("Местоположение по геопозиции: \(city)")
         }

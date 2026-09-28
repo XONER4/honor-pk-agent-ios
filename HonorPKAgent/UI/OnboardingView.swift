@@ -11,6 +11,8 @@ struct OnboardingView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var name = ""
+    @State private var hasBirthday = false
+    @State private var birthday = Calendar.current.date(byAdding: .year, value: -20, to: Date()) ?? Date()
     @State private var appeared = false
     @FocusState private var nameFocused: Bool
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -46,6 +48,7 @@ struct OnboardingView: View {
                         .offset(y: appeared ? 0 : 18)
 
                         VStack(spacing: 16) {
+                            languagePicker
                             HStack(spacing: 12) {
                                 Image(systemName: "person.crop.circle.fill")
                                     .font(.system(size: 24))
@@ -65,6 +68,8 @@ struct OnboardingView: View {
                             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
                                 .stroke(nameFocused ? HonorTheme.accent : HonorTheme.divider, lineWidth: nameFocused ? 1.5 : 0.8))
                             .animation(.easeOut(duration: 0.2), value: nameFocused)
+
+                            birthdayRow
 
                             Button(action: complete) {
                                 HStack(spacing: 8) {
@@ -148,6 +153,10 @@ struct OnboardingView: View {
         }
         .onAppear {
             name = settings.displayName
+            if let saved = ChatStore.birthdayFormatter.date(from: settings.birthday) {
+                birthday = saved
+                hasBirthday = true
+            }
             withAnimation(.spring(response: 0.7, dampingFraction: 0.8).delay(0.1)) { appeared = true }
         }
         .accessibilityIdentifier("onboarding.page")
@@ -158,7 +167,47 @@ struct OnboardingView: View {
         nameFocused = false
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         settings.displayName = trimmedName
+        settings.birthday = hasBirthday ? ChatStore.birthdayFormatter.string(from: birthday) : ""
         withAnimation(.easeInOut(duration: 0.35)) { settings.completedOnboarding = true }
+    }
+
+    /// Язык приложения и ответов нейросети. По умолчанию — русский.
+    private var languagePicker: some View {
+        Picker(settings.text("Язык", "Language"), selection: $settings.language) {
+            Text("Русский").tag(AppLanguage.russian)
+            Text("English").tag(AppLanguage.english)
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("onboarding.language")
+    }
+
+    /// Дата рождения — по желанию. Нейросеть учитывает возраст и поздравит с праздником.
+    private var birthdayRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: $hasBirthday.animation(.spring(response: 0.35, dampingFraction: 0.85))) {
+                Label(settings.text("Дата рождения", "Birthday"), systemImage: "gift.fill")
+                    .font(.system(size: 17, weight: .medium))
+            }
+            .tint(HonorTheme.accent)
+            .accessibilityIdentifier("onboarding.birthday.toggle")
+            if hasBirthday {
+                DatePicker(settings.text("Когда родились", "Date of birth"), selection: $birthday,
+                           in: birthdayRange, displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                    .accessibilityIdentifier("onboarding.birthday")
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 14)
+        .background(HonorTheme.background.opacity(colorScheme == .dark ? 0.55 : 0.8),
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(HonorTheme.divider, lineWidth: 0.8))
+    }
+
+    private var birthdayRange: ClosedRange<Date> {
+        let now = Date()
+        let oldest = Calendar.current.date(byAdding: .year, value: -120, to: now) ?? now
+        return oldest...now
     }
 }
 

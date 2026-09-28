@@ -61,7 +61,7 @@ struct GameHubView: View {
         NavigationStack {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
-                    ForEach(GameKind.allCases) { kind in
+                    ForEach(GameKind.allCases.filter { ParentalControl.shared.isGameAllowed($0.rawValue) }) { kind in
                         Button { onPlay(kind) } label: {
                             VStack(alignment: .leading, spacing: 10) {
                                 Image(systemName: kind.symbol)

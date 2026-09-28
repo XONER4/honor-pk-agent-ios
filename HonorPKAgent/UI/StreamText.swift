@@ -151,13 +151,18 @@ enum MarkdownBlockKind: Equatable {
 /// Вопрос с вариантами ответов, который агент задаёт пользователю (пункт 33).
 struct QuickQuestion: Identifiable, Equatable {
     let id = UUID()
-    let text: String
-    let options: [String]
+    var text: String
+    var options: [String]
     /// Разрешить свой вариант ответа.
-    let allowsCustom: Bool
+    var allowsCustom: Bool
+    /// Номера правильных вариантов — для тестов.
+    var correct: [Int] = []
+    /// Картинки, звук, видео и файлы к вопросу.
+    var media: [QuestionMedia] = []
 
     static func == (lhs: QuickQuestion, rhs: QuickQuestion) -> Bool {
         lhs.text == rhs.text && lhs.options == rhs.options && lhs.allowsCustom == rhs.allowsCustom
+            && lhs.correct == rhs.correct && lhs.media == rhs.media
     }
 }
 
@@ -443,33 +448,63 @@ enum MarkdownBlockParser {
     }
 
     /// Разбор блока ```ask — до 30 вопросов с вариантами.
-    /// Формат: `? Вопрос` и ниже строки вариантов, начиная с `- `.
-    /// `+` вместо `?` означает «разрешить свой вариант ответа».
+    /// Формат: `? Вопрос`, ниже варианты `- вариант`; правильный вариант теста —
+    /// `-* вариант` или `- [x] вариант`; строка `+ свой вариант` под вариантами
+    /// разрешает вписать свой ответ; `![](адрес)`, `@image`, `@audio`, `@video`,
+    /// `@file` — медиа к вопросу. Настройки блока (`@timer`, `@mode`, `@title`)
+    /// читает `QuestionnaireHeader`.
     static func parseQuestions(_ body: String) -> [QuickQuestion] {
         var result: [QuickQuestion] = []
-        var current: (text: String, options: [String], custom: Bool)?
+        var current: QuickQuestion?
         for rawLine in body.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if line.isEmpty { continue }
-            if line.hasPrefix("?") || line.hasPrefix("+") {
-                if let current { result.append(QuickQuestion(text: current.text, options: current.options,
-                                                             allowsCustom: current.custom)) }
-                let custom = line.hasPrefix("+")
+            if line.hasPrefix("+"), current != nil {
+                // «+ свой вариант» — разрешить свой ответ на текущий вопрос.
+                current?.allowsCustom = true
+            } else if line.hasPrefix("?") || line.hasPrefix("+") {
+                if let finished = current { result.append(finished) }
+                if result.count >= 30 { current = nil; break }
                 let text = String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
-                current = (text, [], custom)
+                current = QuickQuestion(text: text, options: [], allowsCustom: line.hasPrefix("+"))
+            } else if line.hasPrefix("@") {
+                if let media = QuestionMedia.parse(line), current != nil { current?.media.append(media) }
+            } else if line.hasPrefix("![") {
+                if let media = QuestionMedia.markdownImage(line), current != nil { current?.media.append(media) }
             } else if line.hasPrefix("-") || line.hasPrefix("*") {
                 guard current != nil else { continue }
-                let option = String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
-                if !option.isEmpty { current?.options.append(option) }
-            } else if current != nil && current?.options.isEmpty == true {
+                let option = Self.parseOption(String(line.dropFirst()))
+                if !option.text.isEmpty {
+                    if option.correct { current?.correct.append(current?.options.count ?? 0) }
+                    current?.options.append(option.text)
+                }
+            } else if current != nil && current?.options.isEmpty == true && current?.media.isEmpty == true {
                 // продолжение текста вопроса
                 current?.text += " " + line
             }
-            if result.count >= 30 { break }
         }
-        if let current { result.append(QuickQuestion(text: current.text, options: current.options,
-                                                     allowsCustom: current.custom)) }
+        if let finished = current, result.count < 30 { result.append(finished) }
         return Array(result.prefix(30))
+    }
+
+    /// Вариант ответа и отметка «правильный» (`*`, `[x]`, `✓`).
+    static func parseOption(_ raw: String) -> (text: String, correct: Bool) {
+        var text = raw.trimmingCharacters(in: .whitespaces)
+        var correct = false
+        if text.hasPrefix("[ ]") {
+            text = String(text.dropFirst(3))
+        } else {
+            for marker in ["[x]", "[X]", "[х]", "[Х]", "✓", "✔", "✅"] where text.hasPrefix(marker) {
+                correct = true
+                text = String(text.dropFirst(marker.count))
+                break
+            }
+            if !correct, text.hasPrefix("*"), !text.hasPrefix("**") {
+                correct = true
+                text = String(text.dropFirst())
+            }
+        }
+        return (text.trimmingCharacters(in: .whitespaces), correct)
     }
 
     private static func isDivider(_ line: String) -> Bool {
@@ -745,14 +780,81 @@ final class MarkdownParseMemo {
     private var streaming = false
     private var blocks: [MarkdownBlockModel] = []
     private var valid = false
+    /// Закреплённое начало печатающегося ответа: разобрано один раз.
+    /// Раньше на каждом кадре заново разбирался весь ответ — на ответе в десятки
+    /// тысяч символов это съедало кадр целиком. Теперь каждый кадр разбирается только хвост.
+    private var stableText = ""
+    private var stableBlocks: [MarkdownBlockModel] = []
+
+    /// Хвост не короче этого числа байт остаётся «живым», граница двигается шагами.
+    static let stableStep = 1500
 
     func blocks(for text: String, streaming: Bool) -> [MarkdownBlockModel] {
-        if valid, text == source, streaming == self.streaming { return blocks }
-        blocks = MarkdownBlockParser.parse(text, streaming: streaming)
+        if valid, streaming == self.streaming, text.utf8.count == source.utf8.count,
+           TypedText.bytes(text, startWith: source) { return blocks }
+        if streaming {
+            blocks = streamingBlocks(text)
+        } else {
+            stableText = ""
+            stableBlocks = []
+            blocks = MarkdownBlockParser.parse(text, streaming: false)
+        }
         source = text
         self.streaming = streaming
         valid = true
         return blocks
+    }
+
+    private func streamingBlocks(_ text: String) -> [MarkdownBlockModel] {
+        if !stableText.isEmpty && !TypedText.bytes(text, startWith: stableText) {
+            stableText = ""
+            stableBlocks = []
+        }
+        let utf8 = text.utf8
+        let stableEnd = utf8.index(utf8.startIndex, offsetBy: stableText.utf8.count)
+        if let boundary = Self.safeBoundary(in: text, from: stableEnd),
+           utf8.distance(from: stableEnd, to: boundary) >= Self.stableStep {
+            let delta = String(text[stableEnd..<boundary])
+            let offset = stableBlocks.count
+            // Тот же режим, что и у полного разбора во время печати: результат совпадает.
+            stableBlocks += MarkdownBlockParser.parse(delta, streaming: true).map {
+                MarkdownBlockModel(id: $0.id + offset, kind: $0.kind, text: $0.text)
+            }
+            stableText = String(text[..<boundary])
+        }
+        let tailStart = utf8.index(utf8.startIndex, offsetBy: stableText.utf8.count)
+        let offset = stableBlocks.count
+        let tail = MarkdownBlockParser.parse(String(text[tailStart...]), streaming: true).map {
+            MarkdownBlockModel(id: $0.id + offset, kind: $0.kind, text: $0.text)
+        }
+        return stableBlocks + tail
+    }
+
+    /// Последняя пустая строка после `start`, вне блоков кода (```) и формул ($$):
+    /// до неё текст уже не меняется, а пустая строка закрывает абзац, список и таблицу.
+    static func safeBoundary(in text: String, from start: String.Index) -> String.Index? {
+        var inFence = false
+        var inMath = false
+        var best: String.Index?
+        var lineStart = start
+        var previousBlank = false
+        while lineStart < text.endIndex {
+            let lineEnd = text[lineStart...].firstIndex(of: "\n") ?? text.endIndex
+            let line = text[lineStart..<lineEnd].trimmingCharacters(in: .whitespaces)
+            let next = lineEnd < text.endIndex ? text.index(after: lineEnd) : text.endIndex
+            if line.hasPrefix("```") || line.hasPrefix("~~~") {
+                inFence.toggle()
+            } else if !inFence && line.hasPrefix("$$") {
+                if !(line.count > 2 && line.hasSuffix("$$")) { inMath.toggle() }
+            }
+            let blank = line.isEmpty
+            if blank && !previousBlank && !inFence && !inMath && lineEnd < text.endIndex && lineStart > start {
+                best = next
+            }
+            previousBlank = blank
+            lineStart = next
+        }
+        return best
     }
 }
 
@@ -885,7 +987,8 @@ private struct MarkdownBlockView: View, Equatable {
                 CardBlockView(style: style, cardText: block.text, fontSize: fontSize,
                               sources: sources, findQuery: findQuery)
             case .ask(let questions, let open):
-                QuestionsCardView(questions: questions, fontSize: fontSize, stillStreaming: open) { answer in
+                QuestionsCardView(questions: questions, rawBody: block.text, blockID: block.id,
+                                  fontSize: fontSize, stillStreaming: open) { answer in
                     onAnswer?(answer) ?? false
                 }
             case .mathBlock(let expression):
@@ -1199,164 +1302,6 @@ enum InlineStyleParser {
         }
         value.replaceSubrange(lower..<upper, with: replacement)
         return true
-    }
-}
-
-/// Карточка с вопросами и вариантами ответов (пункт 33): до 30 вопросов за раз.
-/// Нажатие варианта отправляет ответ в чат; при `+` можно написать свой вариант.
-struct QuestionsCardView: View {
-    let questions: [QuickQuestion]
-    let fontSize: Double
-    /// Блок ещё дописывается: показываем мягкую подсказку, что список может вырасти.
-    var stillStreaming: Bool = false
-    /// Нажатие варианта. Возвращает `false`, если ответ отправить не удалось
-    /// (например, ещё печатается предыдущий ответ): тогда выбор НЕ фиксируем,
-    /// чтобы карточка не осталась навсегда нерабочей после одной неудачной попытки.
-    var onAnswer: (String) -> Bool
-
-    @State private var customDrafts: [UUID: String] = [:]
-    /// Какой вариант уже выбран. Нужен как видимый отклик на нажатие и как защита
-    /// от повторной отправки: раньше нажатие не давало никакой реакции, и казалось,
-    /// что вариант «не выбирается».
-    @State private var selected: String?
-    @State private var sent = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Заголовок карточки: без него список вариантов выглядел как случайные
-            // строки текста и было непонятно, что это вопрос от агента.
-            HStack(spacing: 7) {
-                Image(systemName: "questionmark.bubble")
-                    .font(.system(size: 13, weight: .semibold))
-                Text(questions.count == 1 ? "Вопрос Honer AI" : "Вопросы Honer AI (\(questions.count))")
-                    .font(.system(size: fontSize * 0.78, weight: .semibold))
-                if stillStreaming {
-                    ProgressView().scaleEffect(0.6)
-                }
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(HonorTheme.accent)
-
-            ForEach(Array(questions.enumerated()), id: \.element.id) { index, question in
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack(alignment: .top, spacing: 9) {
-                        Text("\(index + 1)")
-                            .font(.system(size: fontSize * 0.74, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 21, height: 21)
-                            .background(HonorTheme.accent, in: Circle())
-                        Text(question.text)
-                            .font(.system(size: fontSize, weight: .semibold))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    ForEach(Array(question.options.enumerated()), id: \.element) { optionIndex, option in
-                        optionButton(option, letter: Self.letter(optionIndex))
-                    }
-                    if question.allowsCustom {
-                        HStack(spacing: 8) {
-                            TextField("Свой вариант", text: Binding(
-                                get: { customDrafts[question.id] ?? "" },
-                                set: { customDrafts[question.id] = $0 }))
-                                .font(.system(size: fontSize * 0.95))
-                                .textFieldStyle(.plain)
-                                .padding(.horizontal, 12)
-                                .frame(minHeight: 40)
-                                .background(HonorTheme.raised, in: RoundedRectangle(cornerRadius: 10))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.7))
-                            Button {
-                                let value = (customDrafts[question.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                                guard !value.isEmpty, !sent else { return }
-                                send(value)
-                                customDrafts[question.id] = ""
-                            } label: {
-                                Image(systemName: "arrow.up")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .frame(width: 36, height: 36)
-                                    .background(HonorTheme.accent, in: Circle())
-                                    .foregroundStyle(.white)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("question.custom.send")
-                        }
-                    }
-                }
-            }
-            if sent {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill").font(.system(size: 12))
-                    Text("Ответ отправлен: \(selected ?? "")")
-                        .font(.system(size: fontSize * 0.78))
-                        .lineLimit(2)
-                }
-                .foregroundStyle(HonorTheme.accent)
-                .accessibilityIdentifier("question.sent")
-            }
-        }
-        .padding(15)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(HonorTheme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .stroke(HonorTheme.accent.opacity(0.35), lineWidth: 0.9))
-        .accessibilityIdentifier("message.questions")
-    }
-
-    /// Буква варианта: «А», «Б», «В» — так варианты легче называть словами.
-    static func letter(_ index: Int) -> String {
-        let alphabet = Array("АБВГДЕЖЗИКЛМНОПРСТУФ")
-        return index < alphabet.count ? String(alphabet[index]) : "\(index + 1)"
-    }
-
-    /// Вариант ответа: явная зона нажатия, видимая галочка и защита от повторной отправки.
-    private func optionButton(_ option: String, letter: String) -> some View {
-        let isSelected = selected == option
-        return Button {
-            guard !sent else { return }
-            send(option)
-        } label: {
-            HStack(spacing: 10) {
-                Text(letter)
-                    .font(.system(size: fontSize * 0.74, weight: .bold))
-                    .foregroundStyle(isSelected ? .white : HonorTheme.secondary)
-                    .frame(width: 22, height: 22)
-                    .background(isSelected ? HonorTheme.accent : HonorTheme.raised, in: Circle())
-                    .overlay(Circle().stroke(isSelected ? Color.clear : HonorTheme.divider, lineWidth: 0.7))
-                Text(option)
-                    .font(.system(size: fontSize * 0.96))
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                if isSelected {
-                    Image(systemName: sent ? "checkmark.circle.fill" : "checkmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(HonorTheme.accent)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(minHeight: 44)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isSelected ? HonorTheme.accent.opacity(0.16) : HonorTheme.raised,
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(isSelected ? HonorTheme.accent.opacity(0.65) : HonorTheme.divider.opacity(0.7), lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(HonorTheme.foreground)
-        .disabled(sent)
-        .accessibilityIdentifier("question.option." + option)
-        .accessibilityLabel("\(letter). \(option)")
-        .accessibilityValue(isSelected ? "Выбрано" : "Не выбрано")
-    }
-
-    private func send(_ value: String) {
-        // Сначала спрашиваем вызывающий код: он знает, можно ли сейчас отправлять.
-        // Раньше выбор фиксировался до проверки, и после отказа карточка выглядела
-        // «уже отправленной» — вариант больше не выбирался вообще.
-        guard onAnswer(value) else { return }
-        sent = true
-        selected = value
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 }
 

@@ -11,8 +11,13 @@ import Vision
 enum AttachmentService {
     private static let maximumFileBytes = 20 * 1024 * 1024
     private static let maximumTextLength = 160_000
-    static let maximumVideoBytes = 40 * 1024 * 1024
-    static let maximumVideoDuration: Double = 120
+    static let maximumVideoBytes = 300 * 1024 * 1024
+    static let maximumVideoDuration: Double = 20 * 60
+    static let maximumAudioBytes = 150 * 1024 * 1024
+    /// Сколько секунд звука расшифровывается сразу при прикреплении.
+    /// Остальное модель дослушает инструментом transcribe_media.
+    static let importTranscriptionSeconds: Double = 300
+    static let audioExtensions: Set<String> = ["m4a", "mp3", "wav", "aac", "caf", "aif", "aiff", "flac", "mp4a", "amr", "3gp"]
 
     static func importImage(data: Data, name: String = "Фото.jpg") async throws -> MessageAttachment {
         let worker = Task.detached(priority: .userInitiated) {
@@ -49,6 +54,11 @@ enum AttachmentService {
     }
 
     static func importFile(url: URL) async throws -> MessageAttachment {
+        let lowerExtension = url.pathExtension.lowercased()
+        if audioExtensions.contains(lowerExtension)
+            || (UTType(filenameExtension: lowerExtension)?.conforms(to: .audio) == true && lowerExtension != "mp4") {
+            return try await importAudio(url: url)
+        }
         if UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true {
             return try await importVideo(url: url)
         }
@@ -68,18 +78,21 @@ enum AttachmentService {
             let fileExtension = url.pathExtension.lowercased()
             let text: String
             let kind: AttachmentKind
+            var summary: String?
             if fileExtension == "pdf" {
                 text = try extractPDF(data: data)
                 kind = .document
+                summary = "PDF"
+            } else if DocumentReader.isSupported(fileExtension: fileExtension) {
+                // Word, Excel, PowerPoint, OpenDocument, EPUB, RTF, HTML, CSV, код и текст.
+                let document = try DocumentReader.extractText(from: data, fileExtension: fileExtension)
+                text = document.text
+                summary = document.summary
+                let plain: Set<String> = ["txt", "md", "markdown", "text", "log"]
+                kind = plain.contains(fileExtension) || DocumentReader.kind(forExtension: fileExtension).hasPrefix("Код")
+                    ? .text : .document
             } else {
-                guard ["txt", "md", "markdown", "csv", "json", "log", "tsv", "text"].contains(fileExtension) else {
-                    throw AttachmentError.unsupported
-                }
-                guard let decoded = String(data: data, encoding: .utf8)
-                    ?? String(data: data, encoding: .utf16)
-                    ?? String(data: data, encoding: .windowsCP1251) else { throw AttachmentError.unreadableText }
-                text = decoded
-                kind = .text
+                throw AttachmentError.unsupported
             }
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AttachmentError.emptyDocument }
             guard text.count <= maximumTextLength else { throw AttachmentError.tooMuchText }
@@ -88,7 +101,7 @@ enum AttachmentService {
             try Task.checkCancellation()
             try data.write(to: savedURL, options: .atomic)
             return MessageAttachment(id: id, name: url.lastPathComponent, kind: kind,
-                                     extractedText: text, localPath: savedURL.path)
+                                     extractedText: text, localPath: savedURL.path, summary: summary)
         }
         return try await withTaskCancellationHandler {
             try await worker.value
@@ -123,7 +136,7 @@ enum AttachmentService {
                 generator.cancelAllCGImageGeneration()
                 if !completed { for file in createdFiles { try? FileManager.default.removeItem(at: file) } }
             }
-            let count = min(6, max(1, Int(ceil(duration * 2))))
+            let count = min(10, max(1, Int(ceil(duration * 2))))
             let end = max(0, duration - min(0.05, duration / 4))
             var frames: [String] = []
             var labels: [String] = []
@@ -151,11 +164,71 @@ enum AttachmentService {
             try Task.checkCancellation()
             let copiedSize = (try saved.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0
             guard copiedSize <= maximumVideoBytes else { throw AttachmentError.videoTooLarge }
-            let description = "Video duration: \(String(format: "%.2f", duration)) seconds. Sampled frame timestamps in seconds: \(labels.joined(separator: ", ")). Only these visual frames are provided; the audio track has not been transcribed. Do not claim to have watched unsampled moments or heard the audio."
+            // Звук видео расшифровывается на устройстве: модель «слышит», что говорят.
+            let hasAudio = !(try await asset.loadTracks(withMediaType: .audio)).isEmpty
+            var speech = ""
+            if hasAudio {
+                speech = (try? await MediaTranscriber.transcribe(saved, locale: Self.speechLocale,
+                                                                 maximumSeconds: importTranscriptionSeconds)) ?? ""
+            }
+            try Task.checkCancellation()
+            var description = "Video duration: \(String(format: "%.1f", duration)) seconds. Sampled frame timestamps in seconds: \(labels.joined(separator: ", ")). The frames below are a sample; do not claim to have seen unsampled moments."
+            if !speech.isEmpty {
+                description += "\nSpeech in the audio track (on-device transcription\(duration > importTranscriptionSeconds ? ", first \(Int(importTranscriptionSeconds / 60)) minutes; call transcribe_media with this file name for the rest" : "")):\n" + speech
+            } else if hasAudio {
+                description += "\nThe audio track has no recognizable speech (music, noise or silence)."
+            } else {
+                description += "\nThe video has no audio track."
+            }
+            let minutes = Int(duration) / 60, seconds = Int(duration) % 60
             let attachment = MessageAttachment(id: id, name: name ?? url.lastPathComponent, kind: .video,
-                extractedText: description, localPath: saved.path, videoFramePaths: frames)
+                extractedText: description, localPath: saved.path, videoFramePaths: frames,
+                summary: String(format: "Видео %d:%02d", minutes, seconds) + (speech.isEmpty ? "" : " · речь расшифрована"))
             completed = true
             return attachment
+        }
+        return try await withTaskCancellationHandler {
+            try await worker.value
+        } onCancel: { worker.cancel() }
+    }
+
+    /// Язык расшифровки речи — по языку приложения.
+    static var speechLocale: String {
+        UserDefaults.standard.string(forKey: "honor.language") == "en" ? "en-US" : "ru-RU"
+    }
+
+    /// Голосовое сообщение или аудиофайл: копия в приложении и расшифровка речи.
+    static func importAudio(url: URL) async throws -> MessageAttachment {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        let worker = Task.detached(priority: .userInitiated) { () throws -> MessageAttachment in
+            let values = try url.resourceValues(forKeys: [.fileSizeKey])
+            guard (values.fileSize ?? 0) <= maximumAudioBytes else { throw AttachmentError.tooLarge }
+            let id = UUID()
+            let fileExtension = url.pathExtension.isEmpty ? "m4a" : url.pathExtension.lowercased()
+            let saved = try destination(id: id, extension: fileExtension)
+            try FileManager.default.copyItem(at: url, to: saved)
+            let asset = AVURLAsset(url: saved)
+            let duration = (try? await asset.load(.duration).seconds) ?? 0
+            guard duration.isFinite, duration > 0 else {
+                try? FileManager.default.removeItem(at: saved)
+                throw AttachmentError.unsupported
+            }
+            let speech = (try? await MediaTranscriber.transcribe(saved, locale: speechLocale,
+                                                                 maximumSeconds: importTranscriptionSeconds)) ?? ""
+            try Task.checkCancellation()
+            let minutes = Int(duration) / 60, seconds = Int(duration) % 60
+            var text = "Audio recording, duration \(minutes):\(String(format: "%02d", seconds))."
+            if speech.isEmpty {
+                text += " No recognizable speech (music, noise or silence) — say so if asked about its content."
+            } else {
+                text += "\nTranscription (on-device speech recognition"
+                if duration > importTranscriptionSeconds { text += ", first \(Int(importTranscriptionSeconds / 60)) minutes; call transcribe_media with this file name for the rest" }
+                text += "):\n" + speech
+            }
+            return MessageAttachment(id: id, name: url.lastPathComponent, kind: .audio, extractedText: text,
+                                     localPath: saved.path,
+                                     summary: String(format: "Аудио %d:%02d", minutes, seconds) + (speech.isEmpty ? "" : " · расшифровано"))
         }
         return try await withTaskCancellationHandler {
             try await worker.value
@@ -214,12 +287,12 @@ enum AttachmentService {
             case .tooMuchText: return "В документе больше 160 000 символов. Прикрепите меньший фрагмент. / Document exceeds 160,000 characters."
             case .tooManyPages: return "PDF должен содержать не больше 80 страниц / PDF must contain no more than 80 pages."
             case .invalidImage: return "Не удалось прочитать изображение / Could not read this image."
-            case .unsupported: return "Поддерживаются фото, видео MP4/MOV/M4V, PDF и текстовые файлы / Unsupported file type."
+            case .unsupported: return "Этот тип файла не поддерживается. Можно: фото, видео, аудио, PDF, Word, Excel, PowerPoint, CSV, код и текст / Unsupported file type."
             case .unreadableText: return "Не удалось прочитать текст файла / Could not decode this text file."
             case .emptyDocument: return "В документе не удалось распознать текст / No readable text found in this document."
             case .lockedPDF: return "PDF повреждён или защищён паролем / PDF is invalid or password protected."
-            case .videoTooLarge: return "Видео должно быть не больше 40 МБ / Maximum video size is 40 MB."
-            case .videoTooLong: return "Видео должно быть не длиннее 2 минут / Maximum video duration is 2 minutes."
+            case .videoTooLarge: return "Видео должно быть не больше 300 МБ / Maximum video size is 300 MB."
+            case .videoTooLong: return "Видео должно быть не длиннее 20 минут / Maximum video duration is 20 minutes."
             case .invalidVideo: return "Не удалось прочитать видео. Выберите MP4, MOV или M4V. / Could not read the video. Choose MP4, MOV or M4V."
             }
         }
@@ -335,9 +408,7 @@ struct AttachmentTray: View {
             .ignoresSafeArea()
         }
         .fileImporter(isPresented: $showsFiles,
-                      allowedContentTypes: [.image, .movie, .pdf, .text, .json, .commaSeparatedText,
-                        UTType(filenameExtension: "md") ?? .plainText,
-                        UTType(filenameExtension: "log") ?? .plainText],
+                      allowedContentTypes: [.item],
                       allowsMultipleSelection: false) { result in
             switch result {
             case .success(let urls):

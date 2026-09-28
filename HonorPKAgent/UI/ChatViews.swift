@@ -25,6 +25,7 @@ struct ChatRootView: View {
     @State private var sourceSheet: SourceSelection?
     /// Панель «Информация о чате» (пункт 38 ТЗ).
     @State private var chatInfoOpen = false
+    @State private var liveSpeech = LiveSpeechCursor()
     /// Панель стикеров (пункт 39 ТЗ).
     @State private var stickersOpen = false
     @State private var deleteChatConfirmation = false
@@ -170,7 +171,22 @@ struct ChatRootView: View {
             SettingsView().environmentObject(store).environmentObject(settings)
         }
         .sheet(item: $selectedText) { item in
-            SelectableTextSheet(content: item.content)
+            SelectableTextSheet(content: item.content) { fragment, action in
+                selectedText = nil
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { store.quote(fragment) }
+                switch action {
+                case .ask:
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 450_000_000)
+                        composerFocused = true
+                    }
+                case .explain, .simpler:
+                    store.draft = action == .explain
+                        ? text("Расскажи подробнее об этом", "Tell me more about this")
+                        : text("Объясни это проще", "Explain this in simpler words")
+                    send()
+                }
+            }
                 .environmentObject(settings)
         }
         .sheet(item: $memoryDraft) { item in
@@ -183,9 +199,19 @@ struct ChatRootView: View {
         .sheet(isPresented: $attachmentGalleryOpen) {
             ChatAttachmentsSheet(attachments: store.messages.flatMap(\.attachments), settings: settings)
         }
-        .sheet(item: $previewAttachment) { attachment in AttachmentPreviewSheet(attachment: attachment, settings: settings) }
+        .sheet(item: $previewAttachment) { attachment in
+            AttachmentPreviewSheet(attachment: attachment, settings: settings) { edited in
+                // Готовый файл из редактора прикрепляется к новому сообщению.
+                Task { @MainActor in
+                    if let imported = try? await AttachmentService.importFile(url: edited) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { store.attachments.append(imported) }
+                        showToast(text("Изменённый файл прикреплён — отправьте его", "Edited file attached — send it"))
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $chatInfoOpen) {
-            ChatInfoSheet(store: store, settings: settings)
+            ChatInsightSheet(store: store, settings: settings)
                 .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $stickersOpen) {
@@ -234,9 +260,15 @@ struct ChatRootView: View {
         .onChange(of: store.isGenerating) { generating in
             if !generating, settings.autoRead,
                let last = store.messages.last, last.role == .assistant,
-               !last.content.isEmpty, last.error == nil, !last.isInterrupted {
+               !last.content.isEmpty, last.error == nil, !last.isInterrupted,
+               liveSpeech.messageID != last.id {
                 speak(last.content)
             }
+        }
+        // Ответ читается вслух сразу, пока печатается (кнопка динамика включена).
+        .onReceive(store.pacer.grew) { _ in feedLiveSpeech(final: false) }
+        .onChange(of: store.typingMessageID) { id in
+            if id == nil { feedLiveSpeech(final: true) }
         }
         .onDisappear { cancelVoice(); speech.stopSpeaking(); toastTask?.cancel() }
         .sheet(isPresented: $gameHubOpen) {
@@ -580,6 +612,19 @@ struct ChatRootView: View {
                         .accessibilityIdentifier("composer.edit.cancel")
                 }.foregroundStyle(HonorTheme.accent)
             }
+            if let quote = store.quotedFragment {
+                HStack(alignment: .top, spacing: 8) {
+                    QuoteChip(text: quote, scale: 1)
+                    Button { withAnimation(.easeOut(duration: 0.2)) { store.quotedFragment = nil } } label: {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 18)).frame(width: 32, height: 32)
+                    }
+                    .foregroundStyle(HonorTheme.secondary)
+                    .accessibilityLabel(text("Убрать цитату", "Remove quote"))
+                    .accessibilityIdentifier("composer.quote.remove")
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .accessibilityIdentifier("composer.quote")
+            }
             if !store.attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -775,6 +820,9 @@ struct ChatRootView: View {
                 try? await Task.sleep(nanoseconds: 220_000_000)
                 selectedText = SelectedText(content: value)
             }
+        case .quote:
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { store.quote(message.content) }
+            composerFocused = true
         case .edit:
             store.edit(messageID: message.id)
             composerFocused = true
@@ -868,12 +916,48 @@ struct ChatRootView: View {
         speech.cancelRecording()
     }
 
-    private func speak(_ content: String) {
+    /// Сколько уже прочитано из печатающегося ответа.
+    private struct LiveSpeechCursor {
+        var messageID: UUID?
+        var consumedBytes = 0
+    }
+
+    private func feedLiveSpeech(final: Bool) {
+        guard settings.autoRead else { return }
+        // Своим голосом ответ читается целиком в конце: сервис озвучивает крупными частями.
+        if settings.useClonedVoice && !settings.clonedVoiceID.isEmpty { return }
+        guard let id = store.typingMessageID ?? liveSpeech.messageID else { return }
+        if liveSpeech.messageID != id {
+            guard !final else { return }
+            liveSpeech = LiveSpeechCursor(messageID: id, consumedBytes: 0)
+            speakingContent = nil
+        }
+        let text: String
+        if final {
+            guard let message = store.messages.first(where: { $0.id == id }), message.error == nil, !message.isInterrupted else { return }
+            text = message.content
+        } else {
+            text = store.pacer.content
+        }
+        let utf8 = text.utf8
+        guard liveSpeech.consumedBytes <= utf8.count else { return }
+        let start = utf8.index(utf8.startIndex, offsetBy: liveSpeech.consumedBytes)
+        let rest = text[start...]
+        guard let cut = SpeechService.speakableEnd(rest, final: final) else { return }
+        let chunk = String(text[start..<cut])
+        liveSpeech.consumedBytes += chunk.utf8.count
+        let spoken = ParentalControl.shared.rules.enabled ? ParentalControl.shared.filterOutput(chunk) : chunk
+        speech.append(spoken, voiceIdentifier: settings.voiceIdentifier, gender: settings.speechGender,
+                      language: "ru-RU", rate: settings.voiceRate)
+    }
+
+    private func speak(_ original: String) {
+        let content = ParentalControl.shared.rules.enabled ? ParentalControl.shared.filterOutput(original) : original
         if speech.isSpeaking && speakingContent == content {
             speech.stopSpeaking()
             speakingContent = nil
         } else {
-            if settings.useClonedVoice, !settings.clonedVoiceID.isEmpty,
+            if settings.useClonedVoice, !settings.clonedVoiceID.isEmpty, ParentalControl.shared.rules.canCloneVoice,
                let key = KeychainStore.get("fishAudioKey"), !key.isEmpty {
                 // Ответ читается собственным голосом пользователя.
                 speech.speakCloned(content, voiceID: settings.clonedVoiceID, apiKey: key,
@@ -1115,6 +1199,8 @@ private struct MessageTimeline: View {
             .padding(.bottom, 4)
             .accessibilityIdentifier("chat.load.earlier")
         }
+        let latestID: UUID? = messages.last?.id
+        let answering: Bool = store.isGenerating
         ForEach(Array(messages.suffix(visibleLimit))) { (message: ChatMessage) in
             MessageRow(message: message,
                        streaming: store.isGenerating && message.id == tail?.id,
@@ -1159,6 +1245,8 @@ private struct MessageTimeline: View {
                        },
                        onMenu: onMenu)
                 .equatable()
+                .environment(\.questionContext,
+                             QuestionContext(messageID: message.id, isLatest: message.id == latestID && !answering))
                 .id(message.id.uuidString)
         }
     }
@@ -1311,7 +1399,9 @@ private struct MessageRow: View, Equatable {
     private func text(_ ru: String, _ en: String) -> String { settings.text(ru, en) }
 
     /// Готовый текст ответа. Пока ответ печатается, его показывает `LiveAssistantBody`.
-    private var visibleContent: String { message.content }
+    private var visibleContent: String {
+        ParentalControl.shared.rules.enabled ? ParentalControl.shared.filterOutput(message.content) : message.content
+    }
     private var visibleReasoning: String { message.reasoning }
     private var visibleReasoningSeconds: Int { message.reasoningSeconds }
     private var steps: [GenerationStep] { message.activity ?? [] }
@@ -1342,6 +1432,9 @@ private struct MessageRow: View, Equatable {
         HStack {
             Spacer(minLength: 35)
             VStack(alignment: .leading, spacing: 7) {
+                if let quote = message.quote, !quote.isEmpty {
+                    QuoteChip(text: quote, scale: settings.fontScale)
+                }
                 attachmentLabels
                 if !message.content.isEmpty {
                     // Цветной текст работает и в сообщениях пользователя (пункт 8 ТЗ).
@@ -1432,6 +1525,12 @@ private struct MessageRow: View, Equatable {
                     if !streaming {
                         LinkPreviewListView(content: message.content, fontSize: 21 * scale)
                     }
+                }
+                if !message.attachments.isEmpty {
+                    attachmentLabels
+                }
+                if let tableIDs = message.tableIDs, !tableIDs.isEmpty {
+                    ChatTableCards(ids: tableIDs, scale: min(1.25, max(0.9, scale)))
                 }
             }
             if let error = message.error {
@@ -1611,8 +1710,7 @@ private struct MessageRow: View, Equatable {
                 .accessibilityIdentifier("message.video." + attachment.id.uuidString)
             } else {
                 Button { onAttachment(attachment) } label: {
-                    Label(attachment.name, systemImage: attachmentSymbol(attachment))
-                        .font(.system(size: 12)).foregroundStyle(HonorTheme.accent).lineLimit(2).frame(minHeight: 32)
+                    AttachmentFileCard(attachment: attachment, scale: min(1.25, max(0.9, scale)))
                 }.buttonStyle(.plain).accessibilityIdentifier("message.attachment." + attachment.id.uuidString)
             }
         }
@@ -1929,6 +2027,9 @@ enum DeviceModel {
 
     static var name: String {
         #if targetEnvironment(simulator)
+        if let model = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] {
+            return friendly(model) + " (симулятор)"
+        }
         return "Симулятор iPhone"
         #else
         var info = utsname()
@@ -1942,6 +2043,15 @@ enum DeviceModel {
 
     static func friendly(_ identifier: String) -> String {
         let map: [String: String] = [
+            "iPhone10,3": "iPhone X", "iPhone10,6": "iPhone X",
+            "iPhone11,2": "iPhone XS", "iPhone11,4": "iPhone XS Max", "iPhone11,6": "iPhone XS Max",
+            "iPhone11,8": "iPhone XR",
+            "iPhone12,1": "iPhone 11", "iPhone12,3": "iPhone 11 Pro", "iPhone12,5": "iPhone 11 Pro Max",
+            "iPhone12,8": "iPhone SE (2-е поколение)",
+            "iPhone13,1": "iPhone 12 mini", "iPhone13,2": "iPhone 12",
+            "iPhone13,3": "iPhone 12 Pro", "iPhone13,4": "iPhone 12 Pro Max",
+            "iPhone14,4": "iPhone 13 mini", "iPhone14,5": "iPhone 13",
+            "iPhone14,2": "iPhone 13 Pro", "iPhone14,3": "iPhone 13 Pro Max",
             "iPhone14,7": "iPhone 14", "iPhone14,8": "iPhone 14 Plus",
             "iPhone15,2": "iPhone 14 Pro", "iPhone15,3": "iPhone 14 Pro Max",
             "iPhone15,4": "iPhone 15", "iPhone15,5": "iPhone 15 Plus",
@@ -1956,123 +2066,19 @@ enum DeviceModel {
         return map[identifier] ?? identifier
     }
 
+    /// Версия системы без обращения к UIDevice — можно звать из любого потока.
+    static var osDescription: String {
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        var text = "iOS \(version.majorVersion).\(version.minorVersion)"
+        if version.patchVersion > 0 { text += ".\(version.patchVersion)" }
+        return text
+    }
+
     static var systemDescription: String {
         "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
     }
 }
 
-/// Панель «Информация о чате» из меню трёх точек (пункт 38 ТЗ):
-/// модель телефона, настройки, число чатов, автор и способ ввода каждого сообщения
-/// и разница во времени между соседними сообщениями.
-struct ChatInfoSheet: View {
-    @ObservedObject var store: ChatStore
-    @ObservedObject var settings: AppSettings
-    @Environment(\.dismiss) private var dismiss
-
-    private var chat: Conversation? { store.selectedConversation }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Устройство и приложение") {
-                    LabeledContent("Модель iPhone", value: DeviceModel.name)
-                    LabeledContent("Система", value: DeviceModel.systemDescription)
-                    LabeledContent("Приложение", value: ChatRootView.appVersion)
-                    LabeledContent("Язык интерфейса", value: settings.language == .russian ? "Русский" : "English")
-                    LabeledContent("Оформление", value: appearanceName)
-                }
-
-                Section("Настройки") {
-                    LabeledContent("Режим рассуждения", value: store.reasoningEnabled ? "включён" : "выключен")
-                    LabeledContent("Поиск в интернете", value: store.searchEnabled ? "включён" : "выключен")
-                    LabeledContent("Память Honer AI", value: store.memoryEnabled ? "включена (\(store.memories.count) записей)" : "выключена")
-                    LabeledContent("Авточтение ответов", value: settings.autoRead ? "включено" : "выключено")
-                    LabeledContent("Скорость чтения", value: String(format: "%.2f×", settings.voiceRate))
-                    LabeledContent("Масштаб текста", value: String(format: "%.0f %%", settings.fontScale * 100))
-                }
-
-                Section("Чаты") {
-                    LabeledContent("Всего чатов", value: "\(store.conversations.filter { $0.archivedAt == nil }.count)")
-                    LabeledContent("В архиве", value: "\(store.archivedConversations.count)")
-                    LabeledContent("Сообщений в этом чате", value: "\(chat?.messages.count ?? 0)")
-                    LabeledContent("Пользователь", value: settings.displayName.isEmpty ? "без имени" : settings.displayName)
-                }
-
-                if let chat, !chat.messages.isEmpty {
-                    Section("Сообщения этого чата") {
-                        ForEach(Array(chat.messages.enumerated()), id: \.element.id) { index, message in
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack(spacing: 6) {
-                                    Text(message.role == .user ? "Вы" : "Honer AI")
-                                        .font(.system(size: 14, weight: .semibold))
-                                    if message.inputKind == .voice {
-                                        Image(systemName: "mic.fill").font(.system(size: 11))
-                                    }
-                                    if message.inputKind == .suggestion {
-                                        Image(systemName: "hand.tap.fill").font(.system(size: 11))
-                                    }
-                                    Spacer()
-                                    Text(timeString(message.createdAt))
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(.secondary)
-                                }
-                                if let previous = previousMessage(before: index) {
-                                    Text("с прошлого сообщения: \(gap(from: previous.createdAt, to: message.createdAt))")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Text(message.content.isEmpty ? "—" : String(message.content.prefix(140)))
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(3)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Информация о чате")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Готово") { dismiss() }
-                        .accessibilityIdentifier("chat.info.close")
-                }
-            }
-            .accessibilityIdentifier("chat.info.sheet")
-        }
-    }
-
-    private var appearanceName: String {
-        switch settings.appearance {
-        case .system: return "как в системе"
-        case .light: return "светлое"
-        case .dark: return "тёмное"
-        }
-    }
-
-    private func previousMessage(before index: Int) -> ChatMessage? {
-        guard let chat, index > 0, index <= chat.messages.count else { return nil }
-        return chat.messages[index - 1]
-    }
-
-    private func timeString(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ru_RU")
-        formatter.dateFormat = "d MMM, HH:mm"
-        return formatter.string(from: date)
-    }
-
-    private func gap(from start: Date, to end: Date) -> String {
-        let seconds = max(0, Int(end.timeIntervalSince(start)))
-        if seconds < 60 { return "\(seconds) сек" }
-        let minutes = seconds / 60
-        if minutes < 60 { return "\(minutes) мин" }
-        let hours = minutes / 60
-        if hours < 24 { return "\(hours) ч \(minutes % 60) мин" }
-        return "\(hours / 24) дн"
-    }
-}
 
 private struct MessageBubble: Shape {
     func path(in rect: CGRect) -> Path {
@@ -2090,18 +2096,19 @@ private struct MessageBoundsKey: PreferenceKey {
 }
 
 private enum MessageMenuAction: String {
-    case copy, select, edit, share, retry, like, dislike, speak, fork, remember, pinInstruction
+    case copy, select, quote, edit, share, retry, like, dislike, speak, fork, remember, pinInstruction
 
     static func available(for message: ChatMessage) -> [MessageMenuAction] {
         message.role == .user
-            ? [.copy, .pinInstruction, .select, .edit, .fork, .remember, .share]
-            : [.copy, .pinInstruction, .select, .retry, .fork, .remember, .like, .dislike, .speak, .share]
+            ? [.copy, .pinInstruction, .select, .quote, .edit, .fork, .remember, .share]
+            : [.copy, .select, .quote, .pinInstruction, .retry, .fork, .remember, .like, .dislike, .speak, .share]
     }
 
     var symbol: String {
         switch self {
         case .copy: return "square.on.square"
         case .select: return "text.cursor"
+        case .quote: return "text.quote"
         case .edit: return "pencil"
         case .share: return "arrowshape.turn.up.right"
         case .retry: return "arrow.clockwise"
@@ -2117,7 +2124,8 @@ private enum MessageMenuAction: String {
     @MainActor func title(_ settings: AppSettings) -> String {
         switch self {
         case .copy: return settings.text("Копировать", "Copy")
-        case .select: return settings.text("Выбрать текст", "Select text")
+        case .select: return settings.text("Выбрать текст и спросить", "Select text and ask")
+        case .quote: return settings.text("Цитировать", "Quote")
         case .edit: return settings.text("Редактировать", "Edit")
         case .share: return settings.text("Поделиться", "Share")
         case .retry: return settings.text("Повторить", "Retry")
@@ -2179,7 +2187,7 @@ private struct MessageActionPopup: View {
     }
 
     private func requiresContent(_ action: MessageMenuAction) -> Bool {
-        [.copy, .select, .remember, .speak, .share, .pinInstruction].contains(action)
+        [.copy, .select, .quote, .remember, .speak, .share, .pinInstruction].contains(action)
     }
 
     private func isSelected(_ action: MessageMenuAction) -> Bool {
@@ -2206,6 +2214,10 @@ private struct HistoryDrawer: View {
     @State private var renameTitle = ""
     @State private var deleteTargets: Set<UUID> = []
     @State private var deleteConfirmation = false
+    /// Чат, над которым сейчас держат перетаскиваемый чат.
+    @State private var dropTarget: UUID?
+    /// Подсказка после неудачного перетаскивания.
+    @State private var dropHint: String?
     /// Промт (инструкция) конкретного чата — пункт меню «три точки».
     @State private var chatPromptPresented = false
     @State private var chatPromptTarget: UUID?
@@ -2381,6 +2393,10 @@ private struct HistoryDrawer: View {
         .onChange(of: isOpen) { open in
             if !open { searchFocused = false }
         }
+        .alert(text("Перетаскивание чатов", "Moving chats"),
+               isPresented: Binding(get: { dropHint != nil }, set: { if !$0 { dropHint = nil } })) {
+            Button("OK", role: .cancel) { dropHint = nil }
+        } message: { Text(dropHint ?? "") }
         .alert(text("Переименовать чат", "Rename chat"),
                isPresented: $renamePresented) {
             TextField(text("Название", "Title"), text: $renameTitle)
@@ -2491,7 +2507,37 @@ private struct HistoryDrawer: View {
         }
         .background(store.selectedConversationID == chat.id && !selecting ? HonorTheme.accent.opacity(0.21) : Color.clear,
                     in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
+            .stroke(HonorTheme.accent, lineWidth: dropTarget == chat.id ? 2 : 0))
+        .animation(.easeOut(duration: 0.15), value: dropTarget == chat.id)
         .contextMenu { historyActions(chat) }
+        // Перетаскивание: чат можно взять и бросить на другой — закрепить, поменять
+        // местами закреплённые или открепить.
+        .draggable(chat.id.uuidString) {
+            Label(chat.title, systemImage: chat.pinned ? "pin.fill" : "bubble.left")
+                .font(.system(size: 15, weight: .semibold))
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(HonorTheme.surface, in: Capsule())
+        }
+        .dropDestination(for: String.self) { items, _ in
+            handleDrop(items, onto: chat)
+        } isTargeted: { targeted in
+            if targeted { dropTarget = chat.id } else if dropTarget == chat.id { dropTarget = nil }
+        }
+    }
+
+    private func handleDrop(_ items: [String], onto chat: Conversation) -> Bool {
+        dropTarget = nil
+        guard !selecting, let raw = items.first, let id = UUID(uuidString: raw), id != chat.id else { return false }
+        let wasPinned = store.conversations.first { $0.id == id }?.pinned ?? false
+        let moved = withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { store.moveChat(id: id, onto: chat.id) }
+        if moved {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        } else if !wasPinned && !chat.pinned {
+            dropHint = text("Обычные чаты идут по времени. Бросьте чат на закреплённый, чтобы закрепить его на этом месте.",
+                            "Regular chats are sorted by time. Drop a chat onto a pinned one to pin it there.")
+        }
+        return moved
     }
 
     @ViewBuilder private func historyActions(_ chat: Conversation) -> some View {
@@ -2507,6 +2553,10 @@ private struct HistoryDrawer: View {
                 Label(text("Переименовать", "Rename"), systemImage: "pencil")
             }
             .accessibilityIdentifier("history.menu.rename")
+            Button { withAnimation(.easeInOut(duration: 0.25)) { store.archiveChat(id: chat.id) } } label: {
+                Label(text("В архив", "Archive"), systemImage: "archivebox")
+            }
+            .accessibilityIdentifier("history.menu.archive")
             Button { searchFocused = false; selectedIDs = [chat.id]; selecting = true } label: {
                 Label(text("Выбрать", "Select"), systemImage: "checkmark.circle")
             }
@@ -2633,10 +2683,15 @@ private struct SelectableTextSheet: View {
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
     let content: String
+    var onAsk: ((String, SelectionAction) -> Void)? = nil
 
     var body: some View {
         NavigationStack {
-            SelectableTextView(content: content, fontSize: 17 * settings.fontScale)
+            SelectableTextView(content: content, fontSize: 17 * settings.fontScale,
+                               askTitle: settings.text("Спросить Honer AI", "Ask Honer AI"),
+                               explainTitle: settings.text("Подробнее об этом", "Tell me more"),
+                               simplerTitle: settings.text("Объяснить проще", "Explain simpler"),
+                               onAsk: onAsk)
                 .background(HonorTheme.background)
                 .navigationTitle(settings.text("Выбрать текст", "Select text"))
                 .navigationBarTitleDisplayMode(.inline)
@@ -2659,11 +2714,39 @@ private struct SelectableTextSheet: View {
     }
 }
 
+/// Что сделать с выделенным фрагментом.
+enum SelectionAction { case ask, explain, simpler }
+
 private struct SelectableTextView: UIViewRepresentable {
     let content: String
     let fontSize: Double
+    var askTitle = "Спросить Honer AI"
+    var explainTitle = "Подробнее об этом"
+    var simplerTitle = "Объяснить проще"
+    var onAsk: ((String, SelectionAction) -> Void)? = nil
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    /// Пункты «Спросить Honer AI» в системном меню выделения — рядом с «Скопировать».
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: SelectableTextView
+        init(parent: SelectableTextView) { self.parent = parent }
+
+        func textView(_ textView: UITextView, editMenuForTextIn range: NSRange,
+                      suggestedActions: [UIMenuElement]) -> UIMenu? {
+            guard let onAsk = parent.onAsk, range.length > 0,
+                  let text = textView.text, let swiftRange = Range(range, in: text) else { return nil }
+            let fragment = String(text[swiftRange])
+            let ask = UIAction(title: parent.askTitle, image: UIImage(systemName: "sparkles")) { _ in onAsk(fragment, .ask) }
+            let explain = UIAction(title: parent.explainTitle, image: UIImage(systemName: "text.magnifyingglass")) { _ in onAsk(fragment, .explain) }
+            let simpler = UIAction(title: parent.simplerTitle, image: UIImage(systemName: "lightbulb")) { _ in onAsk(fragment, .simpler) }
+            return UIMenu(children: [ask, explain, simpler] + suggestedActions)
+        }
+    }
+
     func makeUIView(context: Context) -> UITextView {
         let view = UITextView()
+        view.delegate = context.coordinator
         view.isEditable = false
         view.isSelectable = true
         view.accessibilityIdentifier = "message.selection.text"
@@ -2672,6 +2755,7 @@ private struct SelectableTextView: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: UITextView, context: Context) {
+        context.coordinator.parent = self
         view.text = content
         view.font = UIFontMetrics.default.scaledFont(for: .systemFont(ofSize: fontSize))
         view.adjustsFontForContentSizeCategory = true
@@ -2686,6 +2770,7 @@ func attachmentSymbol(_ attachment: MessageAttachment) -> String {
     case .document: return "doc"
     case .text: return "doc.text"
     case .sticker: return "face.smiling"
+    case .audio: return "waveform"
     }
 }
 
@@ -2870,8 +2955,35 @@ private struct ChatAttachmentsSheet: View {
 private struct AttachmentPreviewSheet: View {
     let attachment: MessageAttachment
     @ObservedObject var settings: AppSettings
+    /// Отредактированный файл: добавляется к новому сообщению.
+    var onEdited: ((URL) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+    @State private var editing = false
+    @State private var showsText = false
+
+    private var editable: Bool {
+        (attachment.kind == .image || attachment.kind == .video) && attachment.resolvedURL != nil && onEdited != nil
+    }
+
     var body: some View {
+        preview
+            .fullScreenCover(isPresented: $editing) { editor }
+    }
+
+    @ViewBuilder
+    private var editor: some View {
+        if let url = attachment.resolvedURL {
+            if attachment.kind == .video {
+                VideoEditorView(videoURL: url) { edited in onEdited?(edited); dismiss() }
+                    .environmentObject(settings)
+            } else {
+                PhotoEditorView(imageURL: url) { edited in onEdited?(edited); dismiss() }
+                    .environmentObject(settings)
+            }
+        }
+    }
+
+    private var preview: some View {
         NavigationStack {
             Group {
                 if attachment.kind == .sticker {
@@ -2888,7 +3000,10 @@ private struct AttachmentPreviewSheet: View {
                         .accessibilityIdentifier("attachment.preview.copySticker")
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if attachment.kind == .video, let url = attachment.resolvedURL {
+                } else if showsText, !attachment.extractedText.isEmpty {
+                    ScrollView { Text(attachment.extractedText).textSelection(.enabled).padding(20) }
+                        .accessibilityIdentifier("attachment.preview.extracted")
+                } else if attachment.kind == .video || attachment.kind == .audio, let url = attachment.resolvedURL {
                     // Видео со звуком: плеер хранится в состоянии, иначе он
                     // пересоздавался на каждой перерисовке и воспроизведение срывалось.
                     MediaPreviewPlayer(url: url)
@@ -2918,10 +3033,24 @@ private struct AttachmentPreviewSheet: View {
                         Button(settings.text("Готово", "Done")) { dismiss() }.accessibilityIdentifier("attachment.preview.close")
                     }
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        if let url = attachment.resolvedURL {
-                            ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
-                                .accessibilityLabel(settings.text("Поделиться оригиналом", "Share original"))
-                                .accessibilityIdentifier("attachment.preview.share")
+                        HStack(spacing: 14) {
+                            if editable {
+                                Button { editing = true } label: { Image(systemName: "slider.horizontal.3") }
+                                    .accessibilityLabel(settings.text("Редактировать", "Edit"))
+                                    .accessibilityIdentifier("attachment.preview.edit")
+                            }
+                            if !attachment.extractedText.isEmpty && attachment.kind != .image {
+                                Button { withAnimation(.easeInOut(duration: 0.2)) { showsText.toggle() } } label: {
+                                    Image(systemName: showsText ? "doc.richtext" : "text.alignleft")
+                                }
+                                .accessibilityLabel(settings.text("Текст файла", "File text"))
+                                .accessibilityIdentifier("attachment.preview.textToggle")
+                            }
+                            if let url = attachment.resolvedURL {
+                                ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
+                                    .accessibilityLabel(settings.text("Поделиться оригиналом", "Share original"))
+                                    .accessibilityIdentifier("attachment.preview.share")
+                            }
                         }
                     }
                 }
@@ -2955,7 +3084,7 @@ private struct MediaPreviewPlayer: View {
     }
 }
 
-private struct OriginalFilePreview: UIViewControllerRepresentable {    let url: URL
+struct OriginalFilePreview: UIViewControllerRepresentable {    let url: URL
     func makeCoordinator() -> Coordinator { Coordinator(url: url) }
     func makeUIViewController(context: Context) -> QLPreviewController {
         let controller = QLPreviewController()

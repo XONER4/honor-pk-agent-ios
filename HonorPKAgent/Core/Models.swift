@@ -2,7 +2,7 @@ import Foundation
 
 enum MessageRole: String, Codable, Sendable { case user, assistant, tool }
 enum MessageFeedback: String, Codable, Sendable { case like, dislike }
-enum AttachmentKind: String, Codable, Sendable { case image, document, text, video, sticker }
+enum AttachmentKind: String, Codable, Sendable { case image, document, text, video, sticker, audio }
 
 struct MessageAttachment: Identifiable, Codable, Equatable, Sendable {
     var id: UUID = UUID()
@@ -11,6 +11,8 @@ struct MessageAttachment: Identifiable, Codable, Equatable, Sendable {
     var extractedText: String = ""
     var localPath: String? = nil
     var videoFramePaths: [String]? = nil
+    /// Короткое описание под именем файла: «Таблица Excel: 2 листа», «Аудио 1:24».
+    var summary: String? = nil
 
     /// Resolves files after iOS changes the app's sandbox UUID during an update.
     var resolvedURL: URL? {
@@ -91,6 +93,10 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     var continuesInBackground: Bool? = nil
     /// Шаги работы над ответом: поиск, чтение страниц, рисование и другое.
     var activity: [GenerationStep]? = nil
+    /// Таблицы, созданные в этом ответе (показываются карточками под текстом).
+    var tableIDs: [UUID]? = nil
+    /// Фрагмент, который пользователь выделил и процитировал в своём вопросе.
+    var quote: String? = nil
 
     /// Устойчивый идентификатор для прокрутки к сообщению.
     var anchorID: String { "message-anchor-" + id.uuidString }
@@ -118,6 +124,21 @@ struct Conversation: Identifiable, Codable, Equatable, Sendable {
     /// чтобы нейросеть видела их в каждом ответе. Необязательное поле — старые
     /// сохранённые истории без него открываются как раньше.
     var instructions: [ChatInstruction]? = nil
+    /// Таблицы чата: их создаёт Honer AI, а пользователь может дополнять и править.
+    var tables: [ChatTable]? = nil
+}
+
+/// Таблица в чате. Редактируемую пользователь правит сам, а модель видит правки.
+struct ChatTable: Identifiable, Codable, Equatable, Sendable {
+    var id: UUID = UUID()
+    var title: String
+    var columns: [String]
+    var rows: [[String]]
+    var editable: Bool = true
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+    /// Пользователь вносил правки — модель об этом узнаёт.
+    var editedByUser: Bool = false
 }
 
 /// Шаг работы над ответом для ленты «что делает Honer AI».
@@ -130,6 +151,8 @@ struct GenerationStep: Identifiable, Codable, Equatable, Sendable {
     /// Сайты, которые открывались на этом шаге.
     var sites: [String] = []
     var done: Bool = false
+    /// Когда шаг начался — для хронологии в «Информации о чате».
+    var startedAt: Date? = nil
 }
 
 /// Закреплённая инструкция чата.
@@ -218,6 +241,8 @@ struct DeepSeekConfiguration: Sendable {
     var apiKey: String
     var baseURL: URL = URL(string: "https://api.deepseek.com")!
     var model: String = "deepseek-flash"
+    /// Язык ответов нейросети: "ru" (по умолчанию) или "en" — по языку приложения.
+    var language: String = "ru"
 
     static var bundled: DeepSeekConfiguration {
         let values: [String: Any]

@@ -46,6 +46,13 @@ final class AppSettings: ObservableObject {
     /// Фото профиля (путь в песочнице приложения).
     @Published var profilePhotoPath: String { didSet { defaults.set(profilePhotoPath, forKey: "honor.profilePhotoPath") } }
 
+    /// Дата рождения ("yyyy-MM-dd" или пусто). Хранится и в Keychain.
+    @Published var birthday: String {
+        didSet { defaults.set(birthday, forKey: "honer.birthday"); KeychainStore.set(birthday, for: "birthday") }
+    }
+    /// Когда создан аккаунт (первый запуск). Переживает переустановку через Keychain.
+    let accountCreatedAt: Date
+
     /// Пол голоса озвучки.
     var speechGender: VoiceCatalog.Gender { voiceGender == "female" ? .female : .male }
 
@@ -76,6 +83,31 @@ final class AppSettings: ObservableObject {
         crossChatMemoryEnabled = defaults.object(forKey: "honor.crossChatMemoryEnabled") as? Bool ?? true
         stickersEnabled = defaults.object(forKey: "honor.stickersEnabled") as? Bool ?? true
         profilePhotoPath = defaults.string(forKey: "honor.profilePhotoPath") ?? ""
+        birthday = defaults.string(forKey: "honer.birthday") ?? KeychainStore.get("birthday") ?? ""
+        accountCreatedAt = Self.loadAccountCreationDate(defaults: defaults)
+    }
+
+    /// Дата создания аккаунта: из Keychain (после переустановки), иначе из настроек, иначе сейчас.
+    private static func loadAccountCreationDate(defaults: UserDefaults) -> Date {
+        let key = "honer.accountCreatedAt"
+        if let text = KeychainStore.get("accountCreatedAt"), let seconds = Double(text) {
+            defaults.set(seconds, forKey: key)
+            return Date(timeIntervalSince1970: seconds)
+        }
+        if let seconds = defaults.object(forKey: key) as? Double {
+            KeychainStore.set(String(seconds), for: "accountCreatedAt")
+            return Date(timeIntervalSince1970: seconds)
+        }
+        let now = Date().timeIntervalSince1970
+        defaults.set(now, forKey: key)
+        KeychainStore.set(String(now), for: "accountCreatedAt")
+        return Date(timeIntervalSince1970: now)
+    }
+
+    /// Полных лет по дате рождения.
+    var age: Int? {
+        guard let date = ChatStore.birthdayFormatter.date(from: birthday) else { return nil }
+        return Calendar.current.dateComponents([.year], from: date, to: Date()).year
     }
 
     var preferredColorScheme: ColorScheme? {

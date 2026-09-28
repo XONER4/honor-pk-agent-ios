@@ -327,6 +327,70 @@ final class SpeechService: NSObject, ObservableObject {
         } catch { activeUtterance = nil; isSpeaking = false; deactivateAudioIfIdle(); errorMessage = error.localizedDescription }
     }
 
+    /// Дочитать следующий кусок ответа, не прерывая уже звучащий: так ответ
+    /// озвучивается сразу, пока нейросеть ещё пишет продолжение.
+    func append(_ text: String, voiceIdentifier: String = "", gender: VoiceCatalog.Gender = .male,
+                language: String = "ru-RU", rate: Double = 0.95) {
+        let spokenText = Self.spokenForm(Self.sanitizedSpeechText(text))
+        guard !spokenText.isEmpty else { return }
+        do {
+            if !isSpeaking {
+                clearError()
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, mode: .spokenAudio, options: .duckOthers)
+                try session.setActive(true)
+            }
+            let russian = Self.preferredVoice(identifier: voiceIdentifier, language: language, gender: gender)
+            let english = (UserDefaults.standard.bool(forKey: "honor.personalVoiceEnglish") ? Self.personalVoice() : nil)
+                ?? VoiceCatalog.bestVoice(language: "en", gender: gender)
+            let clamped = Float(min(max(rate, 0.35), 1.8))
+            let speed = min(AVSpeechUtteranceMaximumSpeechRate,
+                            max(AVSpeechUtteranceMinimumSpeechRate, AVSpeechUtteranceDefaultSpeechRate * clamped))
+            var last: AVSpeechUtterance?
+            for segment in Self.languageSegments(spokenText) {
+                let utterance = AVSpeechUtterance(string: segment.text)
+                utterance.voice = segment.english ? (english ?? russian) : russian
+                utterance.rate = speed
+                synthesizer.speak(utterance)
+                last = utterance
+            }
+            if let last { activeUtterance = last; isSpeaking = true }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// Где можно отрезать кусок текста для чтения: после законченного предложения
+    /// и не внутри блока кода. `nil` — ждать продолжения.
+    nonisolated static func speakableEnd(_ rest: Substring, final: Bool) -> String.Index? {
+        guard rest.contains(where: { !$0.isWhitespace }) else { return nil }
+        // Внутри незакрытого блока кода не режем: код не читается, ждём конца блока.
+        var fences: [String.Index] = []
+        var search = rest.startIndex
+        while let range = rest.range(of: "```", range: search..<rest.endIndex) {
+            fences.append(range.lowerBound)
+            search = range.upperBound
+        }
+        var limit = rest.endIndex
+        if fences.count % 2 == 1, let open = fences.last { limit = open }
+        if final { return limit == rest.endIndex ? rest.endIndex : (limit > rest.startIndex ? limit : nil) }
+        let terminators: Set<Character> = [".", "!", "?", "…", "\n", ":", ";"]
+        var cut: String.Index?
+        var index = rest.startIndex
+        while index < limit {
+            let next = rest.index(after: index)
+            if terminators.contains(rest[index]) {
+                if rest[index] == "\n" {
+                    cut = next
+                } else if next < rest.endIndex, rest[next].isWhitespace {
+                    cut = next
+                }
+            }
+            index = next
+        }
+        guard let cut else { return nil }
+        let length = rest.distance(from: rest.startIndex, to: cut)
+        return length >= 18 || rest[rest.startIndex..<cut].contains("\n") ? cut : nil
+    }
+
     /// Текст делится на куски по языку: латиница — английский голос, остальное — русский.
     /// Числа и знаки остаются в текущем куске.
     nonisolated static func languageSegments(_ text: String) -> [(text: String, english: Bool)] {

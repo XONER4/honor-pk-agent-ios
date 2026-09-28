@@ -16,7 +16,8 @@ extension AppSettings {
             "notificationsEnabled": String(notificationsEnabled),
             "crossChatMemoryEnabled": String(crossChatMemoryEnabled),
             "stickersEnabled": String(stickersEnabled), "clonedVoiceID": clonedVoiceID,
-            "useClonedVoice": String(useClonedVoice), "personalVoiceEnglish": String(personalVoiceEnglish)
+            "useClonedVoice": String(useClonedVoice), "personalVoiceEnglish": String(personalVoiceEnglish),
+            "birthday": birthday
         ]
     }
 
@@ -37,6 +38,7 @@ extension AppSettings {
         if let value = values["clonedVoiceID"], !value.isEmpty { clonedVoiceID = value }
         if let value = values["useClonedVoice"].flatMap(Bool.init) { useClonedVoice = value }
         if let value = values["personalVoiceEnglish"].flatMap(Bool.init) { personalVoiceEnglish = value }
+        if let value = values["birthday"], !value.isEmpty { birthday = value }
     }
 
     /// Копия настроек в Keychain: она переживает удаление приложения.

@@ -32,7 +32,8 @@ struct HonorPKAgentApp: App {
             Group {
                 if DeviceCompatibility.isSupported {
                     if settings.completedOnboarding {
-                        ChatRootView()
+                        // Родительский контроль: экран блокировки по лимиту и тихим часам, учёт времени.
+                        ChatRootView().parentalGate()
                     } else {
                         OnboardingView()
                     }
@@ -60,6 +61,9 @@ struct HonorPKAgentApp: App {
                 store.settingsSnapshotProvider = { [weak settings] in settings?.exportSnapshot() ?? [:] }
                 store.settingsRestorer = { [weak settings] values in settings?.applySnapshot(values) }
                 store.profileName = settings.displayName
+                store.profileBirthday = settings.birthday
+                store.accountCreatedAt = settings.accountCreatedAt
+                store.setResponseLanguage(settings.language.rawValue)
                 // Автоудаление старых чатов по настройке (пункт 40).
                 if settings.autoDeleteDays > 0 {
                     store.purgeOldChats(olderThan: settings.autoDeleteDays)
@@ -75,6 +79,8 @@ struct HonorPKAgentApp: App {
                 #endif
             }
             .onChange(of: settings.displayName) { store.profileName = $0 }
+            .onChange(of: settings.birthday) { store.profileBirthday = $0 }
+            .onChange(of: settings.language) { (language: AppLanguage) in store.setResponseLanguage(language.rawValue) }
             .onChange(of: settings.notificationsEnabled) { (enabled: Bool) in
                 NotificationCenterService.shared.isEnabled = enabled
                 if enabled {

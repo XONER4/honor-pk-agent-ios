@@ -59,6 +59,13 @@ struct SettingsView: View {
                         }
                         .accessibilityIdentifier("settings.permissions")
                         SettingsDivider()
+                        NavigationLink { ParentalControlPage() } label: {
+                            SettingsRow(symbol: "figure.and.child.holdinghands",
+                                        title: settings.text("Родительский контроль", "Parental control"),
+                                        value: ParentalControl.shared.rules.enabled ? settings.text("включён", "on") : settings.text("выключен", "off"))
+                        }
+                        .accessibilityIdentifier("settings.parental")
+                        SettingsDivider()
                         NavigationLink { MemorySettingsPage() } label: {
                             SettingsRow(symbol: "brain", title: settings.text("Память Honer AI", "Honer AI memory"),
                                         value: "\(store.memories.count)")
@@ -98,6 +105,11 @@ struct SettingsView: View {
                             SettingsRow(symbol: "chart.bar", title: settings.text("Статистика", "Statistics"))
                         }
                         .accessibilityIdentifier("settings.statistics")
+                        SettingsDivider()
+                        NavigationLink { HelpCenterView() } label: {
+                            SettingsRow(symbol: "book", title: settings.text("Руководство и возможности", "Guide and features"))
+                        }
+                        .accessibilityIdentifier("settings.guide")
                         SettingsDivider()
                         NavigationLink { AboutSettingsPage() } label: {
                             SettingsRow(symbol: "doc.text", title: "Honer AI")

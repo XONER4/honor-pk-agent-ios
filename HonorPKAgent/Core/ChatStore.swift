@@ -116,6 +116,44 @@ final class ChatStore: ObservableObject {
 
     var systemInstruction = ""
     var profileName = ""
+    /// Дата рождения из профиля ("yyyy-MM-dd") и дата создания аккаунта.
+    var profileBirthday = ""
+    var accountCreatedAt: Date?
+
+    /// Язык ответов нейросети следует за языком приложения.
+    func setResponseLanguage(_ code: String) {
+        configuration.language = code == "en" ? "en" : "ru"
+    }
+
+    var respondsInEnglish: Bool { configuration.language == "en" }
+
+    /// Как сказать модели «на языке ответа» в служебных подсказках.
+    var answerLanguagePhrase: String { respondsInEnglish ? "на английском языке (in English)" : "по-русски" }
+
+    /// Сведения профиля для модели: возраст, когда создан аккаунт.
+    func profileBlock(now: Date = Date()) -> String {
+        var lines: [String] = []
+        if let birth = Self.birthdayFormatter.date(from: profileBirthday) {
+            let age = Calendar.current.dateComponents([.year], from: birth, to: now).year ?? 0
+            let text = DateFormatter.localizedString(from: birth, dateStyle: .long, timeStyle: .none)
+            lines.append("Дата рождения пользователя: \(text) (полных лет: \(age)). Если день рождения сегодня — поздравь.")
+        }
+        if let created = accountCreatedAt {
+            let text = DateFormatter.localizedString(from: created, dateStyle: .long, timeStyle: .short)
+            let days = max(0, Calendar.current.dateComponents([.day], from: created, to: now).day ?? 0)
+            lines.append("Аккаунт Honer AI создан: \(text) (дней назад: \(days)).")
+        }
+        guard !lines.isEmpty else { return "" }
+        return "\nПрофиль пользователя (данные, используй к месту):\n" + lines.map { "• " + $0 }.joined(separator: "\n")
+    }
+
+    static let birthdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
     /// Настройки приложения для резервной копии и их восстановление при импорте.
     var settingsSnapshotProvider: (() -> [String: String])?
     var settingsRestorer: (([String: String]) -> Void)?
@@ -170,7 +208,20 @@ final class ChatStore: ObservableObject {
     /// Клиент для самопроверки связи. Есть только у настоящего клиента:
     /// у тестовых заглушек его нет, и проверка просто не запускается.
     var connectionChecker: DeepSeekClient? { injectedClient as? DeepSeekClient }
-    var canSend: Bool { !isLoadingHistory && !isGenerating && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty) }
+    var canSend: Bool {
+        !isLoadingHistory && !isGenerating
+            && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty || quotedFragment != nil)
+    }
+
+    /// Выделенный фрагмент, о котором пользователь спрашивает (цитата над полем ввода).
+    @Published var quotedFragment: String?
+
+    /// Процитировать фрагмент: он появится над полем ввода и уйдёт вместе с вопросом.
+    func quote(_ fragment: String) {
+        let value = fragment.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        quotedFragment = String(value.prefix(4000))
+    }
 
     private let injectedClient: DeepSeekStreaming?
     private var searchClient: WebSearching
@@ -238,6 +289,8 @@ final class ChatStore: ObservableObject {
     // MARK: - Лента шагов
 
     private func startStep(_ step: GenerationStep) {
+        var step = step
+        if step.startedAt == nil { step.startedAt = Date() }
         currentSteps.append(step)
         pacer.setSteps(currentSteps)
     }
@@ -245,7 +298,7 @@ final class ChatStore: ObservableObject {
     private func updateStep(_ id: UUID, detail: String? = nil, sites: [String]? = nil, done: Bool? = nil) {
         guard let index = currentSteps.firstIndex(where: { $0.id == id }) else { return }
         if let detail { currentSteps[index].detail = detail }
-        if let sites, !sites.isEmpty { currentSteps[index].sites = Array(sites.prefix(8)) }
+        if let sites, !sites.isEmpty { currentSteps[index].sites = Array(sites.prefix(30)) }
         if let done { currentSteps[index].done = done }
         pacer.setSteps(currentSteps)
     }
@@ -278,7 +331,7 @@ final class ChatStore: ObservableObject {
         case .findContact: return GenerationStep(kind: "contact", title: "Ищу контакт", detail: argument("name"))
         case .copyToClipboard: return GenerationStep(kind: "settings", title: "Копирую в буфер обмена")
         case .startGame: return GenerationStep(kind: "settings", title: "Открываю игру", detail: argument("game"))
-        default: return GenerationStep(kind: "settings", title: "Выполняю действие")
+        default: return ExtraToolSchemas.step(for: call) ?? GenerationStep(kind: "settings", title: "Выполняю действие")
         }
     }
 
@@ -397,6 +450,7 @@ final class ChatStore: ObservableObject {
         guard let index = memories.firstIndex(where: { $0.id == id }),
               let text = validatedMemory(text, excluding: id) else { return false }
         memories[index].text = text
+        memories[index].keywords = Self.keywords(in: text)
         errorMessage = nil
         saveSnapshot()
         return true
@@ -433,6 +487,7 @@ final class ChatStore: ObservableObject {
         if !name.isEmpty {
             instruction += "\nИмя пользователя в локальном профиле (данные): \(String(reflecting: name)). Обращайся по имени естественно, без повторения в каждом ответе."
         }
+        instruction += profileBlock()
         // Закреплённые инструкции и память — разные сведения, и модель должна их
         // различать. Инструкции — это правила, которые пользователь сам закрепил
         // в этом чате: они действуют в каждом ответе. Память — справочные факты,
@@ -441,7 +496,10 @@ final class ChatStore: ObservableObject {
         if let chat = conversations.first(where: { $0.id == chatID }) {
             let pinned = Self.instructionsBlock(chat.instructions ?? [], legacyPrompt: chat.systemPrompt)
             if !pinned.isEmpty { instruction += "\n\n" + pinned }
+            instruction += TableEditing.promptBlock(chat.tables ?? [])
         }
+        let parental = ParentalControl.shared.systemPromptBlock
+        if !parental.isEmpty { instruction += "\n\n" + parental }
         if memoryEnabled, !memories.isEmpty {
             let scoped = Self.relevantMemories(memories, for: query)
             let entries = scoped.map { "• \($0.text)" }.joined(separator: "\n")
@@ -572,7 +630,7 @@ final class ChatStore: ObservableObject {
     }
 
     /// Ключевые слова факта или запроса — для отбора релевантной памяти без embeddings.
-    static func keywords(in text: String) -> [String] {
+    nonisolated static func keywords(in text: String) -> [String] {
         let stop: Set<String> = ["и", "в", "во", "не", "что", "он", "на", "я", "с", "со", "как", "а", "то", "все",
                                  "она", "так", "его", "но", "да", "ты", "к", "у", "же", "вы", "за", "бы", "по",
                                  "только", "ее", "мне", "было", "вот", "от", "меня", "еще", "нет", "о", "из", "ему",
@@ -622,6 +680,15 @@ final class ChatStore: ObservableObject {
     func send(inputKind: MessageInputKind = .text) {
         guard canSend else { return }
         guard hasAPIKey else { errorMessage = HonorError.missingAPIKey.localizedDescription; return }
+        // Родительский контроль: лимит времени, тихие часы и запрещённые темы.
+        if let reason = ParentalControl.shared.blockReason {
+            errorMessage = reason
+            return
+        }
+        if case .blocked(let reason) = ParentalControl.shared.check(draft + " " + (quotedFragment ?? "")) {
+            refuseLocally(reason)
+            return
+        }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let outgoingAttachments = attachments
         if selectedConversationID == nil || selectedConversation == nil {
@@ -639,6 +706,8 @@ final class ChatStore: ObservableObject {
         }
         var user = ChatMessage(role: .user, content: text, attachments: outgoingAttachments)
         user.inputKind = inputKind
+        user.quote = quotedFragment
+        quotedFragment = nil
         conversations[index].messages.append(user)
         recordSentMessage(voice: inputKind == .voice)
         if conversations[index].messages.filter({ $0.role == .user }).count == 1 {
@@ -651,6 +720,27 @@ final class ChatStore: ObservableObject {
         editingMessageID = nil
         removeUnreferencedAttachments(discardedAttachments)
         beginGeneration(in: chatID)
+    }
+
+    /// Запрос остановлен родительским контролем: вопрос и вежливый отказ остаются
+    /// в чате, в сервис ничего не уходит.
+    private func refuseLocally(_ reason: String) {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if selectedConversationID == nil || selectedConversation == nil {
+            let conversation = Conversation()
+            conversations.insert(conversation, at: 0)
+            selectedConversationID = conversation.id
+        }
+        guard let chatID = selectedConversationID else { return }
+        mutateChat(chatID: chatID) { chat in
+            chat.messages.append(ChatMessage(role: .user, content: text))
+            chat.messages.append(ChatMessage(role: .assistant, content: reason))
+            chat.updatedAt = Date()
+        }
+        draft = ""
+        quotedFragment = nil
+        attachments = []
+        saveSnapshot()
     }
 
     func stop() {
@@ -852,6 +942,35 @@ final class ChatStore: ObservableObject {
         return pinned + others
     }
 
+    /// Перетаскивание чата в списке. Брошен на закреплённый — закрепляется и встаёт
+    /// перед ним; закреплённый брошен на обычный — открепляется.
+    /// - Returns: `true`, если порядок изменился.
+    @discardableResult
+    func moveChat(id: UUID, onto targetID: UUID) -> Bool {
+        guard id != targetID,
+              let target = conversations.first(where: { $0.id == targetID && $0.archivedAt == nil }),
+              let draggedIndex = conversations.firstIndex(where: { $0.id == id && $0.archivedAt == nil }) else { return false }
+        if target.pinned {
+            var pinned = conversations.filter { $0.pinned && $0.archivedAt == nil && $0.id != id }
+                .sorted { $0.pinOrder < $1.pinOrder }
+            let position = pinned.firstIndex { $0.id == targetID } ?? pinned.count
+            pinned.insert(conversations[draggedIndex], at: position)
+            for (order, chat) in pinned.enumerated() {
+                if let index = conversations.firstIndex(where: { $0.id == chat.id }) {
+                    conversations[index].pinned = true
+                    conversations[index].pinOrder = order
+                }
+            }
+        } else if conversations[draggedIndex].pinned {
+            conversations[draggedIndex].pinned = false
+            conversations[draggedIndex].pinOrder = 0
+        } else {
+            return false
+        }
+        saveSnapshot()
+        return true
+    }
+
     /// Меняет закреплённые чаты местами (только среди закреплённых).
     func movePinned(id: UUID, offset: Int) {
         var pinned = conversations.filter { $0.pinned && $0.archivedAt == nil }
@@ -957,10 +1076,11 @@ final class ChatStore: ObservableObject {
         // решает сама. Раньше при включённой кнопке поиск запускался до ответа почти
         // на любой вопрос: ответ начинался на несколько секунд позже, а модель
         // получала страницы, которые были ей не нужны.
-        let webToolsOn = searchEnabled
+        let webToolsOn = searchEnabled && ParentalControl.shared.rules.canSearchWeb
         // Без кнопки интернет открывается только по явной нужде: ссылка в сообщении,
         // прямая просьба найти, погода или вопрос о свежих данных.
-        let searching = !webToolsOn && SearchIntent.needsSearch(query: query, searchToggleOn: false)
+        let searching = !webToolsOn && ParentalControl.shared.rules.canSearchWeb
+            && SearchIntent.needsSearch(query: query, searchToggleOn: false)
         let recentContext = input.suffix(4).map { String($0.content.prefix(1500)) }.joined(separator: "\n")
         // Для решения «вопрос про другие чаты» смотрим только на реплики пользователя:
         // ответы ассистента сами часто упоминают «чат», и раньше из-за этого переписка
@@ -979,7 +1099,8 @@ final class ChatStore: ObservableObject {
             instruction += otherChatsContext(excluding: chatID)
         }
         let client = injectedClient ?? DeepSeekClient(configuration: configuration)
-        let russianNormalizer = client as? RussianTextNormalizing
+        // В английском режиме перевод на русский не нужен.
+        let russianNormalizer = respondsInEnglish ? nil : client as? RussianTextNormalizing
         generationStatus = searching ? "Ищу в интернете…" : (thinking ? "Размышляю…" : "Отвечаю…")
         saveSnapshot()
 
@@ -1166,10 +1287,27 @@ final class ChatStore: ObservableObject {
                         let step = Self.step(for: call)
                         self.startStep(step)
                         let result: ToolCallResult
-                        if HonerTool(rawValue: call.name) == .findContact {
+                        if let refusal = Self.parentalRefusal(for: call) {
+                            result = ToolCallResult(callID: call.id, name: call.name, content: refusal)
+                        } else if HonerTool(rawValue: call.name) == .findContact {
                             result = await ContactLookup.execute(call)
                             try Task.checkCancellation()
                             guard self.activeRunID == runID else { return }
+                        } else if let tool = HonerTool(rawValue: call.name), tool.isExtra {
+                            let stepID = step.id
+                            let executor = ExtraToolExecutor(client: self.webClient, context: toolContext)
+                            if tool.isWeb && !webToolsOn {
+                                result = ToolCallResult(callID: call.id, name: call.name,
+                                                        content: "Интернет выключен. Предложи пользователю включить кнопку «Поиск».")
+                            } else if tool.isAsync {
+                                result = await executor.execute(call) { [weak self] detail, sites in
+                                    Task { @MainActor in self?.updateStep(stepID, detail: detail, sites: sites) }
+                                }
+                                try Task.checkCancellation()
+                                guard self.activeRunID == runID else { return }
+                            } else {
+                                result = executor.executeLocal(call)
+                            }
                         } else if let tool = HonerTool(rawValue: call.name), tool.isAsync {
                             // Интернет выполняется асинхронно; модель видит его только
                             // при включённой кнопке «Поиск».
@@ -1198,11 +1336,13 @@ final class ChatStore: ObservableObject {
                         }
                         if case .addSources(let found)? = result.effect {
                             self.mutateMessage(chatID: chatID, messageID: response.id) { message in
-                                for source in found where !message.sources.contains(where: { $0.url == source.url }) {
+                                for source in found where !message.sources.contains(where: { $0.url == source.url })
+                                    && ParentalControl.shared.isURLAllowed(source.url) {
                                     message.sources.append(source)
                                 }
                             }
-                        } else if let effect = result.effect {
+                        } else if let effect = result.effect,
+                                  !self.applyToAnswer(effect, chatID: chatID, messageID: response.id) {
                             self.apply(effect)
                         }
                         roundResults.append(result)
@@ -1365,7 +1505,7 @@ final class ChatStore: ObservableObject {
                         self.generationStatus = "Формулирую ответ…"
                         do {
                             let forced = try await client.complete(messages: recoveryInput, thinking: false,
-                                                                   systemInstruction: "Отвечай только итоговым текстом по-русски. Никаких обещаний что-то найти или прочитать, никаких рассуждений о своих действиях. Сразу дай ответ по данным, которые есть в переписке.",
+                                                                   systemInstruction: "Отвечай только итоговым текстом \(self.answerLanguagePhrase). Никаких обещаний что-то найти или прочитать, никаких рассуждений о своих действиях. Сразу дай ответ по данным, которые есть в переписке.",
                                                                    searchContext: "")
                             if !Self.needsAnswerRecovery(forced), !forced.isEmpty {
                                 retryContent = forced
@@ -1402,7 +1542,7 @@ final class ChatStore: ObservableObject {
                         synthesisInput.append(data)
                         if let answer = try? await client.complete(
                             messages: synthesisInput, thinking: false,
-                            systemInstruction: "Ответь пользователю по-русски одним связным ответом, используя данные выше. Без вступлений, без описания своих действий и без markdown-заголовков первого уровня.",
+                            systemInstruction: "Ответь пользователю \(self.answerLanguagePhrase) одним связным ответом, используя данные выше. Без вступлений, без описания своих действий и без markdown-заголовков первого уровня.",
                             searchContext: ""), !Self.isTooShortToBeAnAnswer(answer) {
                             show(answer)
                             self.mutateMessage(chatID: chatID, messageID: response.id) { $0.content = answer }
@@ -1492,6 +1632,35 @@ final class ChatStore: ObservableObject {
 
     /// Строка состояния, пока выполняются инструменты: пользователь видит, что именно
     /// делает помощник, а не абстрактное «Выполняю действие…».
+    /// Инструмент запрещён родительским контролем — объяснение для модели, иначе nil.
+    static func parentalRefusal(for call: ToolCallRequest) -> String? {
+        let control = ParentalControl.shared
+        let rules = control.rules
+        guard rules.enabled, let tool = HonerTool(rawValue: call.name) else { return nil }
+        let refusal = "Родительский контроль запрещает это действие. Коротко и доброжелательно скажи ребёнку, что это недоступно, и предложи безопасную альтернативу."
+        if tool.isWeb && !rules.canSearchWeb { return refusal }
+        if (tool == .drawImage || tool == .editImage) && !rules.canGenerateImages { return refusal }
+        if tool == .findContact && !rules.canUseContacts { return refusal }
+        if tool == .startGame {
+            let game = (ToolArgument.string(call.parsedArguments["game"]) ?? "").lowercased()
+            if !rules.canPlayGames { return refusal }
+            if let kind = GameKind.from(game), !control.isGameAllowed(kind.rawValue) { return refusal }
+        }
+        // Адреса страниц: запрещённые сайты не открываются.
+        let arguments = call.parsedArguments
+        var addresses: [String] = []
+        for key in ["url", "page", "channel", "video", "source"] {
+            if let value = ToolArgument.string(arguments[key]) { addresses.append(value) }
+        }
+        addresses += TableEditing.strings(arguments["urls"])
+        for address in addresses {
+            guard let url = WebToolExecutor.url(from: address) else { continue }
+            if !rules.canOpenLinks && (tool == .openPage || tool == .screenshotPage) { return refusal }
+            if !control.isURLAllowed(url) { return "Этот сайт запрещён родительским контролем. Не открывай его и предложи безопасную альтернативу." }
+        }
+        return nil
+    }
+
     static func toolStatus(for calls: [ToolCallRequest]) -> String {
         let names = Set(calls.map(\.name))
         if names.contains(HonerTool.webSearch.rawValue) { return "Ищу в интернете…" }
@@ -1509,6 +1678,7 @@ final class ChatStore: ObservableObject {
         if names.contains(HonerTool.saveMemory.rawValue) { return "Запоминаю…" }
         if names.contains(HonerTool.renameChat.rawValue) || names.contains(HonerTool.pinChat.rawValue) { return "Обновляю чаты…" }
         if names.contains(HonerTool.setAppSetting.rawValue) { return "Меняю настройку…" }
+        if let extra = ExtraToolSchemas.status(for: names) { return extra }
         return "Выполняю действие…"
     }
 
@@ -1626,7 +1796,11 @@ final class ChatStore: ObservableObject {
             lastMessageAt: messages.last?.createdAt,
             chats: overviews,
             transcripts: transcripts,
-            settingsSummary: settingsSummary())
+            settingsSummary: settingsSummary(),
+            tables: selectedConversation?.tables ?? [],
+            memoryItems: memories.map { MemoryRef(id: $0.id, text: $0.text) },
+            chatAttachments: messages.flatMap(\.attachments).filter { $0.kind != .sticker },
+            configuration: configuration)
     }
 
     /// Настройки пользователя словами — для инструмента get_app_settings.
@@ -1692,8 +1866,89 @@ final class ChatStore: ObservableObject {
             // Источники добавляются к ответу прямо в цикле инструментов.
             break
         case .openGame(let raw):
+            guard ParentalControl.shared.isGameAllowed(raw) else { return }
             requestedGame = GameKind(rawValue: raw)
+        case .updateMemory(let id, let text):
+            _ = updateMemory(id: id, text: text)
+        case .deleteMemory(let id):
+            deleteMemory(id: id)
+        case .createTable, .replaceTable, .attachFile:
+            // Эти действия относятся к ответу и выполняются в applyToAnswer.
+            break
         }
+    }
+
+    /// Действия, которые показываются в самом ответе: таблица, отредактированное фото.
+    /// - Returns: `true`, если действие выполнено здесь.
+    private func applyToAnswer(_ effect: ToolEffect, chatID: UUID, messageID: UUID) -> Bool {
+        switch effect {
+        case .createTable(let table):
+            mutateChat(chatID: chatID) { conversation in
+                var tables = conversation.tables ?? []
+                tables.append(table)
+                conversation.tables = tables
+            }
+            mutateMessage(chatID: chatID, messageID: messageID) { message in
+                var ids = message.tableIDs ?? []
+                ids.append(table.id)
+                message.tableIDs = ids
+            }
+            saveSnapshot()
+            return true
+        case .replaceTable(let table):
+            mutateChat(chatID: chatID) { conversation in
+                guard var tables = conversation.tables,
+                      let index = tables.firstIndex(where: { $0.id == table.id }) else { return }
+                tables[index] = table
+                conversation.tables = tables
+            }
+            // Изменённая таблица показывается и под новым ответом.
+            mutateMessage(chatID: chatID, messageID: messageID) { message in
+                var ids = message.tableIDs ?? []
+                if !ids.contains(table.id) { ids.append(table.id) }
+                message.tableIDs = ids
+            }
+            saveSnapshot()
+            return true
+        case .attachFile(let attachment):
+            mutateMessage(chatID: chatID, messageID: messageID) { message in
+                message.attachments.append(attachment)
+            }
+            saveSnapshot()
+            return true
+        default:
+            return false
+        }
+    }
+
+    // MARK: - Таблицы чата
+
+    func table(id: UUID) -> ChatTable? {
+        for chat in conversations {
+            if let table = chat.tables?.first(where: { $0.id == id }) { return table }
+        }
+        return nil
+    }
+
+    /// Правка таблицы пользователем: сохраняется сразу, модель увидит её в следующем ответе.
+    func saveTable(_ table: ChatTable, byUser: Bool = true) {
+        guard let chatIndex = conversations.firstIndex(where: { $0.tables?.contains(where: { $0.id == table.id }) == true }),
+              let tableIndex = conversations[chatIndex].tables?.firstIndex(where: { $0.id == table.id }) else { return }
+        var updated = table
+        updated.updatedAt = Date()
+        if byUser { updated.editedByUser = true }
+        conversations[chatIndex].tables?[tableIndex] = updated
+        saveSnapshot()
+    }
+
+    func deleteTable(id: UUID) {
+        for index in conversations.indices {
+            conversations[index].tables?.removeAll { $0.id == id }
+            for messageIndex in conversations[index].messages.indices {
+                conversations[index].messages[messageIndex].tableIDs?.removeAll { $0 == id }
+            }
+        }
+        saveSnapshot()
     }
 
     /// Дописать сообщение агента в конкретный чат по идентификатору.
@@ -1742,7 +1997,7 @@ final class ChatStore: ObservableObject {
         let flag = ["true", "1", "да", "вкл", "on", "yes"].contains(value.lowercased())
         switch lowered {
         case "reasoning": reasoningEnabled = flag
-        case "search": searchEnabled = flag
+        case "search": searchEnabled = flag && ParentalControl.shared.rules.canSearchWeb
         case "notifications": settingsBridge?.notificationsEnabled = flag
         case "autoread": settingsBridge?.autoRead = flag
         case "fontscale":
