@@ -728,20 +728,7 @@ struct IntegrationClient {
 
     func youtubeSearch(call: ToolCallRequest, query: String, count: Int) async -> ToolCallResult {
         guard !query.isEmpty else { return reply(call, "Не передан запрос.") }
-        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        var videos: [(id: String, title: String, channel: String, length: String, views: String, published: String)] = []
-        if let url = URL(string: "https://www.youtube.com/results?search_query=\(encoded)&hl=ru&gl=RU"),
-           let page = await get(url), page.status == 200,
-           let data = Self.embeddedJSON(named: "ytInitialData", in: String(decoding: page.data, as: UTF8.self)) {
-            var renderers: [[String: Any]] = []
-            Self.collect("videoRenderer", in: data, limit: max(1, min(count, 20)), into: &renderers)
-            for item in renderers {
-                guard let id = item["videoId"] as? String else { continue }
-                videos.append((id, Self.runsText(item["title"]), Self.runsText(item["ownerText"]),
-                               Self.runsText(item["lengthText"]), Self.runsText(item["viewCountText"]),
-                               Self.runsText(item["publishedTimeText"])))
-            }
-        }
+        let videos = await youTubeVideos(query, limit: count)
         if videos.isEmpty {
             // Запасной путь: поиск видео через поисковики.
             let found = await client.videoResults(query + " youtube", count: count)
@@ -761,6 +748,31 @@ struct IntegrationClient {
         return reply(call, "YouTube по запросу «\(query)»:\n" + lines.joined(separator: "\n")
                      + "\nВставь нужные ссылки в ответ отдельными строками — приложение покажет видео с кнопкой воспроизведения.",
                      sources: sources)
+    }
+
+    struct YouTubeVideo {
+        var id: String
+        var title: String
+        var channel: String
+        var length: String
+        var views: String
+        var published: String
+    }
+
+    /// Ролики со страницы поиска YouTube.
+    func youTubeVideos(_ query: String, limit: Int) async -> [YouTubeVideo] {
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        guard let url = URL(string: "https://www.youtube.com/results?search_query=\(encoded)&hl=ru&gl=RU"),
+              let page = await get(url), page.status == 200,
+              let data = Self.embeddedJSON(named: "ytInitialData", in: String(decoding: page.data, as: UTF8.self)) else { return [] }
+        var renderers: [[String: Any]] = []
+        Self.collect("videoRenderer", in: data, limit: max(1, min(limit, 20)), into: &renderers)
+        return renderers.compactMap { item -> YouTubeVideo? in
+            guard let id = item["videoId"] as? String else { return nil }
+            return YouTubeVideo(id: id, title: Self.runsText(item["title"]), channel: Self.runsText(item["ownerText"]),
+                                length: Self.runsText(item["lengthText"]), views: Self.runsText(item["viewCountText"]),
+                                published: Self.runsText(item["publishedTimeText"]))
+        }
     }
 
     func youtubeVideo(call: ToolCallRequest, reference: String) async -> ToolCallResult {

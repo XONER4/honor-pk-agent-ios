@@ -193,9 +193,10 @@ enum QuestionnaireReport {
         let noAnswer = english ? "no answer (time ran out)" : "нет ответа (время вышло)"
         let answered = answers.contains { ($0 ?? "").isEmpty == false }
         if !answered {
+            let single = questions.count == 1
             return english
-                ? "I didn't answer the questions in time. Decide yourself how best to proceed and continue."
-                : "Я не ответил на вопросы за отведённое время. Реши сам, как лучше поступить, и продолжай."
+                ? "I didn't answer the \(single ? "question" : "questions") in time. Decide yourself how best to proceed and continue."
+                : "Я не ответил на \(single ? "вопрос" : "вопросы") за отведённое время. Реши сам, как лучше поступить, и продолжай."
         }
         if questions.count == 1 && !quiz {
             return answers.first.flatMap { $0 } ?? ""
@@ -856,7 +857,10 @@ private struct QuestionnaireSummaryView: View {
     @ViewBuilder
     private var status: some View {
         if sent {
-            Label(english ? "Answers sent to Honer AI" : "Ответы отправлены Honer AI", systemImage: "paperplane.fill")
+            Label(questions.count == 1
+                  ? (english ? "Answer sent to Honer AI" : "Ответ отправлен Honer AI")
+                  : (english ? "Answers sent to Honer AI" : "Ответы отправлены Honer AI"),
+                  systemImage: "paperplane.fill")
                 .font(.system(size: fontSize * 0.74))
                 .foregroundStyle(HonorTheme.accent)
                 .accessibilityIdentifier("question.sent")

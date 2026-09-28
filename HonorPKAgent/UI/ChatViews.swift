@@ -1058,6 +1058,11 @@ private struct MessageTimeline: View {
         .onAppear {
             proxy.scrollTo("message-bottom", anchor: .bottom)
             streamingMessageID = store.isGenerating ? tail?.id : nil
+            // Ленивый список узнаёт высоты сообщений не сразу: первая прокрутка
+            // останавливалась выше конца, и низ ответа (например, варианты вопроса)
+            // оставался под полем ввода. Досматриваем до конца ещё секунду.
+            followLatest = true
+            scheduleStreamFollow(proxy: proxy, timeout: 1.2)
         }
         .onChange(of: messages.count) { (_: Int) in
             if messages.last?.role == .user || messages.dropLast().last?.role == .user { followLatest = true }
@@ -1070,6 +1075,7 @@ private struct MessageTimeline: View {
             streamingMessageID = nil
             visibleLimit = 40
             proxy.scrollTo("message-bottom", anchor: .bottom)
+            scheduleStreamFollow(proxy: proxy, timeout: 1.2)
         }
         .onChange(of: store.isGenerating) { (generating: Bool) in
             handleGenerationChange(generating, messages: messages, proxy: proxy)

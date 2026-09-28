@@ -283,6 +283,14 @@ extension WebSearchClient {
             result.append((url, title.isEmpty ? "Видео" : title))
             if result.count >= count { break }
         }
+        // Поисковики не нашли роликов — ищем прямо на YouTube.
+        if result.isEmpty {
+            for video in await IntegrationClient(client: self).youTubeVideos(query, limit: count) {
+                guard seen.insert(video.id).inserted,
+                      let url = URL(string: "https://www.youtube.com/watch?v=\(video.id)") else { continue }
+                result.append((url, video.title.isEmpty ? "Видео" : video.title))
+            }
+        }
         return result
     }
 }

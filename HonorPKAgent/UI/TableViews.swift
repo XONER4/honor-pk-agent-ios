@@ -205,16 +205,20 @@ struct TableEditorView: View {
     }
 
     private func content(_ table: ChatTable) -> some View {
-        ScrollView([.vertical, .horizontal]) {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section(header: headerRow(table)) {
-                    ForEach(visibleRows(table), id: \.self) { rowIndex in
-                        dataRow(table, rowIndex: rowIndex)
+        GeometryReader { geometry in
+            ScrollView([.vertical, .horizontal]) {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section(header: headerRow(table)) {
+                        ForEach(visibleRows(table), id: \.self) { rowIndex in
+                            dataRow(table, rowIndex: rowIndex)
+                        }
+                        if table.editable { addRowButton }
                     }
-                    if table.editable { addRowButton }
                 }
+                .padding(.bottom, 40)
+                // Небольшая таблица прижата к верху, а не висит посреди экрана.
+                .frame(minWidth: geometry.size.width, minHeight: geometry.size.height, alignment: .topLeading)
             }
-            .padding(.bottom, 40)
         }
         .accessibilityIdentifier("table.grid")
     }
