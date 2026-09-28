@@ -1079,7 +1079,10 @@ final class ChatStore: ObservableObject {
         let webToolsOn = searchEnabled && ParentalControl.shared.rules.canSearchWeb
         // Без кнопки интернет открывается только по явной нужде: ссылка в сообщении,
         // прямая просьба найти, погода или вопрос о свежих данных.
-        let searching = !webToolsOn && ParentalControl.shared.rules.canSearchWeb
+        // Вопрос явно про свежие данные или источник («курс сегодня», «дай ссылку»):
+        // поиск запускается заранее и при включённой кнопке — модель с десятками
+        // инструментов иначе иногда отвечала по памяти без поиска.
+        let searching = ParentalControl.shared.rules.canSearchWeb
             && SearchIntent.needsSearch(query: query, searchToggleOn: false)
         let recentContext = input.suffix(4).map { String($0.content.prefix(1500)) }.joined(separator: "\n")
         // Для решения «вопрос про другие чаты» смотрим только на реплики пользователя:

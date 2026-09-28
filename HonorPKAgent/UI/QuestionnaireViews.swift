@@ -294,6 +294,7 @@ struct QuestionsCardView: View {
         .onDisappear { visible = false; pauseTimer() }
         .onChange(of: customFocused) { focused in if focused { pauseTimer() } }
         .onChange(of: scenePhase) { phase in if phase != .active { pauseTimer() } }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("message.questions")
     }
 
@@ -796,6 +797,7 @@ private struct QuestionnaireSummaryView: View {
             }
             status
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("question.summary")
     }
 

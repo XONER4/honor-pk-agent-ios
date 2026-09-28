@@ -47,7 +47,7 @@ final class Honer1044UITests: HonorAuditCase {
         let field = app.textFields["table.cell.field"].exists ? app.textFields["table.cell.field"] : app.alerts.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         replaceText("75", in: field)
-        let save = app.buttons["table.cell.save"].exists ? app.buttons["table.cell.save"]
+        let save = app.buttons["table.cell.save"].exists ? app.buttons["table.cell.save"].firstMatch
             : app.alerts.buttons.matching(NSPredicate(format: "label IN %@", ["Сохранить", "Save"])).firstMatch
         save.tap()
         assertDisplayedValue("75", id: "table.cell.0.1", app: app)

@@ -623,6 +623,7 @@ struct ChatRootView: View {
                     .accessibilityIdentifier("composer.quote.remove")
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("composer.quote")
             }
             if !store.attachments.isEmpty {

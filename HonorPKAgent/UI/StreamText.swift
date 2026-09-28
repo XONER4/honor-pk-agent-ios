@@ -260,7 +260,9 @@ enum MarkdownBlockParser {
                     codeLines.append(lines[index])
                     index += 1
                 }
-                if index < lines.count { index += 1 }   // закрывающий ```
+                // Блок закрыт, если нашлась закрывающая рамка — даже когда она последняя строка.
+                let fenceClosed = index < lines.count
+                if fenceClosed { index += 1 }   // закрывающий ```
                 let blockBody = codeLines.joined(separator: "\n")
                 // Кастомные блоки из ТЗ: ```copy — фрагмент с кнопкой копирования,
                 // ```card:info|warn|success|error — цветная карточка.
@@ -277,7 +279,7 @@ enum MarkdownBlockParser {
                     // пересобирали на каждом кадре (иначе выбранный вариант сбрасывался).
                     blocks.append(MarkdownBlockModel(id: blocks.count,
                                                      kind: .ask(Self.parseQuestions(blockBody),
-                                                                open: index >= lines.count),
+                                                                open: !fenceClosed),
                                                      text: blockBody))
                 } else if marker.hasPrefix("card") {
                     let style = marker.contains(":")

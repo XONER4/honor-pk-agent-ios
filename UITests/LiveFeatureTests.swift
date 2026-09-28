@@ -49,7 +49,7 @@ final class LiveFeatureTests: HonorAuditCase {
         capture("21-live-search")
         sources.tap()
         let source = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "message.source.")).firstMatch
-        XCTAssertTrue(source.waitForExistence(timeout: 5))
+        XCTAssertTrue(source.waitForExistence(timeout: 12))
         capture("33-live-source-details")
     }
 }

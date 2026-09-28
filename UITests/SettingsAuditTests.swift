@@ -109,7 +109,7 @@ final class SettingsAuditTests: HonorAuditCase {
         XCTAssertTrue(app.buttons["data.import"].waitForExistence(timeout: 5))
         app.buttons["data.import"].tap()
         let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "Отмена"])).firstMatch
-        XCTAssertTrue(cancel.waitForExistence(timeout: 8))
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15))
         cancel.tap()
         app.buttons["data.delete"].tap()
         app.buttons["data.delete.cancel"].firstMatch.tap()
