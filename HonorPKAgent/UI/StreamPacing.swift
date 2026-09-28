@@ -162,6 +162,8 @@ final class TypingPacer: ObservableObject {
     @Published private(set) var startedAt = Date()
     /// Когда закончилось рассуждение (пришёл первый символ ответа).
     @Published private(set) var reasoningEndedAt: Date?
+    /// Шаги работы над ответом: поиск, чтение страниц, рисование.
+    @Published private(set) var steps: [GenerationStep] = []
     /// Срабатывает несколько раз в секунду, пока текст растёт: по нему лента
     /// едет вслед за ответом.
     let grew = PassthroughSubject<Void, Never>()
@@ -191,8 +193,15 @@ final class TypingPacer: ObservableObject {
         content = ""; reasoning = ""
         startedAt = Date()
         reasoningEndedAt = nil
+        steps = []
         streamOpen = true
         self.messageID = messageID
+    }
+
+    func setSteps(_ value: [GenerationStep]) {
+        guard messageID != nil, value != steps else { return }
+        steps = value
+        grew.send()
     }
 
     /// Новый полученный текст ответа и рассуждения.

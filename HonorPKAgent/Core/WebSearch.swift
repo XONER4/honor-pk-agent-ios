@@ -55,6 +55,17 @@ struct WebSearchClient: WebSearching {
     var urlDiscovery: SearchURLDiscovering? = DeepSeekURLDiscovery(configuration: .bundled)
 
     func search(_ query: String) async throws -> [WebSource] {
+        try await search(query, progress: nil)
+    }
+
+    /// Ход поиска: сколько нашлось и какие сайты сейчас читаются.
+    enum Progress: Sendable {
+        case found(count: Int)
+        case reading([String])
+        case read(count: Int, sites: [String])
+    }
+
+    func search(_ query: String, progress: (@Sendable (Progress) -> Void)?) async throws -> [WebSource] {
         if let location = WeatherIntent.location(in: query) {
             return [try await WeatherClient(session: session).forecast(location: location)]
         }
@@ -94,8 +105,12 @@ struct WebSearchClient: WebSearching {
             guard !fetchedFallback.isEmpty else { throw HonorError.searchUnavailable }
             return fetchedFallback
         }
+        progress?(.found(count: ranked.count))
+        progress?(.reading(ranked.prefix(5).compactMap { $0.url.host }))
         let fetched = await readPages(Array(ranked.prefix(12)), limit: 5)
         try Task.checkCancellation()
+        let read = fetched.filter { $0.content != nil }
+        progress?(.read(count: read.count, sites: read.compactMap { $0.url.host }))
         return fetched
     }
 

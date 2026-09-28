@@ -54,6 +54,11 @@ struct SettingsView: View {
                         }
                         .accessibilityIdentifier("settings.font")
                         SettingsDivider()
+                        NavigationLink { PermissionsPage() } label: {
+                            SettingsRow(symbol: "lock.shield", title: settings.text("Разрешения", "Permissions"))
+                        }
+                        .accessibilityIdentifier("settings.permissions")
+                        SettingsDivider()
                         NavigationLink { MemorySettingsPage() } label: {
                             SettingsRow(symbol: "brain", title: settings.text("Память Honer AI", "Honer AI memory"),
                                         value: "\(store.memories.count)")
@@ -343,6 +348,7 @@ private struct DataSettingsPage: View {
     @State private var notificationsBlocked = false
     var body: some View {
         Form {
+            BackupSection()
             Section {
                 LabeledContent(settings.text("Чатов", "Conversations"), value: "\(store.conversations.count)")
                     .accessibilityIdentifier("data.count")
@@ -531,6 +537,7 @@ private struct FontSettingsPage: View {
 private struct VoiceSettingsPage: View {
     @EnvironmentObject private var settings: AppSettings
     @StateObject private var speech = SpeechService()
+    @State private var personalVoiceHint = false
     @State private var voices: [AVSpeechSynthesisVoice] = []
 
     /// Что сейчас выбрано — понятной строкой.
@@ -579,6 +586,40 @@ private struct VoiceSettingsPage: View {
             } footer: {
                 Text(settings.text("Русский текст читает русский голос, английские слова — английский голос того же пола.",
                                    "Russian text is read by a Russian voice, English words by an English voice of the same gender."))
+            }
+            Section {
+                NavigationLink { VoiceClonePage() } label: {
+                    HStack {
+                        Label(settings.text("Мой голос", "My voice"), systemImage: "person.wave.2")
+                        Spacer()
+                        Text(settings.clonedVoiceID.isEmpty ? settings.text("не создан", "not created")
+                             : (settings.useClonedVoice ? settings.text("включён", "on") : settings.text("выключен", "off")))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("voice.clone.link")
+                Toggle(settings.text("Английский — «Личным голосом» Apple", "English in Apple Personal Voice"), isOn: $settings.personalVoiceEnglish)
+                    .accessibilityIdentifier("voice.personal")
+                    .onChange(of: settings.personalVoiceEnglish) { enabled in
+                        guard enabled else { return }
+                        Task {
+                            let granted = await SpeechService.requestPersonalVoice()
+                            if !granted || SpeechService.personalVoice() == nil {
+                                settings.personalVoiceEnglish = false
+                                personalVoiceHint = true
+                            }
+                        }
+                    }
+                if personalVoiceHint {
+                    Text(settings.text("«Личный голос» не найден или доступ не разрешён. Создайте его: Настройки iPhone → Универсальный доступ → Личный голос (сейчас Apple поддерживает английский), и разрешите приложениям его использовать.",
+                                       "Personal Voice is not available. Create it in Settings → Accessibility → Personal Voice and allow apps to use it."))
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text(settings.text("Свой голос", "Your own voice"))
+            } footer: {
+                Text(settings.text("«Мой голос» клонирует ваш голос для русского и английского (сервис Fish Audio, нужен ключ). «Личный голос» Apple работает прямо на iPhone, но только для английского.",
+                                   "“My voice” clones your voice (Fish Audio key required). Apple Personal Voice works on-device, English only."))
             }
             if needsBetterVoice {
                 Section {

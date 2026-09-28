@@ -65,6 +65,33 @@ final class ChatStore: ObservableObject {
         }
     }
 
+    /// Отделить служебную строку реакции «РЕАКЦИЯ: 🔥» от текста ответа.
+    /// Пока строка не дописана, начало ответа скрыто: иначе она мелькала бы в чате.
+    nonisolated static func reactionSplit(_ text: String) -> (emoji: String?, body: String) {
+        let leading = text.prefix(while: { $0.isWhitespace })
+        let rest = text.dropFirst(leading.count)
+        let markers = ["РЕАКЦИЯ", "REACTION"]
+        guard let marker = markers.first(where: { rest.hasPrefix($0) || $0.hasPrefix(rest) }), !rest.isEmpty else {
+            return (nil, text)
+        }
+        guard rest.hasPrefix(marker) else { return (nil, "") }
+        guard let lineEnd = rest.firstIndex(of: "\n") else { return (nil, "") }
+        let line = rest[..<lineEnd]
+        let value = line.dropFirst(marker.count).drop(while: { $0 == ":" || $0 == "-" || $0 == " " })
+        let emoji = value.trimmingCharacters(in: .whitespaces)
+        let body = String(rest[rest.index(after: lineEnd)...]).trimmingCharacters(in: .newlines)
+        guard !emoji.isEmpty, emoji.count <= 3 else { return (nil, text) }
+        return (emoji, body)
+    }
+
+    /// Реакция модели на последнее сообщение пользователя перед ответом.
+    private func setReactionOnLastUserMessage(chatID: UUID, before messageID: UUID, emoji: String) {
+        guard let chatIndex = conversations.firstIndex(where: { $0.id == chatID }),
+              let answerIndex = conversations[chatIndex].messages.firstIndex(where: { $0.id == messageID }),
+              let userIndex = conversations[chatIndex].messages[..<answerIndex].lastIndex(where: { $0.role == .user }) else { return }
+        conversations[chatIndex].messages[userIndex].assistantReaction = emoji
+    }
+
     /// Страховка: сообщение ассистента не может остаться без текста и без ошибки.
     /// Проверяется в самом конце генерации, когда все ветки уже отработали.
     private func ensureVisibleOutcome(chatID: UUID, messageID: UUID) {
@@ -89,6 +116,9 @@ final class ChatStore: ObservableObject {
 
     var systemInstruction = ""
     var profileName = ""
+    /// Настройки приложения для резервной копии и их восстановление при импорте.
+    var settingsSnapshotProvider: (() -> [String: String])?
+    var settingsRestorer: (([String: String]) -> Void)?
     /// Мост к настройкам приложения: нужен, чтобы модель могла их менять
     /// инструментом set_app_setting (пункт 16 ТЗ). Заполняется из вида.
     weak var settingsBridge: AppSettings?
@@ -107,6 +137,14 @@ final class ChatStore: ObservableObject {
     /// видимую часть каждый кадр экрана. Строка сообщения показывает её, пока
     /// `typingMessageID` совпадает с id сообщения.
     let pacer = TypingPacer()
+    /// Фоновое время системы на дописывание ответа, когда приложение свёрнуто.
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    /// Шаги работы над текущим ответом.
+    private var currentSteps: [GenerationStep] = []
+
+    /// Запрос текущего ответа — чтобы передать его фоновой загрузке.
+    private var backgroundSnapshot: (input: [ChatMessage], instruction: String, context: String, chatTitle: String)?
+
     /// Ответ, который сейчас печатается на экране. Печать может закончиться чуть
     /// позже потока: хвост допечатывается плавно, а не вываливается целиком.
     @Published private(set) var typingMessageID: UUID?
@@ -161,6 +199,7 @@ final class ChatStore: ObservableObject {
                 self.applyLoadedHistory(result)
                 self.isLoading = false
                 self.isLoadingHistory = false
+                self.applyPendingBackgroundAnswers()
             }
         } else {
             applyLoadedHistory(HistoryArchiveIO.readHistory(resolvedStorageURL))
@@ -170,6 +209,141 @@ final class ChatStore: ObservableObject {
             guard let self, self.typingMessageID == id else { return }
             self.typingMessageID = nil
         }
+        if !loadHistoryAsynchronously { applyPendingBackgroundAnswers() }
+        NotificationCenter.default.addObserver(forName: .honerBackgroundAnswerReady, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.applyPendingBackgroundAnswers() }
+        }
+    }
+
+    // MARK: - Ответ в фоне
+
+    // MARK: - Лента шагов
+
+    private func startStep(_ step: GenerationStep) {
+        currentSteps.append(step)
+        pacer.setSteps(currentSteps)
+    }
+
+    private func updateStep(_ id: UUID, detail: String? = nil, sites: [String]? = nil, done: Bool? = nil) {
+        guard let index = currentSteps.firstIndex(where: { $0.id == id }) else { return }
+        if let detail { currentSteps[index].detail = detail }
+        if let sites, !sites.isEmpty { currentSteps[index].sites = Array(sites.prefix(8)) }
+        if let done { currentSteps[index].done = done }
+        pacer.setSteps(currentSteps)
+    }
+
+    /// Шаг ленты для вызова инструмента.
+    static func step(for call: ToolCallRequest) -> GenerationStep {
+        let arguments = call.parsedArguments
+        func argument(_ key: String) -> String {
+            String((ToolArgument.string(arguments[key]) ?? "").prefix(120))
+        }
+        switch HonerTool(rawValue: call.name) {
+        case .webSearch: return GenerationStep(kind: "search", title: "Ищу в интернете", detail: "«\(argument("query"))»")
+        case .openPage:
+            let host = WebToolExecutor.url(from: argument("url"))?.host ?? argument("url")
+            return GenerationStep(kind: "read", title: "Читаю страницу", detail: host, sites: [host])
+        case .findImages: return GenerationStep(kind: "images", title: "Ищу фотографии", detail: "«\(argument("query"))»")
+        case .findVideos: return GenerationStep(kind: "videos", title: "Ищу видео", detail: "«\(argument("query"))»")
+        case .screenshotPage:
+            let host = WebToolExecutor.url(from: argument("url"))?.host ?? argument("url")
+            return GenerationStep(kind: "screenshot", title: "Делаю скриншот страницы", detail: host, sites: [host])
+        case .getWeather: return GenerationStep(kind: "weather", title: "Смотрю погоду", detail: argument("city"))
+        case .drawImage: return GenerationStep(kind: "draw", title: "Рисую картинку", detail: argument("prompt"))
+        case .listChats: return GenerationStep(kind: "chats", title: "Смотрю список чатов")
+        case .readChat: return GenerationStep(kind: "chats", title: "Читаю чат", detail: "№\(argument("number"))")
+        case .renameChat, .pinChat: return GenerationStep(kind: "chats", title: "Обновляю чаты")
+        case .sendToChat: return GenerationStep(kind: "chats", title: "Пишу в другой чат")
+        case .saveMemory: return GenerationStep(kind: "memory", title: "Запоминаю", detail: argument("text"))
+        case .getAppSettings: return GenerationStep(kind: "settings", title: "Смотрю настройки")
+        case .setAppSetting: return GenerationStep(kind: "settings", title: "Меняю настройку", detail: argument("name"))
+        case .findContact: return GenerationStep(kind: "contact", title: "Ищу контакт", detail: argument("name"))
+        case .copyToClipboard: return GenerationStep(kind: "settings", title: "Копирую в буфер обмена")
+        default: return GenerationStep(kind: "settings", title: "Выполняю действие")
+        }
+    }
+
+    /// Попросить у системы время дописать ответ, если приложение свернут.
+    private func beginBackgroundTime() {
+        endBackgroundTime()
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "HonerAnswer") { [weak self] in
+            self?.handOffToBackground()
+        }
+    }
+
+    private func endBackgroundTime() {
+        guard backgroundTaskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTaskID)
+        backgroundTaskID = .invalid
+    }
+
+    /// Фоновое время заканчивается, а ответ ещё идёт: передаём запрос системной
+    /// фоновой загрузке. Она доведёт ответ до конца даже при заблокированном экране.
+    private func handOffToBackground() {
+        defer { endBackgroundTime() }
+        guard isGenerating, let chatID = activeConversationID, let messageID = activeMessageID,
+              let snapshot = backgroundSnapshot else { return }
+        let client = DeepSeekClient(configuration: configuration)
+        guard var request = try? client.makeRequest(messages: snapshot.input, thinking: false,
+                                                    systemInstruction: snapshot.instruction,
+                                                    searchContext: snapshot.context, tools: nil),
+              var body = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any] else { return }
+        body["stream"] = false
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 900
+        guard BackgroundAnswerService.shared.start(request: request, chatID: chatID, messageID: messageID,
+                                                   chatTitle: snapshot.chatTitle) else { return }
+        flushStreamingBuffer?()
+        let printed = live.content
+        let printedReasoning = live.reasoning
+        flushStreamingBuffer = nil
+        generationTask?.cancel()
+        generationTask = nil
+        pacer.cancel()
+        typingMessageID = nil
+        mutateMessage(chatID: chatID, messageID: messageID) {
+            if !printed.isEmpty { $0.content = printed }
+            if !printedReasoning.isEmpty { $0.reasoning = printedReasoning }
+            $0.continuesInBackground = true
+            $0.isInterrupted = false
+            $0.error = nil
+        }
+        activeRunID = nil
+        activeConversationID = nil
+        activeMessageID = nil
+        isGenerating = false
+        generationStatus = nil
+        live.content = ""; live.reasoning = ""; live.reasoningSeconds = 0
+        persistNow()
+    }
+
+    /// Показать ответы, догруженные в фоне.
+    func applyPendingBackgroundAnswers() {
+        guard !isLoading else { return }
+        let pending = BackgroundAnswerService.loadPending()
+        var changed = false
+        for answer in pending {
+            guard let chatIndex = conversations.firstIndex(where: { $0.id == answer.chatID }),
+                  let messageIndex = conversations[chatIndex].messages.firstIndex(where: { $0.id == answer.messageID }) else { continue }
+            conversations[chatIndex].messages[messageIndex].content = answer.content
+            conversations[chatIndex].messages[messageIndex].continuesInBackground = nil
+            conversations[chatIndex].messages[messageIndex].isInterrupted = false
+            conversations[chatIndex].messages[messageIndex].error = nil
+            changed = true
+        }
+        if !pending.isEmpty { BackgroundAnswerService.clearPending() }
+        // Ответ, который так и не пришёл за полчаса, считается прерванным.
+        let stale = Date().addingTimeInterval(-30 * 60)
+        for chatIndex in conversations.indices {
+            for messageIndex in conversations[chatIndex].messages.indices
+            where conversations[chatIndex].messages[messageIndex].continuesInBackground == true
+                && conversations[chatIndex].messages[messageIndex].createdAt < stale {
+                conversations[chatIndex].messages[messageIndex].continuesInBackground = nil
+                conversations[chatIndex].messages[messageIndex].isInterrupted = true
+                changed = true
+            }
+        }
+        if changed { saveSnapshot() }
     }
 
     static var defaultStorageURL: URL {
@@ -472,6 +646,8 @@ final class ChatStore: ObservableObject {
         // Печать останавливается сразу: на экране остаётся весь полученный текст.
         pacer.cancel()
         typingMessageID = nil
+        backgroundSnapshot = nil
+        endBackgroundTime()
         if let chatID = activeConversationID, let messageID = activeMessageID {
             mutateMessage(chatID: chatID, messageID: messageID) { $0.isInterrupted = true }
         }
@@ -739,6 +915,8 @@ final class ChatStore: ObservableObject {
         activeConversationID = chatID
         activeMessageID = response.id
         isGenerating = true
+        currentSteps = []
+        beginBackgroundTime()
         pacer.begin(messageID: response.id)
         typingMessageID = response.id
         let thinking = reasoningEnabled && !suppressThinkingOnce
@@ -786,15 +964,23 @@ final class ChatStore: ObservableObject {
                     if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         searchFailed = true
                     } else {
+                        let stepID = UUID()
+                        self.startStep(GenerationStep(id: stepID, kind: WebPageText.urls(in: query).isEmpty ? "search" : "read",
+                                                      title: WebPageText.urls(in: query).isEmpty ? "Ищу в интернете" : "Читаю страницу по ссылке",
+                                                      detail: "«\(String(query.prefix(80)))»"))
                         do {
                             let sources = try await self.searchClient.search(query)
                             try Task.checkCancellation()
                             guard self.activeRunID == runID else { return }
+                            let read = sources.filter { $0.content != nil }
+                            self.updateStep(stepID, detail: "Прочитано страниц: \(read.count)",
+                                            sites: sources.compactMap { $0.url.host }, done: true)
                             self.mutateMessage(chatID: chatID, messageID: response.id) { $0.sources = sources }
                             context = WebSearchClient.context(sources)
                             self.generationStatus = thinking ? "Размышляю…" : "Отвечаю…"
                         } catch {
                             if Task.isCancelled { throw CancellationError() }
+                            self.updateStep(stepID, detail: "Страницы не открылись — отвечаю по своим знаниям", done: true)
                             // Поиск не смог открыть страницы — это не повод оставить
                             // пользователя без ответа. Отвечаем по своим знаниям и честно
                             // помечаем ответ: свежих данных из интернета в нём нет.
@@ -805,6 +991,8 @@ final class ChatStore: ObservableObject {
                 if searchFailed {
                     self.mutateMessage(chatID: chatID, messageID: response.id) { $0.searchFailed = true }
                 }
+                self.backgroundSnapshot = (input, instruction, context,
+                                           self.conversations.first(where: { $0.id == chatID })?.title ?? "")
                 var firstReasoningAt: Date?
                 var reasoningEndedAt: Date?
                 /// Начало этого запроса: по нему считается счётчик «Размышляю…».
@@ -820,6 +1008,8 @@ final class ChatStore: ObservableObject {
                 var finishReason: String?
                 /// Вызовы инструментов, собранные из потока текущего прохода (пункт 11 ТЗ).
                 var toolCalls: [ToolCallRequest] = []
+                /// Реакция модели уже поставлена под сообщением пользователя.
+                var reactionApplied = false
 
                 @MainActor func flush() {
                     guard !pendingContent.isEmpty || !pendingReasoning.isEmpty else { return }
@@ -839,7 +1029,14 @@ final class ChatStore: ObservableObject {
                     // во время потока не трогаем — иначе перерисовывался бы весь список.
                     if contentChanged { self.live.content = rawContent }
                     if reasoningChanged { self.live.reasoning = rawReasoning }
-                    self.pacer.update(content: rawContent, reasoning: rawReasoning)
+                    // Строка «РЕАКЦИЯ: 🔥» в начале ответа — служебная: в тексте её не
+                    // показываем, а реакцию сразу ставим под сообщением пользователя.
+                    let split = Self.reactionSplit(rawContent)
+                    if let emoji = split.emoji, !reactionApplied {
+                        reactionApplied = true
+                        self.setReactionOnLastUserMessage(chatID: chatID, before: response.id, emoji: emoji)
+                    }
+                    self.pacer.update(content: split.body, reasoning: rawReasoning)
                     if seconds != self.live.reasoningSeconds || (reasoningChanged && self.live.reasoningSeconds == 0) {
                         self.live.reasoningSeconds = seconds
                         self.mutateMessage(chatID: chatID, messageID: response.id) { $0.reasoningSeconds = seconds }
@@ -852,7 +1049,7 @@ final class ChatStore: ObservableObject {
                     rawContent = text
                     pendingContent = ""
                     self.live.content = text
-                    self.pacer.update(content: text, reasoning: rawReasoning)
+                    self.pacer.update(content: Self.reactionSplit(text).body, reasoning: rawReasoning)
                 }
                 self.flushStreamingBuffer = { [weak self] in
                     guard self?.activeRunID == runID else { return }
@@ -935,12 +1132,21 @@ final class ChatStore: ObservableObject {
                             roundResults.append(ToolCallResult(callID: call.id, name: call.name, content: previous))
                             continue
                         }
+                        let step = Self.step(for: call)
+                        self.startStep(step)
                         let result: ToolCallResult
-                        if let tool = HonerTool(rawValue: call.name), tool.isAsync {
+                        if HonerTool(rawValue: call.name) == .findContact {
+                            result = await ContactLookup.execute(call)
+                            try Task.checkCancellation()
+                            guard self.activeRunID == runID else { return }
+                        } else if let tool = HonerTool(rawValue: call.name), tool.isAsync {
                             // Интернет выполняется асинхронно; модель видит его только
                             // при включённой кнопке «Поиск».
+                            let stepID = step.id
                             result = webToolsOn
-                                ? await WebToolExecutor(client: self.webClient).execute(call)
+                                ? await WebToolExecutor(client: self.webClient).execute(call) { [weak self] detail, sites in
+                                    Task { @MainActor in self?.updateStep(stepID, detail: detail, sites: sites) }
+                                }
                                 : ToolCallResult(callID: call.id, name: call.name,
                                                  content: "Интернет выключен. Предложи пользователю включить кнопку «Поиск».")
                             try Task.checkCancellation()
@@ -949,6 +1155,11 @@ final class ChatStore: ObservableObject {
                             result = ToolExecutor.executeExtended(call, context: toolContext)
                         }
                         resultsBySignature[signature] = result.content
+                        if case .addSources(let found)? = result.effect {
+                            self.updateStep(step.id, sites: found.compactMap { $0.url.host }, done: true)
+                        } else {
+                            self.updateStep(step.id, done: true)
+                        }
                         if call.name == HonerTool.webSearch.rawValue, result.effect == nil {
                             // Поиск ничего не дал: ответ честно помечается как ответ
                             // без свежих данных из интернета.
@@ -1227,7 +1438,17 @@ final class ChatStore: ObservableObject {
             self.saveSnapshot()
             // Уведомление о готовом ответе, если пользователь вышел из приложения (пункт 36).
             if !(delivered?.content.isEmpty ?? true) {
-                NotificationCenterService.shared.notifyAnswerReady(delivered?.content ?? "")
+                NotificationCenterService.shared.notifyAnswerReady(
+                    delivered?.content ?? "",
+                    chatTitle: self.conversations.first(where: { $0.id == chatID })?.title ?? "",
+                    chatID: chatID)
+            }
+            self.backgroundSnapshot = nil
+            self.endBackgroundTime()
+            if !self.currentSteps.isEmpty {
+                let steps = self.currentSteps.map { step -> GenerationStep in var done = step; done.done = true; return done }
+                self.mutateMessage(chatID: chatID, messageID: response.id) { $0.activity = steps }
+                self.saveSnapshot()
             }
         }
     }
@@ -1732,12 +1953,14 @@ final class ChatStore: ObservableObject {
         for saved in incoming.instructionLibrary ?? [] where !instructionLibrary.contains(where: { $0.text == saved.text }) {
             instructionLibrary.append(saved)
         }
+        if let values = incoming.appSettings { settingsRestorer?(values) }
         if wasEmpty { memoryEnabled = incoming.memoryEnabled ?? true }
         saveSnapshot()
     }
 
     private var archive: HistoryArchive {
-        HistoryArchive(conversations: conversations, selectedConversationID: selectedConversationID, draft: draft, attachments: attachments, inFlightMessageID: activeMessageID, memories: memories, memoryEnabled: memoryEnabled, instructionLibrary: instructionLibrary)
+        HistoryArchive(conversations: conversations, selectedConversationID: selectedConversationID, draft: draft, attachments: attachments, inFlightMessageID: activeMessageID, memories: memories, memoryEnabled: memoryEnabled, instructionLibrary: instructionLibrary,
+                       appSettings: settingsSnapshotProvider?())
     }
 
     private func applyLoadedHistory(_ result: HistoryReadResult) {

@@ -1,8 +1,13 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Первый экран: знакомство. Яркий живой фон, крупный логотип Honer AI и поле имени.
 struct OnboardingView: View {
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var store: ChatStore
+    @State private var restoring = false
+    @State private var restoreStatus: String?
+    @State private var restoreBusy = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var name = ""
@@ -89,6 +94,23 @@ struct OnboardingView: View {
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 30)
 
+                        Button { restoring = true } label: {
+                            HStack(spacing: 8) {
+                                if restoreBusy { ProgressView() } else { Image(systemName: "arrow.clockwise.icloud") }
+                                Text(BackupService.shared.hadBackupBefore
+                                     ? settings.text("С возвращением! Восстановить из резервной копии", "Welcome back! Restore from backup")
+                                     : settings.text("Восстановить из резервной копии", "Restore from backup"))
+                            }
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(HonorTheme.accent)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(restoreBusy)
+                        .opacity(appeared ? 1 : 0)
+                        .accessibilityIdentifier("onboarding.restore")
+                        if let restoreStatus {
+                            Text(restoreStatus).font(.footnote).foregroundStyle(.orange).multilineTextAlignment(.center)
+                        }
                         Text(settings.text("Имя появится в профиле, и Honer AI будет учитывать его в разговоре. Изменить его можно в настройках.",
                                            "Your name will appear in your profile and Honer AI will use it in conversation. You can change it in Settings."))
                             .font(.footnote)
@@ -101,6 +123,27 @@ struct OnboardingView: View {
                     .frame(minHeight: geometry.size.height)
                 }
                 .scrollDismissesKeyboard(.interactively)
+            }
+        }
+        .fileImporter(isPresented: $restoring, allowedContentTypes: [.json]) { result in
+            guard case .success(let url) = result else { return }
+            restoreBusy = true
+            restoreStatus = nil
+            Task { @MainActor in
+                let access = url.startAccessingSecurityScopedResource()
+                defer { if access { url.stopAccessingSecurityScopedResource() }; restoreBusy = false }
+                do {
+                    try await store.importDataAsync(from: url)
+                    if settings.displayName.trimmingCharacters(in: .whitespaces).isEmpty {
+                        name = ""
+                        restoreStatus = settings.text("Чаты восстановлены. Введите имя, чтобы продолжить.", "Chats restored. Enter your name to continue.")
+                    } else {
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        withAnimation(.easeInOut(duration: 0.35)) { settings.completedOnboarding = true }
+                    }
+                } catch {
+                    restoreStatus = error.localizedDescription
+                }
             }
         }
         .onAppear {

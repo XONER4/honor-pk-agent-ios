@@ -27,6 +27,11 @@ final class SpeechService: NSObject, ObservableObject {
     private var finishWaiters: [CheckedContinuation<String, Never>] = []
     private var activeUtterance: AVSpeechUtterance?
     private var interruptionObserver: NSObjectProtocol?
+    /// Свой голос: воспроизведение фрагментов из облака.
+    private var clonePlayer: AVAudioPlayer?
+    private var cloneTask: Task<Void, Never>?
+    private var cloneToken = UUID()
+    private var playContinuation: CheckedContinuation<Void, Never>?
     private var backgroundObserver: NSObjectProtocol?
 
     override init() {
@@ -303,7 +308,8 @@ final class SpeechService: NSObject, ObservableObject {
             try session.setCategory(.playback, mode: .spokenAudio, options: .duckOthers)
             try session.setActive(true)
             let russian = Self.preferredVoice(identifier: voiceIdentifier, language: language, gender: gender)
-            let english = VoiceCatalog.bestVoice(language: "en", gender: gender)
+            let english = (UserDefaults.standard.bool(forKey: "honor.personalVoiceEnglish") ? Self.personalVoice() : nil)
+                ?? VoiceCatalog.bestVoice(language: "en", gender: gender)
             let clamped = Float(min(max(rate, 0.35), 1.8))
             let speed = min(AVSpeechUtteranceMaximumSpeechRate,
                             max(AVSpeechUtteranceMinimumSpeechRate, AVSpeechUtteranceDefaultSpeechRate * clamped))
@@ -386,7 +392,84 @@ final class SpeechService: NSObject, ObservableObject {
     }
     func stopSpeaking() {
         activeUtterance = nil; synthesizer.stopSpeaking(at: .immediate)
+        cloneToken = UUID()
+        cloneTask?.cancel(); cloneTask = nil
+        clonePlayer?.stop(); clonePlayer = nil
+        playContinuation?.resume(); playContinuation = nil
         isSpeaking = false; deactivateAudioIfIdle()
+    }
+
+    /// «Личный голос» Apple (iOS 17+), если пользователь разрешил его использовать.
+    static func personalVoice() -> AVSpeechSynthesisVoice? {
+        guard #available(iOS 17.0, *) else { return nil }
+        return AVSpeechSynthesisVoice.speechVoices().first { $0.voiceTraits.contains(.isPersonalVoice) }
+    }
+
+    /// Запросить доступ к «Личному голосу» Apple.
+    static func requestPersonalVoice() async -> Bool {
+        guard #available(iOS 17.0, *) else { return false }
+        let status = await withCheckedContinuation { continuation in
+            AVSpeechSynthesizer.requestPersonalVoiceAuthorization { continuation.resume(returning: $0) }
+        }
+        return status == .authorized
+    }
+
+    /// Прочитать текст своим (клонированным) голосом. Длинный текст звучит частями:
+    /// следующая часть готовится, пока играет текущая.
+    func speakCloned(_ text: String, voiceID: String, apiKey: String, fallbackGender: VoiceCatalog.Gender = .male,
+                     rate: Double = 0.95) {
+        let parts = FishAudio.chunks(Self.spokenForm(Self.sanitizedSpeechText(text)))
+        stopSpeaking()
+        clearError(); cancelRecording()
+        guard !parts.isEmpty, !voiceID.isEmpty, !apiKey.isEmpty else { return }
+        let token = UUID()
+        cloneToken = token
+        isSpeaking = true
+        cloneTask = Task { @MainActor [weak self] in
+            var next: Task<Data, Error>? = Task { try await FishAudio.synthesize(text: parts[0], voiceID: voiceID, apiKey: apiKey) }
+            for index in parts.indices {
+                guard let self, self.cloneToken == token, let current = next else { return }
+                let data: Data
+                do {
+                    data = try await current.value
+                } catch {
+                    guard self.cloneToken == token else { return }
+                    self.isSpeaking = false
+                    if index == 0 {
+                        // Свой голос сейчас недоступен — читаем обычным, чтобы ответ не остался без звука.
+                        self.errorMessage = error.localizedDescription
+                        self.speak(text, gender: fallbackGender, rate: rate)
+                    }
+                    return
+                }
+                next = index + 1 < parts.count
+                    ? Task { try await FishAudio.synthesize(text: parts[index + 1], voiceID: voiceID, apiKey: apiKey) }
+                    : nil
+                guard self.cloneToken == token else { return }
+                await self.play(data, token: token)
+            }
+            guard let self, self.cloneToken == token else { return }
+            self.isSpeaking = false
+            self.clonePlayer = nil
+            self.deactivateAudioIfIdle()
+        }
+    }
+
+    private func play(_ data: Data, token: UUID) async {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .spokenAudio, options: .duckOthers)
+            try session.setActive(true)
+            let player = try AVAudioPlayer(data: data)
+            player.delegate = self
+            clonePlayer = player
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                playContinuation = continuation
+                if !player.play() { playContinuation?.resume(); playContinuation = nil }
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
     func clearError() { errorMessage = nil; needsPermissionSettings = false }
 
@@ -425,6 +508,16 @@ final class SpeechService: NSObject, ObservableObject {
     private enum SpeechFailure: LocalizedError {
         case noInput
         var errorDescription: String? { "Микрофон недоступен / Microphone unavailable." }
+    }
+}
+
+extension SpeechService: AVAudioPlayerDelegate {
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor [weak self] in
+            guard let self, self.clonePlayer === player else { return }
+            self.playContinuation?.resume()
+            self.playContinuation = nil
+        }
     }
 }
 

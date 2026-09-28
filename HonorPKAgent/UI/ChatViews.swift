@@ -839,6 +839,14 @@ struct ChatRootView: View {
             speech.stopSpeaking()
             speakingContent = nil
         } else {
+            if settings.useClonedVoice, !settings.clonedVoiceID.isEmpty,
+               let key = KeychainStore.get("fishAudioKey"), !key.isEmpty {
+                // Ответ читается собственным голосом пользователя.
+                speech.speakCloned(content, voiceID: settings.clonedVoiceID, apiKey: key,
+                                   fallbackGender: settings.speechGender, rate: settings.voiceRate)
+                speakingContent = content
+                return
+            }
             speech.speak(content, voiceIdentifier: settings.voiceIdentifier, gender: settings.speechGender, language: "ru-RU",
                          rate: settings.voiceRate)
             speakingContent = content
@@ -1272,6 +1280,7 @@ private struct MessageRow: View, Equatable {
     private var visibleContent: String { message.content }
     private var visibleReasoning: String { message.reasoning }
     private var visibleReasoningSeconds: Int { message.reasoningSeconds }
+    private var steps: [GenerationStep] { message.activity ?? [] }
     private var scale: Double { settings.fontScale * dynamicScale }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -1370,12 +1379,12 @@ private struct MessageRow: View, Equatable {
                                   settings: settings, scale: scale, findQuery: findQuery,
                                   reasoningOpen: $reasoningOpen, onAnswer: onAnswer, onSources: onSources)
             } else {
-                if !visibleReasoning.isEmpty || streaming {
+                if !visibleReasoning.isEmpty || streaming || !steps.isEmpty {
                     ReasoningDisclosureButton(title: reasoningTitle, open: $reasoningOpen, busy: streaming && visibleContent.isEmpty,
                                               messageID: message.id, settings: settings, scale: scale)
-                    if reasoningOpen && !visibleReasoning.isEmpty {
+                    if reasoningOpen && (!visibleReasoning.isEmpty || !steps.isEmpty) {
                         ReasoningDetail(message: message, reasoning: visibleReasoning, settings: settings,
-                                        scale: scale, findQuery: findQuery, onSources: onSources)
+                                        scale: scale, findQuery: findQuery, onSources: onSources, steps: steps)
                     }
                 }
                 if !visibleContent.isEmpty {
@@ -1401,6 +1410,13 @@ private struct MessageRow: View, Equatable {
                     .font(.system(size: 14, weight: .medium)).tint(HonorTheme.accent)
                     .padding(.vertical, 4)
                     .accessibilityIdentifier("message.action.retry." + message.id.uuidString)
+            }
+            if message.continuesInBackground == true {
+                Label(text("Ответ дописывается в фоне — придёт уведомление", "Finishing in the background — you'll get a notification"),
+                      systemImage: "arrow.down.circle.dotted")
+                    .font(.system(size: 12 * settings.fontScale * dynamicScale))
+                    .foregroundStyle(HonorTheme.secondary)
+                    .accessibilityIdentifier("message.background." + message.id.uuidString)
             }
             if message.isInterrupted {
                 HStack(spacing: 10) {
@@ -1575,6 +1591,7 @@ private struct MessageRow: View, Equatable {
             guard seconds > 0 else { return base }
             return base + " " + Self.secondsText(seconds, russian: settings.language == .russian)
         }
+        if visibleReasoning.isEmpty, !steps.isEmpty { return ActivityTimeline.summary(steps) }
         return Self.finishedReasoningTitle(seconds: visibleReasoningSeconds,
                                            translated: message.reasoningWasTranslated == true, settings: settings)
     }
@@ -1623,18 +1640,23 @@ private struct LiveAssistantBody: View {
                 ThinkingHeader(status: status ?? settings.text("Размышляю…", "Thinking…"),
                                startedAt: pacer.startedAt, settings: settings, scale: scale,
                                messageID: message.id)
+                if !pacer.steps.isEmpty {
+                    ActivityTimeline(steps: pacer.steps, fontSize: 14 * scale, live: true)
+                        .padding(.leading, 2)
+                        .transition(.opacity)
+                }
                 if !pacer.reasoning.isEmpty {
                     // Ход мысли виден, пока модель думает: последние строки в окошке,
                     // которое плавно едет вслед за текстом.
                     ThinkingPreview(text: pacer.reasoning, fontSize: 15 * scale)
                         .transition(.opacity)
                 }
-            } else if !pacer.reasoning.isEmpty {
+            } else if !pacer.reasoning.isEmpty || !pacer.steps.isEmpty {
                 ReasoningDisclosureButton(title: finishedTitle, open: $reasoningOpen, busy: false,
                                           messageID: message.id, settings: settings, scale: scale)
                 if reasoningOpen {
                     ReasoningDetail(message: message, reasoning: pacer.reasoning, settings: settings,
-                                    scale: scale, findQuery: findQuery, onSources: onSources)
+                                    scale: scale, findQuery: findQuery, onSources: onSources, steps: pacer.steps)
                 }
             }
             if !pacer.content.isEmpty {
@@ -1652,6 +1674,7 @@ private struct LiveAssistantBody: View {
     }
 
     private var finishedTitle: String {
+        if pacer.reasoning.isEmpty, !pacer.steps.isEmpty { return ActivityTimeline.summary(pacer.steps) }
         var seconds = message.reasoningSeconds
         if seconds <= 0 {
             seconds = Int(((pacer.reasoningEndedAt ?? Date()).timeIntervalSince(pacer.startedAt)).rounded())
@@ -1794,9 +1817,14 @@ private struct ReasoningDetail: View {
     let scale: Double
     let findQuery: String
     let onSources: (SourceSelection) -> Void
+    var steps: [GenerationStep] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if !steps.isEmpty {
+                ActivityTimeline(steps: steps, fontSize: 14 * scale)
+                    .padding(.bottom, reasoning.isEmpty ? 0 : 6)
+            }
             if message.reasoningWasTranslated == true {
                 Text(settings.text("Переведено на русский", "Translated into Russian"))
                     .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
@@ -1808,11 +1836,13 @@ private struct ReasoningDetail: View {
                     .font(.system(size: 11)).foregroundStyle(HonorTheme.secondary)
                     .accessibilityIdentifier("message.reasoning.foreign." + message.id.uuidString)
             }
-            BlockMarkdownView(content: reasoning, fontSize: 16 * scale, sources: [], findQuery: findQuery)
-                .foregroundStyle(HonorTheme.secondary)
-                .padding(.leading, 13)
-                .overlay(alignment: .leading) { Rectangle().fill(HonorTheme.divider).frame(width: 2) }
-                .accessibilityIdentifier("message.reasoning.text." + message.id.uuidString)
+            if !reasoning.isEmpty {
+                BlockMarkdownView(content: reasoning, fontSize: 16 * scale, sources: [], findQuery: findQuery)
+                    .foregroundStyle(HonorTheme.secondary)
+                    .padding(.leading, 13)
+                    .overlay(alignment: .leading) { Rectangle().fill(HonorTheme.divider).frame(width: 2) }
+                    .accessibilityIdentifier("message.reasoning.text." + message.id.uuidString)
+            }
             if !message.sources.isEmpty {
                 SourceProgressView(message: message, settings: settings, onSources: onSources)
             }
@@ -2390,6 +2420,9 @@ private struct HistoryDrawer: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // Подпись строки — название чата, время — отдельным значением.
+            .accessibilityLabel(chat.title)
+            .accessibilityValue(chat.relativeTimestamp + (chat.pinned ? ", закреплён" : ""))
             .accessibilityIdentifier("history.row." + chat.id.uuidString)
             .accessibilityAddTraits((selecting ? selectedIDs.contains(chat.id) : store.selectedConversationID == chat.id) ? .isSelected : [])
             if !selecting {

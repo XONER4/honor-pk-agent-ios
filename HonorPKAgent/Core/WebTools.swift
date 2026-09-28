@@ -311,7 +311,10 @@ extension WebPageText {
 struct WebToolExecutor {
     var client: WebSearchClient = WebSearchClient()
 
-    func execute(_ call: ToolCallRequest) async -> ToolCallResult {
+    /// Ход выполнения для ленты шагов: подробность и сайты.
+    typealias ProgressHandler = @Sendable (_ detail: String, _ sites: [String]) -> Void
+
+    func execute(_ call: ToolCallRequest, progress: ProgressHandler? = nil) async -> ToolCallResult {
         let arguments = call.parsedArguments
         func reply(_ text: String, sources: [WebSource] = []) -> ToolCallResult {
             ToolCallResult(callID: call.id, name: call.name, content: text,
@@ -322,7 +325,16 @@ struct WebToolExecutor {
             let query = (ToolArgument.string(arguments["query"]) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !query.isEmpty else { return reply("Не передан поисковый запрос.") }
             do {
-                let sources = try await client.search(query)
+                let sources = try await client.search(query) { event in
+                    switch event {
+                    case .found(let count):
+                        progress?("Найдено результатов: \(count) — Bing, DuckDuckGo, Brave, Википедия", [])
+                    case .reading(let sites):
+                        progress?("Читаю страницы", sites)
+                    case .read(let count, let sites):
+                        progress?("Прочитано страниц: \(count)", sites)
+                    }
+                }
                 let readable = sources.filter { $0.content != nil || !$0.snippet.isEmpty }
                 guard !readable.isEmpty else { return reply("Поиск по запросу «\(query)» ничего не дал. Ответь по своим знаниям и честно скажи, что свежих данных найти не удалось.") }
                 return reply(Self.describe(readable, heading: "Результаты поиска «\(query)»"), sources: readable)

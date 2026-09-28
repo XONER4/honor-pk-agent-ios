@@ -24,6 +24,8 @@ enum HonerTool: String, CaseIterable {
     case getAppSettings = "get_app_settings"
     /// Нарисовать картинку по описанию.
     case drawImage = "draw_image"
+    /// Найти контакт в телефонной книге (с разрешения пользователя).
+    case findContact = "find_contact"
     /// Интернет — доступен, только когда включена кнопка «Поиск». Модель сама решает,
     /// нужен ли ей интернет для ответа.
     case webSearch = "web_search"
@@ -41,8 +43,8 @@ enum HonerTool: String, CaseIterable {
         }
     }
 
-    /// Инструмент выполняется асинхронно (сеть, генерация картинки).
-    var isAsync: Bool { isWeb }
+    /// Инструмент выполняется асинхронно (сеть, контакты).
+    var isAsync: Bool { isWeb || self == .findContact }
 
     /// Описание для API: имя, назначение и параметры в формате JSON Schema.
     var schema: [String: Any] {
@@ -184,6 +186,10 @@ enum HonerTool: String, CaseIterable {
                 "prompt": ["type": "string", "description": "Подробное описание картинки на английском: объект, стиль, цвета, композиция"],
                 "orientation": ["type": "string", "description": "square, portrait или landscape; по умолчанию square"]
             ], ["prompt"])
+        case .findContact:
+            return Self.function(rawValue, "Находит контакт в телефонной книге пользователя по имени: телефоны, почту, организацию, день рождения. Работает, если пользователь разрешил доступ к контактам.", [
+                "name": ["type": "string", "description": "Имя или фамилия"]
+            ], ["name"])
         case .webSearch:
             return Self.function(rawValue, "Ищет в интернете сразу в нескольких поисковиках (Bing, DuckDuckGo, Brave, Википедия) и читает найденные страницы. Вызывай, когда нужны свежие или точные данные, которых ты не знаешь наверняка: новости, цены, курсы, события, расписания, характеристики, факты о малоизвестном. Для общих знаний, расчётов, кода, советов и болтовни поиск не нужен.", [
                 "query": ["type": "string", "description": "Поисковый запрос: только тема, без слов-команд"]
@@ -427,7 +433,7 @@ enum ToolExecutor {
                                   content: "Картинка готова. Вставь в ответ ровно эту строку, без изменений:\n![\(MediaLinks.caption(prompt))](\(url.absoluteString))")
 
         case .none, .listChats, .readChat, .renameChat, .pinChat, .sendToChat, .saveMemory, .setAppSetting,
-             .webSearch, .openPage, .findImages, .findVideos, .screenshotPage, .getWeather:
+             .webSearch, .openPage, .findImages, .findVideos, .screenshotPage, .getWeather, .findContact:
             return ToolCallResult(callID: call.id, name: call.name,
                                   content: "Инструмент «\(call.name)» доступен только в расширенном режиме.")
         }

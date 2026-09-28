@@ -87,6 +87,11 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     /// модели. В чате это помечается, чтобы свежие данные не выглядели проверенными.
     var searchFailed: Bool = false
 
+    /// Ответ дописывается в фоне, пока приложение свёрнуто.
+    var continuesInBackground: Bool? = nil
+    /// Шаги работы над ответом: поиск, чтение страниц, рисование и другое.
+    var activity: [GenerationStep]? = nil
+
     /// Устойчивый идентификатор для прокрутки к сообщению.
     var anchorID: String { "message-anchor-" + id.uuidString }
 }
@@ -113,6 +118,18 @@ struct Conversation: Identifiable, Codable, Equatable, Sendable {
     /// чтобы нейросеть видела их в каждом ответе. Необязательное поле — старые
     /// сохранённые истории без него открываются как раньше.
     var instructions: [ChatInstruction]? = nil
+}
+
+/// Шаг работы над ответом для ленты «что делает Honer AI».
+struct GenerationStep: Identifiable, Codable, Equatable, Sendable {
+    var id: UUID = UUID()
+    /// Вид шага: search, read, images, videos, screenshot, weather, draw, chats, memory, settings, contact.
+    var kind: String
+    var title: String
+    var detail: String = ""
+    /// Сайты, которые открывались на этом шаге.
+    var sites: [String] = []
+    var done: Bool = false
 }
 
 /// Закреплённая инструкция чата.
@@ -193,6 +210,8 @@ struct HistoryArchive: Codable, Sendable {
     var memoryEnabled: Bool? = nil
     /// Сохранённые инструкции («черновики»).
     var instructionLibrary: [SavedInstruction]? = nil
+    /// Настройки приложения — чтобы после переустановки всё вернулось как было.
+    var appSettings: [String: String]? = nil
 }
 
 struct DeepSeekConfiguration: Sendable {

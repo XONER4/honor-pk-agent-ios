@@ -9,6 +9,7 @@ struct HonorPKAgentApp: App {
     /// Начало текущей сессии — для статистики времени в приложении.
     @State private var sessionStartedAt: Date?
     @Environment(\.scenePhase) private var scenePhase
+    @UIApplicationDelegateAdaptor(HonerAppDelegate.self) private var appDelegate
 
     init() {
         #if DEBUG
@@ -19,7 +20,10 @@ struct HonorPKAgentApp: App {
             return
         }
         #endif
-        _settings = StateObject(wrappedValue: AppSettings())
+        let settings = AppSettings()
+        // После переустановки настройки возвращаются из защищённого хранилища iPhone.
+        settings.restoreFromKeychainIfFreshInstall()
+        _settings = StateObject(wrappedValue: settings)
         _store = StateObject(wrappedValue: ChatStore(loadHistoryAsynchronously: true))
     }
 
@@ -53,6 +57,8 @@ struct HonorPKAgentApp: App {
                 // новой версии фото «терялось»: файл лежал на месте, а путь в настройках
                 // указывал в несуществующую папку. Здесь путь пересчитывается.
                 settings.repairProfilePhotoPath()
+                store.settingsSnapshotProvider = { [weak settings] in settings?.exportSnapshot() ?? [:] }
+                store.settingsRestorer = { [weak settings] values in settings?.applySnapshot(values) }
                 store.profileName = settings.displayName
                 // Автоудаление старых чатов по настройке (пункт 40).
                 if settings.autoDeleteDays > 0 {
@@ -77,6 +83,10 @@ struct HonorPKAgentApp: App {
                     Task { await NotificationCenterService.shared.ensureNotifications() }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .honerOpenChat)) { note in
+                // Нажали уведомление — открываем чат с ответом.
+                if let id = note.object as? UUID { store.selectChat(id: id) }
+            }
             .onChange(of: settings.autoDeleteDays) { (days: Int) in
                 if days > 0 { store.purgeOldChats(olderThan: days) }
             }
@@ -84,12 +94,16 @@ struct HonorPKAgentApp: App {
                 // Считаем время, проведённое в приложении (пункт 30 «Статистика»).
                 if phase == .active {
                     sessionStartedAt = Date()
+                    PermissionsCenter.shared.updateLocation()
+                    store.applyPendingBackgroundAnswers()
                 } else {
                     if let started = sessionStartedAt {
                         store.addSessionTime(Date().timeIntervalSince(started))
                         sessionStartedAt = nil
                     }
                     store.persistNow()
+                    settings.mirrorToKeychain()
+                    if phase == .background { BackupService.shared.backupIfNeeded(store: store) }
                 }
             }
         }

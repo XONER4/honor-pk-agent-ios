@@ -21,6 +21,14 @@ final class AppSettings: ObservableObject {
     @Published var speechLanguage: String { didSet { defaults.set(speechLanguage, forKey: "honor.speechLanguage") } }
     /// Голос озвучки: «male» или «female». По умолчанию мужской.
     @Published var voiceGender: String { didSet { defaults.set(voiceGender, forKey: "honor.voiceGender") } }
+    /// Свой голос (Fish Audio): идентификатор хранится и в Keychain, чтобы пережить переустановку.
+    @Published var clonedVoiceID: String {
+        didSet { defaults.set(clonedVoiceID, forKey: "honor.clonedVoiceID"); KeychainStore.set(clonedVoiceID, for: "clonedVoiceID") }
+    }
+    /// Читать ответы своим голосом.
+    @Published var useClonedVoice: Bool { didSet { defaults.set(useClonedVoice, forKey: "honor.useClonedVoice") } }
+    /// Английские фрагменты читать «Личным голосом» Apple.
+    @Published var personalVoiceEnglish: Bool { didSet { defaults.set(personalVoiceEnglish, forKey: "honor.personalVoiceEnglish") } }
     @Published var autoRead: Bool { didSet { defaults.set(autoRead, forKey: "honor.autoRead") } }
     @Published var displayName: String { didSet { defaults.set(displayName, forKey: "honor.displayName") } }
     @Published var apiKeyOverride: String { didSet { defaults.set(apiKeyOverride, forKey: "honor.apiKeyOverride") } }
@@ -52,6 +60,9 @@ final class AppSettings: ObservableObject {
         voiceIdentifier = defaults.string(forKey: "honor.voiceIdentifier") ?? ""
         speechLanguage = defaults.string(forKey: "honor.speechLanguage") ?? "ru-RU"
         voiceGender = defaults.string(forKey: "honor.voiceGender") ?? "male"
+        clonedVoiceID = defaults.string(forKey: "honor.clonedVoiceID") ?? KeychainStore.get("clonedVoiceID") ?? ""
+        useClonedVoice = defaults.bool(forKey: "honor.useClonedVoice")
+        personalVoiceEnglish = defaults.bool(forKey: "honor.personalVoiceEnglish")
         autoRead = defaults.bool(forKey: "honor.autoRead")
         let savedName = defaults.string(forKey: "honor.displayName") ?? ""
         displayName = savedName == "Honor" ? "" : savedName
@@ -60,7 +71,8 @@ final class AppSettings: ObservableObject {
         let rate = defaults.object(forKey: "honor.voiceRate") as? Double ?? 0.95
         voiceRate = min(1.8, max(0.4, rate))
         autoDeleteDays = defaults.object(forKey: "honor.autoDeleteDays") as? Int ?? 0
-        notificationsEnabled = defaults.bool(forKey: "honor.notificationsEnabled")
+        // Уведомления о готовом ответе включены по умолчанию.
+        notificationsEnabled = defaults.object(forKey: "honor.notificationsEnabled") as? Bool ?? true
         crossChatMemoryEnabled = defaults.object(forKey: "honor.crossChatMemoryEnabled") as? Bool ?? true
         stickersEnabled = defaults.object(forKey: "honor.stickersEnabled") as? Bool ?? true
         profilePhotoPath = defaults.string(forKey: "honor.profilePhotoPath") ?? ""
