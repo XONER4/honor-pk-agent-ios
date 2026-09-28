@@ -518,7 +518,7 @@ final class Honer10CoreTests: XCTestCase {
         XCTAssertEqual(InlineContentView.trimmedURL("https://a.b/c.jpg?v=2&w=800)"), "https://a.b/c.jpg?v=2&w=800")
 
         // Полная строка ответа: картинка распознаётся, подпись сохраняется.
-        let parts = BlockMarkdownParser.parse("Смотри:\n\n![Сочи](https://a.b/Photo_(1).jpg)\n\nГотово.")
+        let parts = MarkdownBlockParser.parse("Смотри:\n\n![Сочи](https://a.b/Photo_(1).jpg)\n\nГотово.")
         let text = parts.map(\.text).joined(separator: " ")
         XCTAssertTrue(text.contains("Смотри"), "Текст до картинки пропал: [\(text)]")
         XCTAssertTrue(text.contains("Готово"), "Текст после картинки пропал: [\(text)]")
