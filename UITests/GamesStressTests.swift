@@ -11,8 +11,12 @@ final class GamesStressTests: HonorAuditCase {
         // Слоты: барабаны крутятся и дают результат.
         app.buttons["games.play.slots"].tap()
         XCTAssertTrue(element(app, "game.screen.slots").waitForExistence(timeout: 5))
-        app.buttons["slots.spin"].tap()
-        XCTAssertTrue(element(app, "slots.result").waitForExistence(timeout: 8), "Барабаны должны остановиться и показать итог")
+        // Экран игры выезжает снизу: нажимаем, когда кнопка уже доступна.
+        let spin = app.buttons["slots.spin"]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true AND enabled == true"), object: spin)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 8), .completed)
+        spin.tap()
+        XCTAssertTrue(element(app, "slots.result").waitForExistence(timeout: 12), "Барабаны должны остановиться и показать итог")
         capture("51-slots")
         app.buttons["game.close"].tap()
 

@@ -139,7 +139,11 @@ final class LiveIntegrationTests: XCTestCase {
         XCTAssertTrue(!needsTranslation || english.reasoningStayedForeign,
                       "Рассуждение осталось английским и без пометки: [\(english.reasoning.prefix(200))]")
         let chinese = try await answer("请只用中文解释为什么冰会融化。", thinking: false)
-        XCTAssertTrue(chinese.content.lowercased().contains("лёд") || chinese.content.lowercased().contains("льд") || chinese.content.lowercased().contains("плав"))
+        let melted = chinese.content.lowercased().replacingOccurrences(of: "ё", with: "е")
+        XCTAssertTrue(["лед", "льд", "плав", "тает", "таян", "тая"].contains { melted.contains($0) },
+                      "Ответ про лёд должен быть по-русски: [\(chinese.content.prefix(300))]")
+        XCTAssertFalse(RussianTextPolicy.needsNormalization(chinese.content),
+                       "Ответ на китайский вопрос остался не по-русски: [\(chinese.content.prefix(300))]")
     }
 
     func testLiveDrawsAPictureWhenAsked() async throws {

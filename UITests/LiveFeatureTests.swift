@@ -43,7 +43,8 @@ final class LiveFeatureTests: HonorAuditCase {
         XCTAssertTrue(sources.waitForExistence(timeout: 90), "Search must attach real source links")
         waitAbsent(app.buttons["chat.stop"], timeout: 90)
         print("HONOR_LIVE_SEARCH_SECONDS=\(Date().timeIntervalSince(started))")
-        XCTAssertTrue(button(app, prefix: "message.action.copy.").exists)
+        // Кнопки под ответом появляются, когда допечатается хвост текста.
+        XCTAssertTrue(button(app, prefix: "message.action.copy.").waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "message.error.")).firstMatch.exists)
         capture("21-live-search")
         sources.tap()

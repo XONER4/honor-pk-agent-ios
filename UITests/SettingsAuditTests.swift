@@ -71,11 +71,15 @@ final class SettingsAuditTests: HonorAuditCase {
         back(app)
         openSettingsRow("settings.voice", app: app)
         XCTAssertFalse(app.switches["voice.autoRead"].exists, "Reading is controlled in the chat header")
-        app.buttons["voice.option.system"].tap()
+        XCTAssertTrue(app.buttons["voice.gender"].exists || app.segmentedControls["voice.gender"].exists)
         app.buttons["voice.preview"].tap()
         XCTAssertTrue(app.buttons["voice.preview"].exists)
         // Voice preview can complete immediately if this simulator has no downloaded voice.
         if app.buttons["voice.preview"].value as? String == "speaking" { app.buttons["voice.preview"].tap() }
+        // Список голосов ниже на странице.
+        let system = app.buttons["voice.option.system"]
+        for _ in 0..<5 where !system.exists { app.swipeUp() }
+        system.tap()
         back(app)
         openSettingsRow("settings.speechLanguage", app: app)
         choose("speechLanguage.en-US", fallback: "English (US)", app: app)
