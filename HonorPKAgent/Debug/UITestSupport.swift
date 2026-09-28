@@ -40,7 +40,8 @@ enum UITestSupport {
                     snippet: "6.1-inch display", content: "Technical specifications. Display: 6.1 inches.", fetchedAt: Date())]
                 answer.content += " Источник [1]."
             }
-            let chat = Conversation(id: UUID(uuidString: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA")!, title: "Приветствие", messages: [user, answer])
+            var chat = Conversation(id: UUID(uuidString: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA")!, title: "Приветствие", messages: [user, answer])
+            seedFeatures(into: &chat)
             let pinned = Conversation(id: UUID(uuidString: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB")!, title: "Идеи для проекта", pinned: true)
             var yesterday = Conversation(title: "Выбор смартфона")
             yesterday.updatedAt = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
@@ -60,6 +61,66 @@ enum UITestSupport {
             }
             store.selectedConversationID = store.conversations[0].id
             store.persistNow()
+        }
+    }
+}
+
+extension UITestSupport {
+    /// Данные для проверки функций 10.44: тест с вопросами, вопрос с таймером,
+    /// таблица и чат с файлами и ссылками. Идентификаторы вопросов каждый раз новые:
+    /// ответы на карточки хранятся между запусками.
+    static func seedFeatures(into chat: inout Conversation) {
+        if arguments.contains("-UITestQuiz") {
+            chat.messages.append(ChatMessage(role: .user, content: "Проверь мои знания"))
+            chat.messages.append(ChatMessage(role: .assistant, content: """
+            Небольшой тест из двух вопросов.
+
+            ```ask
+            @mode quiz
+            @timer 60
+            @title Проверка знаний
+            ? Столица Франции?
+            - Лондон
+            -* Париж
+            - Берлин
+            ? Сколько будет 2+2?
+            - 3
+            -* 4
+            ```
+            """))
+        }
+        if arguments.contains("-UITestQuestionTimeout") {
+            chat.messages.append(ChatMessage(role: .user, content: "Помоги с ответом"))
+            chat.messages.append(ChatMessage(role: .assistant, content: """
+            Уточню одну деталь.
+
+            ```ask
+            @timer 3
+            ? Какой формат ответа удобнее?
+            - кратко
+            - подробно
+            ```
+            """))
+        }
+        if arguments.contains("-UITestTable") {
+            let table = ChatTable(id: UUID(uuidString: "CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC")!, title: "Покупки",
+                                  columns: ["Товар", "Цена"], rows: [["Хлеб", "50"], ["Молоко", "90"]], editable: true)
+            chat.tables = [table]
+            var answer = ChatMessage(role: .assistant, content: "Создал таблицу покупок — её можно дополнять.")
+            answer.tableIDs = [table.id]
+            chat.messages.append(ChatMessage(role: .user, content: "Сделай таблицу покупок"))
+            chat.messages.append(answer)
+        }
+        if arguments.contains("-UITestRichChat") {
+            var user = ChatMessage(role: .user, content: "Вот голосовое и [ссылка](https://example.com/page)")
+            user.attachments = [MessageAttachment(name: "Голосовое.m4a", kind: .audio,
+                                                  extractedText: "Audio recording. Transcription: привет", summary: "Аудио 0:12 · расшифровано")]
+            var answer = ChatMessage(role: .assistant, content: "Посмотрел. Вот картинка ![закат](https://upload.wikimedia.org/wikipedia/commons/a/a4/Sunset.jpg)")
+            answer.sources = [WebSource(title: "Статья о закатах", url: URL(string: "https://news.example.com/sunset")!, snippet: "Почему небо красное")]
+            answer.activity = [GenerationStep(kind: "read", title: "Читаю страницу", detail: "wiki.example.org",
+                                              sites: ["wiki.example.org"], done: true, startedAt: Date())]
+            chat.messages.append(user)
+            chat.messages.append(answer)
         }
     }
 }

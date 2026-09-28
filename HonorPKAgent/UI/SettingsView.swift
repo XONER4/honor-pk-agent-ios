@@ -66,6 +66,11 @@ struct SettingsView: View {
                         }
                         .accessibilityIdentifier("settings.parental")
                         SettingsDivider()
+                        NavigationLink { IntegrationsPage() } label: {
+                            SettingsRow(symbol: "square.grid.2x2", title: settings.text("Интеграции", "Integrations"))
+                        }
+                        .accessibilityIdentifier("settings.integrations")
+                        SettingsDivider()
                         NavigationLink { MemorySettingsPage() } label: {
                             SettingsRow(symbol: "brain", title: settings.text("Память Honer AI", "Honer AI memory"),
                                         value: "\(store.memories.count)")

@@ -94,3 +94,49 @@ struct QuoteChip: View {
         .accessibilityIdentifier("message.quote")
     }
 }
+
+/// Вложение над полем ввода до отправки: фото и видео — миниатюрой, файлы — карточкой.
+struct PendingAttachmentChip: View {
+    let attachment: MessageAttachment
+    let removeLabel: String
+    let onRemove: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            content
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 18))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .black.opacity(0.55))
+                    .frame(width: 30, height: 30)
+            }
+            .offset(x: 8, y: -8)
+            .accessibilityLabel(removeLabel)
+            .accessibilityIdentifier("attachment.remove." + attachment.id.uuidString)
+        }
+        .padding(.top, 8)
+        .padding(.trailing, 8)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if attachment.kind == .image || attachment.kind == .video {
+            ZStack {
+                AttachmentThumbnail(attachment: attachment, height: 64,
+                                    frameOverride: attachment.kind == .video ? attachment.resolvedFrameURLs.first : nil)
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                if attachment.kind == .video {
+                    Image(systemName: "play.fill").font(.system(size: 16)).foregroundStyle(.white).shadow(radius: 2)
+                }
+            }
+            .accessibilityLabel(attachment.name)
+        } else if attachment.kind == .sticker {
+            Text(attachment.name).font(.system(size: 40)).frame(width: 64, height: 64)
+        } else {
+            AttachmentFileCard(attachment: attachment, scale: 0.85)
+                .frame(maxWidth: 230)
+        }
+    }
+}

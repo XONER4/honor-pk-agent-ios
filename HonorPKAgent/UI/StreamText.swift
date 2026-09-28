@@ -35,36 +35,74 @@ struct ScrollRequest: Equatable {
 /// Здесь такие хвосты временно скрываются; как только конструкция закрыта,
 /// текст показывается уже оформленным.
 enum LiveMarkdown {
+    /// Работает только с концом текста: раньше на каждом кадре весь ответ резался
+    /// на строки, и на длинных ответах это заметно отнимало время кадра.
     static func displayable(_ text: String) -> String {
         guard !text.isEmpty, !text.hasSuffix("\n") else { return text }
-        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         // Внутри незакрытого блока кода ничего не трогаем: это код.
-        let fences = lines.filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("```") }.count
-        if fences % 2 == 1 { return text }
-        guard var last = lines.popLast() else { return text }
+        if fenceLineCount(text) % 2 == 1 { return text }
+        let lastStart = text.lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
+        let last = String(text[lastStart...])
+        let head = text[..<lastStart]
         let trimmed = last.trimmingCharacters(in: .whitespaces)
 
         // Строки таблицы до строки-разделителя — это ещё не таблица: не показываем
         // палочки, таблица появится сразу оформленной.
         if trimmed.hasPrefix("|") {
-            var block: [String] = [last]
-            while let previous = lines.last, previous.trimmingCharacters(in: .whitespaces).hasPrefix("|") {
-                block.insert(previous, at: 0)
-                lines.removeLast()
+            var hasAlignment = isAlignmentRow(last)
+            var blockStart = lastStart
+            while blockStart > text.startIndex {
+                let lineEnd = text.index(before: blockStart)
+                let previousStart = text[..<lineEnd].lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
+                let line = String(text[previousStart..<lineEnd])
+                guard line.trimmingCharacters(in: .whitespaces).hasPrefix("|") else { break }
+                if isAlignmentRow(line) { hasAlignment = true }
+                blockStart = previousStart
             }
-            if block.contains(where: { isAlignmentRow($0) }) {
-                return text
-            }
-            return lines.joined(separator: "\n")
+            if hasAlignment { return text }
+            return withoutTrailingNewline(text[..<blockStart])
         }
         // Одинокий маркер: «#», «-», «*», «>», «1.», начало разделителя «--».
         if trimmed.range(of: #"^(#{1,6}|[-*+>]|\d+[.)])$"#, options: .regularExpression) != nil
             || (!trimmed.isEmpty && trimmed.allSatisfy { "-=*_ ".contains($0) }) {
-            return lines.joined(separator: "\n")
+            return withoutTrailingNewline(head)
         }
-        last = hideUnclosedMarkup(in: last)
-        lines.append(last)
-        return lines.joined(separator: "\n")
+        return String(head) + hideUnclosedMarkup(in: last)
+    }
+
+    private static func withoutTrailingNewline(_ text: Substring) -> String {
+        text.hasSuffix("\n") ? String(text.dropLast()) : String(text)
+    }
+
+    /// Сколько строк начинается с ``` — один быстрый проход по байтам.
+    static func fenceLineCount(_ text: String) -> Int {
+        var count = 0
+        var atLineStart = true
+        var counting = false
+        var ticks = 0
+        for byte in text.utf8 {
+            if byte == 10 {
+                atLineStart = true
+                counting = false
+                ticks = 0
+                continue
+            }
+            if atLineStart {
+                if byte == 32 || byte == 9 { continue }
+                atLineStart = false
+                if byte == 96 { counting = true; ticks = 1 }
+                continue
+            }
+            if counting {
+                if byte == 96 {
+                    ticks += 1
+                    if ticks == 3 { count += 1; counting = false }
+                } else {
+                    counting = false
+                }
+            }
+        }
+        return count
     }
 
     private static func isAlignmentRow(_ line: String) -> Bool {

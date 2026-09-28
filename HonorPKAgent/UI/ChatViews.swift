@@ -629,17 +629,13 @@ struct ChatRootView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(store.attachments) { attachment in
-                            HStack(spacing: 5) {
-                                Image(systemName: attachmentSymbol(attachment))
-                                Text(attachment.name).lineLimit(1).frame(maxWidth: 160)
-                                Button { store.attachments.removeAll { $0.id == attachment.id } } label: {
-                                    Image(systemName: "xmark.circle.fill").frame(width: 30, height: 32)
-                                }.accessibilityLabel(text("Удалить вложение ", "Remove attachment ") + attachment.name)
-                                    .accessibilityIdentifier("attachment.remove." + attachment.id.uuidString)
+                            PendingAttachmentChip(attachment: attachment,
+                                                  removeLabel: text("Удалить вложение ", "Remove attachment ") + attachment.name) {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                    store.attachments.removeAll { $0.id == attachment.id }
+                                }
                             }
-                            .font(.system(size: 12))
-                            .padding(.leading, 10).padding(.trailing, 2)
-                            .background(HonorTheme.raised, in: RoundedRectangle(cornerRadius: 12))
+                            .transition(.scale(scale: 0.85).combined(with: .opacity))
                         }
                     }
                 }
@@ -1718,12 +1714,12 @@ private struct MessageRow: View, Equatable {
 
     private var reasoningTitle: String {
         if streaming && visibleContent.isEmpty {
-            let base = status ?? text("Размышляю…", "Thinking…")
+            let base = status.map { StatusText.localized($0) } ?? text("Размышляю…", "Thinking…")
             let seconds = visibleReasoningSeconds
             guard seconds > 0 else { return base }
             return base + " " + Self.secondsText(seconds, russian: settings.language == .russian)
         }
-        if visibleReasoning.isEmpty, !steps.isEmpty { return ActivityTimeline.summary(steps) }
+        if visibleReasoning.isEmpty, !steps.isEmpty { return StatusText.localized(ActivityTimeline.summary(steps)) }
         return Self.finishedReasoningTitle(seconds: visibleReasoningSeconds,
                                            translated: message.reasoningWasTranslated == true, settings: settings)
     }
@@ -1769,7 +1765,7 @@ private struct LiveAssistantBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
             if waitingForAnswer {
-                ThinkingHeader(status: status ?? settings.text("Размышляю…", "Thinking…"),
+                ThinkingHeader(status: status.map { StatusText.localized($0) } ?? settings.text("Размышляю…", "Thinking…"),
                                startedAt: pacer.startedAt, settings: settings, scale: scale,
                                messageID: message.id)
                 if !pacer.steps.isEmpty {
@@ -1806,7 +1802,7 @@ private struct LiveAssistantBody: View {
     }
 
     private var finishedTitle: String {
-        if pacer.reasoning.isEmpty, !pacer.steps.isEmpty { return ActivityTimeline.summary(pacer.steps) }
+        if pacer.reasoning.isEmpty, !pacer.steps.isEmpty { return StatusText.localized(ActivityTimeline.summary(pacer.steps)) }
         var seconds = message.reasoningSeconds
         if seconds <= 0 {
             seconds = Int(((pacer.reasoningEndedAt ?? Date()).timeIntervalSince(pacer.startedAt)).rounded())
@@ -1863,17 +1859,21 @@ private struct ThinkingPreview: View {
         let text: String
     }
 
+    /// Последние абзацы рассуждения. Смотрим только конец текста: длинное
+    /// рассуждение не разбирается целиком на каждом кадре.
     private var paragraphs: [Paragraph] {
-        let parts = text.split(separator: "\n", omittingEmptySubsequences: true)
+        let tail = text.suffix(3000)
         var picked: [Paragraph] = []
         var total = 0
-        for (offset, part) in parts.enumerated().reversed() {
+        for part in tail.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
             let cleaned = part
                 .replacingOccurrences(of: "**", with: "")
                 .replacingOccurrences(of: "`", with: "")
                 .trimmingCharacters(in: .whitespaces)
             guard !cleaned.isEmpty else { continue }
-            picked.insert(Paragraph(id: offset, text: cleaned), at: 0)
+            // Номер абзаца — его место в тексте: устойчив, пока текст растёт.
+            let id = text.utf8.distance(from: text.utf8.startIndex, to: part.startIndex)
+            picked.insert(Paragraph(id: id, text: cleaned), at: 0)
             total += cleaned.count
             if total >= 900 { break }
         }

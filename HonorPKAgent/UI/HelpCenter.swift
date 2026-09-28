@@ -658,13 +658,13 @@ extension HelpLibrary {
             bodyRU: [
                 "Долгое нажатие на любое сообщение открывает меню. Для **вашего сообщения**: Копировать, Закрепить как инструкцию, Выбрать текст, **Редактировать** (исправить и отправить заново), Продолжить в ветке, Запомнить, Поделиться.",
                 "Для **ответа Honer AI**: Копировать, Закрепить как инструкцию, Выбрать текст, **Повторить** (сгенерировать ответ заново), Продолжить в ветке, Запомнить, Нравится / Не нравится, **Читать вслух**, Поделиться.",
-                "**Ответить с цитатой**: выберите «Ответить» в меню или выделите фрагмент и нажмите «Спросить Honer AI» — цитата попадёт в поле ввода, и нейросеть поймёт, на что именно вы отвечаете.",
+                "**Цитата**: выберите «Цитировать» в меню сообщения или «Выбрать текст и спросить», выделите фрагмент и нажмите «Спросить Honer AI» — цитата появится над полем ввода, и нейросеть поймёт, о каком именно фрагменте вы спрашиваете. «Подробнее об этом» и «Объяснить проще» отправляют вопрос сразу.",
                 "**Запомнить** сохраняет факт из сообщения в долговременную память, а **Закрепить как инструкцию** делает сообщение правилом для всех ответов этого чата."
             ],
             bodyEN: [
                 "Long-press any message to open its menu. For **your message**: Copy, Pin as instruction, Select text, **Edit** (fix and resend), Continue in a branch, Remember, Share.",
                 "For **an answer from Honer AI**: Copy, Pin as instruction, Select text, **Regenerate**, Continue in a branch, Remember, Like / Dislike, **Read aloud**, Share.",
-                "**Reply with a quote**: choose Reply in the menu, or select a fragment and tap Ask Honer AI — the quote goes into the message field and the assistant knows exactly what you're replying to.",
+                "**Quote**: choose Quote in the message menu, or Select text and ask, highlight a fragment and tap Ask Honer AI — the quote appears above the message field and the assistant knows exactly which fragment you mean. Tell me more and Explain simpler send the question right away.",
                 "**Remember** saves a fact from the message into long-term memory, and **Pin as instruction** turns the message into a rule for every answer in this chat."
             ],
             stepsRU: [
@@ -1621,7 +1621,7 @@ extension HelpLibrary {
             summaryEN: "All pinned and saved instructions in one place.",
             bodyRU: [
                 "Экран **«Инструкции чата»** показывает, что закреплено в этом чате (и кто закрепил — вы или это ответ Honer AI), а ниже — **сохранённые инструкции** из библиотеки.",
-                "Отсюда инструкции можно менять, откреплять, удалять и закреплять снова. Открыть экран можно через **••• → Инструкции** или нажав на плашку инструкции вверху чата."
+                "Отсюда инструкции можно менять, откреплять, удалять и закреплять снова. Открыть экран можно через **••• → Инструкции чата** или нажав на плашку инструкции вверху чата."
             ],
             bodyEN: [
                 "The **Chat instructions** screen shows what's pinned in this chat (and whether it came from you or from a Honer AI answer), and below it the **saved instructions** from the library.",
@@ -2362,12 +2362,12 @@ extension HelpLibrary {
                 "You can also set **blocked words** and **blocked sites**, and an **allowed sites only** mode — then the assistant opens only sites from your list."
             ],
             stepsRU: [
-                "**Настройки → Родительский контроль → Фильтры**.",
+                "**Настройки → Родительский контроль**, раздел **«Фильтры контента»**.",
                 "Включите нужные фильтры.",
                 "Добавьте запрещённые слова и сайты."
             ],
             stepsEN: [
-                "**Settings → Parental controls → Filters**.",
+                "**Settings → Parental control**, section **Content filters**.",
                 "Turn on the filters you need.",
                 "Add blocked words and sites."
             ],
@@ -2390,12 +2390,12 @@ extension HelpLibrary {
                 "A **daily time limit** caps how many minutes a day the app can be used. **Quiet hours** (e.g. 22:00 to 07:00) block access at night."
             ],
             stepsRU: [
-                "**Настройки → Родительский контроль → Функции**.",
+                "**Настройки → Родительский контроль**, разделы **«Возможности»** и **«Разрешённые игры»**.",
                 "Отключите лишнее.",
                 "Задайте дневной лимит и тихие часы."
             ],
             stepsEN: [
-                "**Settings → Parental controls → Features**.",
+                "**Settings → Parental control**, sections **Features** and **Allowed games**.",
                 "Turn off what isn't needed.",
                 "Set a daily limit and quiet hours."
             ],

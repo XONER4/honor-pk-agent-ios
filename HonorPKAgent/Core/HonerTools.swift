@@ -282,7 +282,7 @@ enum HonerTool: String, CaseIterable {
 
     /// Инструменты для запроса: интернет — только когда включена кнопка «Поиск».
     static func schemas(searchEnabled: Bool) -> [[String: Any]] {
-        allCases.filter { searchEnabled || !$0.isWeb }.map(\.schema)
+        allCases.filter { (searchEnabled || !$0.isWeb) && Integrations.allows($0) }.map(\.schema)
     }
 
     private static func function(_ name: String, _ description: String,

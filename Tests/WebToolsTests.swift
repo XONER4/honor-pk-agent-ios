@@ -158,7 +158,8 @@ final class LiveWebToolsTests: XCTestCase {
         let started = Date()
         let rendered = await WebPageRenderer.render(page, timeout: 20)
         print("HONER_WEBKIT seconds=\(Date().timeIntervalSince(started)) text=\(rendered?.text.prefix(80) ?? "nil")")
-        XCTAssertTrue(rendered?.text.contains("Example Domain") == true, rendered?.text ?? "nil")
+        let text = rendered?.text ?? ""
+        XCTAssertTrue(text.contains("Example Domain") || text.contains("documentation examples"), text)
     }
 
     func testLiveFindImagesReturnsLoadableImages() async throws {
