@@ -1,3 +1,6 @@
+import java.security.SecureRandom
+import java.util.Base64
+
 import java.util.Properties
 
 plugins {
@@ -15,6 +18,15 @@ val localProps = Properties().apply {
 }
 fun secret(name: String): String = System.getenv(name) ?: localProps.getProperty(name) ?: ""
 
+/** Секрет → (секрет XOR маска, маска) в Base64; маска случайная для каждой сборки. */
+fun maskSecret(value: String): Pair<String, String> {
+    val bytes = value.toByteArray(Charsets.UTF_8)
+    val mask = ByteArray(bytes.size).also { SecureRandom().nextBytes(it) }
+    val masked = ByteArray(bytes.size) { (bytes[it].toInt() xor mask[it].toInt()).toByte() }
+    val encoder = Base64.getEncoder()
+    return encoder.encodeToString(masked) to encoder.encodeToString(mask)
+}
+
 val appVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 104400
 val appVersionName = (project.findProperty("versionName") as String?) ?: "10.44.0"
 
@@ -29,7 +41,11 @@ android {
         versionCode = appVersionCode
         versionName = appVersionName
         vectorDrawables { useSupportLibrary = true }
-        buildConfigField("String", "DEEPSEEK_API_KEY", "\"${secret("DEEPSEEK_API_KEY")}\"")
+        // Ключ не лежит в APK открытой строкой: XOR со случайной маской, разной в каждой сборке
+        // (поиск «sk-» по dex ничего не находит). Полностью ключ скрывает только сервер-прокси Honer Cloud.
+        val (maskedKey, keyMask) = maskSecret(secret("DEEPSEEK_API_KEY"))
+        buildConfigField("String", "DEEPSEEK_KEY_A", "\"$maskedKey\"")
+        buildConfigField("String", "DEEPSEEK_KEY_B", "\"$keyMask\"")
         buildConfigField("String", "UPDATE_REPOSITORY", "\"XONER4/honor-pk-agent-ios\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -78,7 +78,7 @@ class ChatStore internal constructor(
         injectedClient = null,
         searchClient = null,
         prefs = SharedPrefsStore(context),
-        configuration = DeepSeekConfiguration(apiKey = BuildConfig.DEEPSEEK_API_KEY.trim(), language = if (settings.language.value == "en") "en" else "ru"),
+        configuration = DeepSeekConfiguration(apiKey = KeyVault.deepSeekKey, language = if (settings.language.value == "en") "en" else "ru"),
         loadHistoryAsynchronously = true,
         platform = true,
     )
