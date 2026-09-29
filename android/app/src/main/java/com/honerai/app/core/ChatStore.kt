@@ -1594,6 +1594,8 @@ class ChatStore internal constructor(
                     if (!had) "Сейчас нет действия, ожидающего подтверждения."
                     else if (confirm) "Подтверждение принято — продолжаю." else "Действие отменено.")
             }
+            // integ: GitHub через официальный API; запись/создание — с подтверждением пользователя.
+            tool != null && tool.isGitHub -> runGitHubTool(call)
             // media: кнопка открытия приложения и медиа в чат.
             tool == HonerTool.OPEN_APP -> AppLauncher.execute(context, call)
             tool == HonerTool.SEND_MEDIA -> if (online) MediaSender(webClient, configuration.language).execute(call, progress)
@@ -1634,6 +1636,15 @@ class ChatStore internal constructor(
         }
         val confirm: suspend (String, String?) -> Boolean = { description, amount -> awaitAgentConfirmation(description, amount) }
         return com.honerai.app.core.agent.DeviceTaskTool.execute(call, controller, brain, availability, sink, confirm)
+    }
+
+    // integ: инструменты GitHub. Токен берётся из зашифрованного хранилища; запись файла и создание
+    // репозитория проходят через ту же карточку подтверждения, что и действия агента.
+    private suspend fun runGitHubTool(call: ToolCallRequest): ToolCallResult {
+        val token = context?.let { com.honerai.app.core.github.GitHubIntegration.tokenStore(it).token }
+        val executor = com.honerai.app.core.github.GitHubToolExecutor(token,
+            confirm = { description, amount -> awaitAgentConfirmation(description, amount) })
+        return executor.execute(call)
     }
 
     /** Ставит действие агента на подтверждение и ждёт ответа пользователя (кнопка или текст). */

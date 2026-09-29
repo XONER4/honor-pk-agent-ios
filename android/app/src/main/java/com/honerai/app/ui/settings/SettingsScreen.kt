@@ -54,6 +54,7 @@ internal enum class SettingsPage {
     ROOT, PROFILE, DATA, ARCHIVE, LANGUAGE, FONT, PERMISSIONS, PARENTAL, INTEGRATIONS, MEMORY,
     VOICE, VOICE_CLONE, STATISTICS, GUIDE, ABOUT,
     APP_LOCK, LICENSE, // extras
+    GITHUB, // integ: страница токена GitHub под «Интеграции»
 }
 
 /** Настройки со всеми страницами. [onClose] — закрыть настройки. */
@@ -100,7 +101,8 @@ fun SettingsScreen(onClose: () -> Unit) {
                     SettingsPage.FONT -> FontSettingsPage(pop)
                     SettingsPage.PERMISSIONS -> PermissionsPage(pop)
                     SettingsPage.PARENTAL -> ParentalControlPage(pop)
-                    SettingsPage.INTEGRATIONS -> IntegrationsPage(pop)
+                    SettingsPage.INTEGRATIONS -> IntegrationsPage(pop, push) // integ: доступ к странице GitHub
+                    SettingsPage.GITHUB -> GitHubSettingsPage(pop) // integ
                     SettingsPage.MEMORY -> MemorySettingsPage(pop)
                     SettingsPage.VOICE -> VoiceSettingsPage(pop, push)
                     SettingsPage.VOICE_CLONE -> VoiceClonePage(pop)

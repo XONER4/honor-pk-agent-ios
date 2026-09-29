@@ -361,7 +361,7 @@ object ChatLogic {
             // agent: действия в приложениях.
             HonerTool.RUN_DEVICE_TASK, HonerTool.CONFIRM_PENDING_ACTION ->
                 com.honerai.app.core.agent.AgentToolSchemas.step(call) ?: GenerationStep(kind = "settings", title = "Выполняю действие в приложении")
-            else -> ExtraToolSchemas.step(call) ?: GenerationStep(kind = "settings", title = "Выполняю действие")
+            else -> com.honerai.app.core.github.GitHubToolSchemas.step(call) /* integ */ ?: ExtraToolSchemas.step(call) ?: GenerationStep(kind = "settings", title = "Выполняю действие")
         }
     }
 
@@ -385,7 +385,7 @@ object ChatLogic {
             has(HonerTool.SAVE_MEMORY) -> "Запоминаю…"
             has(HonerTool.RENAME_CHAT) || has(HonerTool.PIN_CHAT) -> "Обновляю чаты…"
             has(HonerTool.SET_APP_SETTING) -> "Меняю настройку…"
-            else -> com.honerai.app.core.agent.AgentToolSchemas.status(names) ?: ExtraToolSchemas.status(names) ?: "Выполняю действие…" // agent
+            else -> com.honerai.app.core.agent.AgentToolSchemas.status(names) ?: com.honerai.app.core.github.GitHubToolSchemas.status(names) /* integ */ ?: ExtraToolSchemas.status(names) ?: "Выполняю действие…" // agent
         }
     }
 

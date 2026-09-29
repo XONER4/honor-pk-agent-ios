@@ -217,8 +217,19 @@ object AppCatalog {
                 AppLaunch(id, "Яндекс Навигатор", AppIntegrations.YANDEX, if (uri == null) LaunchKind.PACKAGE else LaunchKind.VIEW,
                     uri, listOf("ru.yandex.yandexnavi"), web)
             }
-            "yandex_taxi" -> AppLaunch(id, "Яндекс Go", AppIntegrations.YANDEX, LaunchKind.PACKAGE, null, listOf("ru.yandex.taxi"),
-                "https://go.yandex/", note = "Адрес и тариф пользователь выбирает и подтверждает в приложении сам.")
+            "yandex_taxi" -> {
+                // integ: если задан адрес назначения — открываем экран заказа с этим адресом; иначе просто приложение.
+                val destination = q.ifBlank { request.to }
+                if (destination.isBlank()) {
+                    AppLaunch(id, "Яндекс Go", AppIntegrations.YANDEX, LaunchKind.PACKAGE, null, listOf("ru.yandex.taxi"),
+                        "https://go.yandex/", note = "Адрес и тариф пользователь выбирает и подтверждает в приложении сам.")
+                } else {
+                    val deeplink = "yandextaxi://route?end-text=${enc(destination)}"
+                    val web = "https://3.redirect.appmetrica.yandex.com/route?end-text=${enc(destination)}&appmetrica_tracking_id=1178268795219780156"
+                    AppLaunch(id, "Яндекс Go", AppIntegrations.YANDEX, LaunchKind.VIEW, deeplink, listOf("ru.yandex.taxi"), web,
+                        note = "Откроется экран заказа с адресом «$destination». Тариф и кнопку «Заказать» пользователь подтверждает сам.")
+                }
+            }
             "yandex_music" -> {
                 val uri = if (q.isBlank()) "https://music.yandex.ru/" else "https://music.yandex.ru/search?text=${enc(q)}"
                 AppLaunch(id, "Яндекс Музыка", AppIntegrations.YANDEX, LaunchKind.VIEW, uri, listOf("ru.yandex.music"), uri)
@@ -333,14 +344,15 @@ object AppLauncher {
 
     /** Действие из блока ```app (или из аргументов инструмента): каталог, затем программа по пакету. */
     fun launchFor(request: AppRequest): AppLaunch? =
-        AppCatalog.resolve(request) ?: request.packageName.takeIf { it.isNotBlank() }?.let { AppCatalog.launcherApp(it, request.label) }
+        AppCatalog.resolve(request) ?: ServiceCatalog.resolve(request) /* integ */
+            ?: request.packageName.takeIf { it.isNotBlank() }?.let { AppCatalog.launcherApp(it, request.label) }
 
     /** Инструмент open_app. */
     suspend fun execute(context: Context?, call: ToolCallRequest): ToolCallResult {
         fun reply(text: String) = ToolCallResult(call.id, call.name, text)
         var request = AppRequest.from(call.parsedArguments)
         if (request.app.isBlank()) return reply("Не передано, какое приложение открыть.")
-        var launch = AppCatalog.resolve(request)
+        var launch = AppCatalog.resolve(request) ?: ServiceCatalog.resolve(request) // integ: расширенный список сервисов
         if (launch == null) {
             if (context == null) return reply("Открыть приложение сейчас нельзя.")
             if (!AppIntegrations.isEnabled(context, AppIntegrations.APPS)) return reply("Открытие приложений выключено в Настройки → Интеграции. Скажи об этом пользователю.")

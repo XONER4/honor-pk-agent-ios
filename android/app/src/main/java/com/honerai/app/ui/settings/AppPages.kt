@@ -120,12 +120,33 @@ internal fun FontSettingsPage(onBack: () -> Unit) {
 }
 
 @Composable
-internal fun IntegrationsPage(onBack: () -> Unit) {
+internal fun IntegrationsPage(onBack: () -> Unit, push: (SettingsPage) -> Unit = {}) {
     val context = LocalContext.current
     val settings = appSettings()
     var disabled by remember { mutableStateOf(Integrations.disabled(context)) }
+    // integ: подключён ли GitHub по токену (для подзаголовка строки перехода на страницу GitHub).
+    val gitHubLogin = remember { com.honerai.app.core.github.GitHubIntegration.tokenStore(context).let { if (it.isConnected) it.login ?: "" else null } }
     fun t(ru: String, en: String) = settings.text(ru, en)
     SettingsPageScaffold(t("Интеграции", "Integrations"), "settings.page.integrations", onBack) {
+        // integ: официальная интеграция GitHub по токену пользователя (управление своими репозиториями).
+        item(key = "github_api") {
+            SettingsGroup(
+                footer = t(
+                    "GitHub по вашему токену: нейросеть видит и меняет ваши репозитории через официальный API. Запись файлов и создание репозитория выполняются только после вашего подтверждения.",
+                    "GitHub with your token: the AI can view and change your repositories via the official API. Writing files and creating a repo happen only after your confirmation.",
+                ),
+            ) {
+                SettingsRow(
+                    Icons.Outlined.Code, "GitHub",
+                    value = when {
+                        gitHubLogin == null -> t("не подключён", "not connected")
+                        gitHubLogin.isNotEmpty() -> gitHubLogin
+                        else -> t("подключён", "connected")
+                    },
+                    tag = "settings.github",
+                ) { push(SettingsPage.GITHUB) }
+            }
+        }
         item(key = "services") {
             SettingsGroup(
                 footer = t(

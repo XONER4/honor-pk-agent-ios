@@ -74,7 +74,14 @@ enum class HonerTool(val rawValue: String) {
     PHONE_DATA("phone_data"),
     // agent: действия в приложениях через службу специальных возможностей.
     RUN_DEVICE_TASK("run_device_task"),
-    CONFIRM_PENDING_ACTION("confirm_pending_action");
+    CONFIRM_PENDING_ACTION("confirm_pending_action"),
+    // integ: GitHub через официальный API по токену пользователя.
+    GITHUB_REPOS("github_repos"),
+    GITHUB_READ_FILE("github_read_file"),
+    GITHUB_LIST("github_list"),
+    GITHUB_WRITE_FILE("github_write_file"),
+    GITHUB_SEARCH_CODE("github_search_code"),
+    GITHUB_CREATE_REPO("github_create_repo");
 
     /** Инструмент ходит в интернет (доступен только с кнопкой «Поиск»). */
     val isWeb: Boolean
@@ -98,15 +105,19 @@ enum class HonerTool(val rawValue: String) {
             VIEW_IMAGE, TRANSCRIBE_MEDIA, EDIT_IMAGE) ||
             com.honerai.app.extras.device.DeviceToolSchemas.isDeviceTool(this) // extras
 
+    /** integ: инструменты GitHub через официальный API по токену пользователя. */
+    val isGitHub: Boolean get() = com.honerai.app.core.github.GitHubToolSchemas.isGitHubTool(this)
+
     /** Выполняется асинхронно (сеть, контакты, медиа). */
     val isAsync: Boolean get() = isWeb || this == FIND_CONTACT || this == OPEN_APP /* media */ || this == VIEW_IMAGE || this == TRANSCRIBE_MEDIA || this == EDIT_IMAGE ||
-        this == RUN_DEVICE_TASK /* agent */ ||
+        this == RUN_DEVICE_TASK /* agent */ || isGitHub /* integ */ ||
         com.honerai.app.extras.device.DeviceToolSchemas.isDeviceTool(this) // extras
 
     /** Описание для API: имя, назначение и параметры в формате JSON Schema. */
     val schema: JsonObject
         get() {
             if (com.honerai.app.core.agent.AgentToolSchemas.isAgentTool(this)) return com.honerai.app.core.agent.AgentToolSchemas.schema(this) // agent
+            if (isGitHub) return com.honerai.app.core.github.GitHubToolSchemas.schema(this) // integ
             if (isExtra) return ExtraToolSchemas.schema(this)
             if (this == OPEN_APP || this == SEND_MEDIA) return MediaToolSchemas.schema(this) // media:
             return when (this) {

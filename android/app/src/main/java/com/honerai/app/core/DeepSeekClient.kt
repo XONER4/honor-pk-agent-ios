@@ -216,6 +216,7 @@ class DeepSeekClient(
         val english = configuration.language == "en"
         var instruction = (if (english) HonerIdentity.englishInstruction else HonerIdentity.instruction) +
             MediaToolSchemas.PROMPT /* media: приложения, медиа, запрет платежей */ +
+            com.honerai.app.core.github.GitHubToolSchemas.PROMPT /* integ: GitHub через API по токену */ +
             HonerIdentity.currentDateTimeBlock() + deviceSummary() +
             // extras: инструменты телефона и состояние переключателя доступа к данным.
             com.honerai.app.extras.device.DeviceToolSchemas.promptBlock(com.honerai.app.extras.device.DeviceAccess.enabled.value) +
