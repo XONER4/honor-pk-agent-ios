@@ -23,6 +23,9 @@ data class InlinePalette(
     val codeBackground: Color,
 )
 
+/** Закрывающие теги цвета/фона/капса: без пары они скрываются, а не печатаются текстом. */
+private val ORPHAN_CLOSERS = arrayOf("{/bg}", "{/color}", "{/upper}")
+
 /**
  * Строчная разметка абзаца → AnnotatedString (порт AttributedString(markdown:) +
  * InlineStyleParser + linkedCitations + highlighted с iOS).
@@ -518,6 +521,8 @@ object InlineMarkup {
 
         // {color:red}…{/color}, {bg:yellow}…{/bg}, {upper}…{/upper}
         private fun brace(i: Int, end: Int): Int {
+            // Закрывающий тег без пары (модель ошиблась в разметке) — не показываем его текстом.
+            for (closer in ORPHAN_CLOSERS) if (src.startsWith(closer, i)) return i + closer.length
             if (src.startsWith("{upper}", i)) {
                 val close = src.indexOf("{/upper}", i + 7)
                 if (close in 0 until end) {
@@ -526,6 +531,7 @@ object InlineMarkup {
                     upper--
                     return close + 8
                 }
+                return i + 7 // открывающий без пары — просто пропускаем
             }
             for (tag in arrayOf("color", "bg")) {
                 val opener = "{$tag:"
@@ -535,7 +541,7 @@ object InlineMarkup {
                 val color = color(src.substring(i + opener.length, tokenEnd)) ?: break
                 val closer = "{/$tag}"
                 val close = src.indexOf(closer, tokenEnd + 1)
-                if (close < 0 || close >= end) break
+                if (close < 0 || close >= end) return tokenEnd + 1 // тег без пары — без стиля, но и без «{bg:…}» в тексте
                 out.pushStyle(if (tag == "bg") SpanStyle(background = color.copy(alpha = 0.55f)) else SpanStyle(color = color))
                 parse(tokenEnd + 1, close)
                 out.pop()

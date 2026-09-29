@@ -66,4 +66,12 @@ class InlineMarkupTest {
         assertEquals(code, SyntaxHighlighter.highlight(code, "kotlin", SyntaxHighlighter.dark).text)
         assertEquals("print(1)", SyntaxHighlighter.highlight("print(1)", "unknown", SyntaxHighlighter.light).text)
     }
+
+    @Test
+    fun orphanStyleTagsAreHidden() {
+        // Модель иногда ломает разметку: «{данные…}{/bg}» или «{color:red}» без пары.
+        assertEquals("{данные на сегодня}", InlineMarkup.build("{данные на сегодня}{/bg}", palette).text)
+        assertEquals("красный текст", InlineMarkup.build("{color:red}красный текст", palette).text)
+        assertEquals("капс", InlineMarkup.build("{upper}капс{/color}", palette).text.lowercase())
+    }
 }

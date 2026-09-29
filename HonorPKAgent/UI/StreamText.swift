@@ -1179,7 +1179,26 @@ enum InlineStyleParser {
         applyMark(in: &result)
         applySpoiler(in: &result)
         applyInlineMath(in: &result)
+        removeOrphanTags(in: &result)
         return result
+    }
+
+    /// Теги без пары (модель ошиблась в разметке, например «{данные…}{/bg}») не печатаются текстом.
+    /// Все парные теги к этому моменту уже разобраны, поэтому оставшиеся — сироты.
+    private static let orphanTagPattern = try! NSRegularExpression(
+        pattern: "\\{(?:/(?:bg|color|upper)|(?:bg|color):(?:#[0-9A-Fa-f]{3,8}|[a-zA-Zа-яА-Я]+)|upper)\\}")
+
+    private static func removeOrphanTags(in value: inout AttributedString) {
+        var guardCount = 0
+        while guardCount < 50 {
+            guardCount += 1
+            let plain = String(value.characters)
+            guard let match = orphanTagPattern.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)),
+                  let whole = Range(match.range, in: plain),
+                  let lower = AttributedString.Index(whole.lowerBound, within: value),
+                  let upper = AttributedString.Index(whole.upperBound, within: value) else { return }
+            value.removeSubrange(lower..<upper)
+        }
     }
 
     /// Инлайн-формулы вида $x^2$ превращаются в читаемый текст с настоящими

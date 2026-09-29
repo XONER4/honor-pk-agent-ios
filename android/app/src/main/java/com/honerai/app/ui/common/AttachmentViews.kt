@@ -25,6 +25,11 @@ import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Timelapse
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.BatteryChargingFull
+import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.Alarm
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -81,8 +86,18 @@ fun attachmentIcon(attachment: MessageAttachment): ImageVector = when (attachmen
     AttachmentKind.VIDEO -> Icons.Rounded.SmartDisplay
     AttachmentKind.AUDIO -> Icons.Rounded.GraphicEq
     AttachmentKind.STICKER -> Icons.Rounded.SentimentSatisfied
-    AttachmentKind.TEXT -> Icons.AutoMirrored.Rounded.Article
+    AttachmentKind.TEXT -> toolCardIcon(attachment.name) ?: Icons.AutoMirrored.Rounded.Article
     AttachmentKind.DOCUMENT -> documentIcon(attachment.extension())
+}
+
+/** Карточки инструментов телефона (будильник, таймер, состояние…) — со своим значком, а не «документом». */
+private fun toolCardIcon(name: String): ImageVector? = when {
+    name.startsWith("Будильник") || name.startsWith("Alarm") -> Icons.Rounded.Alarm
+    name.startsWith("Таймер") || name.startsWith("Timer") -> Icons.Rounded.Timer
+    name.startsWith("Состояние телефона") || name.startsWith("Phone status") -> Icons.Rounded.BatteryChargingFull
+    name.startsWith("Приложения на телефоне") || name.startsWith("Apps on") -> Icons.Rounded.Apps
+    name.startsWith("Экранное время") || name.startsWith("Screen time") -> Icons.Rounded.Timelapse
+    else -> null
 }
 
 private fun documentIcon(ext: String): ImageVector = when (ext) {

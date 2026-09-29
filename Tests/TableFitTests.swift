@@ -26,3 +26,15 @@ final class TableFitTests: XCTestCase {
         XCTAssertNil(TableColumnLayout.fitWidths(shares: [0.5, 0.5], minimums: [200, 200], available: 300))
     }
 }
+
+/// Сломанная моделью разметка цвета/фона не печатается текстом.
+final class OrphanStyleTagTests: XCTestCase {
+    func testOrphanTagsAreRemoved() {
+        let broken = InlineStyleParser.apply(to: AttributedString("{данные на сегодня}{/bg}"))
+        XCTAssertEqual(String(broken.characters), "{данные на сегодня}")
+        let opener = InlineStyleParser.apply(to: AttributedString("{color:red}красный текст"))
+        XCTAssertEqual(String(opener.characters), "красный текст")
+        let paired = InlineStyleParser.apply(to: AttributedString("{bg:yellow}фон{/bg}"))
+        XCTAssertEqual(String(paired.characters), "фон")
+    }
+}
