@@ -234,6 +234,16 @@ enum HonerIdentity {
 }
 
 enum RussianTextPolicy {
+    /// Скрытое напоминание к вопросу без русских букв (модель не должна его пересказывать).
+    static let russianReminder = "\n\n(Ответь по-русски — это язык приложения. Не упоминай это напоминание.)"
+
+    /// В вопросе есть буквы, но нет ни одной русской («Latest SpaceX news», вопрос по-китайски).
+    static func needsRussianReminder(_ text: String) -> Bool {
+        let letters = text.filter(\.isLetter).count
+        guard letters >= 3 else { return false }
+        return !text.contains { ("а"..."я").contains($0) || ("А"..."Я").contains($0) || $0 == "ё" || $0 == "Ё" }
+    }
+
     private static let codeAndURLs = try! NSRegularExpression(pattern: "(?s)```.*?```|`[^`]*`|https?://\\S+")
     private static let markdownLinks = try! NSRegularExpression(pattern: "\\[[^]]*\\]\\([^)]*\\)")
     private static let brandNames = try! NSRegularExpression(pattern: "(?i)\\b(?:Honer\\s+AI|Honor\\s+AI|Hon[oe]r\\s+PK\\s+Agent|Honor\\s+PC\\s+Agent|DeepSeek|OpenAI)\\b")
@@ -423,7 +433,10 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
         var estimatedBytes = instruction.utf8.count + searchContext.utf8.count
         /// Позиция сразу за последним вопросом пользователя: туда идут результаты поиска.
         var lastUserPosition: Int?
-        for message in messages {
+        // Вопрос без русских букв при русском языке приложения: модель склонна отвечать на языке
+        // вопроса — к последнему вопросу добавляется скрытое напоминание.
+        let lastUserIndex = messages.lastIndex(where: { $0.role == .user })
+        for (index, message) in messages.enumerated() {
             // Сообщение ассистента с вызовом инструмента часто не несёт текста, но
             // пропускать его нельзя: без него результаты инструментов (роль tool)
             // оказываются «ничьими», и сервис отклоняет весь запрос. Раньше именно так
@@ -441,6 +454,9 @@ struct DeepSeekClient: DeepSeekStreaming, RussianTextNormalizing {
             if message.role == .user, let quote = message.quote, !quote.isEmpty {
                 let question = text.isEmpty ? "(вопрос не написан — объясни этот фрагмент подробнее)" : text
                 text = "Пользователь выделил в переписке фрагмент и спрашивает о нём.\nФрагмент:\n«\(quote)»\n\nВопрос пользователя: \(question)"
+            }
+            if !english, index == lastUserIndex, RussianTextPolicy.needsRussianReminder(text) {
+                text += RussianTextPolicy.russianReminder
             }
             // Реакция-эмодзи пользователя на ответ агента попадает в контекст,
             // чтобы агент мог её учесть в следующем ответе (пункт 38 ТЗ).

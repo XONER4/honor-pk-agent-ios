@@ -254,7 +254,7 @@ class DeepSeekClient(
                 text = "Пользователь выделил в переписке фрагмент и спрашивает о нём.\nФрагмент:\n«$quote»\n\nВопрос пользователя: $question"
             }
             if (!english && message === lastUser && RussianTextPolicy.needsRussianReminder(text)) {
-                text += "\n\n[Ответь по-русски: язык приложения — русский.]"
+                text += "\n\n(Ответь по-русски — это язык приложения. Не упоминай это напоминание.)"
             }
             val reaction = message.reaction
             if (!reaction.isNullOrEmpty()) text += "\n[Реакция пользователя на это сообщение: $reaction]"
