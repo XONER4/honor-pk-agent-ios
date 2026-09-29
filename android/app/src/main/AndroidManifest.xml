@@ -22,6 +22,13 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <!-- media: «Скачать» на Android 7–9 пишет в общие папки Pictures/Movies/Music. -->
+    <!-- extras: будильник/таймер, запись экрана, доступ к статистике использования. -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
@@ -45,9 +52,16 @@
             <data android:scheme="https" />
         </intent>
         <!-- media: open_app — приложения Google, Яндекса, кошельки и программы главного экрана. -->
+        <!-- extras: список приложений для phone_data и приложение «Часы». -->
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_TIMER" />
         </intent>
         <intent>
             <action android:name="android.intent.action.SENDTO" />
@@ -114,6 +128,12 @@
             android:name=".device.GenerationService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- extras: скриншот и запись экрана по просьбе нейросети (MediaProjection). -->
+        <service
+            android:name=".extras.device.ScreenCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection|microphone" />
 
         <!-- Автообновление: итог установки и запуск после обновления. -->
         <receiver

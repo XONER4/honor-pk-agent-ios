@@ -142,12 +142,15 @@ fun HonerRoot(activity: MainActivity) {
                     // Идентификаторы testTag видны UI-тестам как resource-id (как accessibilityIdentifier на iOS).
                     .semantics { testTagsAsResourceId = true },
             ) {
+                // extras: лицензионное соглашение до знакомства, блокировка приложения, инструменты телефона.
+                com.honerai.app.extras.ExtrasGate(activity, settings) {
                 Crossfade(targetState = completed, animationSpec = tween(if (reduce) 0 else 350), label = "root") { done ->
                     if (done) {
                         ParentalGate { ChatRoot(activity) }
                     } else {
                         OnboardingScreen()
                     }
+                }
                 }
             }
         }

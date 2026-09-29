@@ -23,7 +23,9 @@ import androidx.compose.material.icons.outlined.FamilyRestroom
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Gavel
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Psychology
@@ -51,6 +53,7 @@ import com.honerai.app.ui.parental.ParentalControlPage
 internal enum class SettingsPage {
     ROOT, PROFILE, DATA, ARCHIVE, LANGUAGE, FONT, PERMISSIONS, PARENTAL, INTEGRATIONS, MEMORY,
     VOICE, VOICE_CLONE, STATISTICS, GUIDE, ABOUT,
+    APP_LOCK, LICENSE, // extras
 }
 
 /** Настройки со всеми страницами. [onClose] — закрыть настройки. */
@@ -104,6 +107,9 @@ fun SettingsScreen(onClose: () -> Unit) {
                     SettingsPage.STATISTICS -> StatisticsSettingsPage(pop)
                     SettingsPage.GUIDE -> HelpCenterScreen(onBack = pop)
                     SettingsPage.ABOUT -> AboutSettingsPage(pop)
+                    // extras: блокировка приложения и лицензионное соглашение.
+                    SettingsPage.APP_LOCK -> com.honerai.app.extras.lock.AppLockSettingsPage(pop)
+                    SettingsPage.LICENSE -> com.honerai.app.extras.license.LicenseSettingsPage(pop)
                 }
             }
         }
@@ -147,6 +153,13 @@ private fun SettingsRootPage(listState: androidx.compose.foundation.lazy.LazyLis
                 SettingsDivider()
                 SettingsRow(Icons.Outlined.Security, t("Разрешения", "Permissions"), tag = "settings.permissions") { push(SettingsPage.PERMISSIONS) }
                 SettingsDivider()
+                // extras: блокировка приложения.
+                val lockMode by com.honerai.app.extras.lock.AppLock.mode.collectAsState()
+                val lockContext = LocalContext.current
+                SettingsRow(Icons.Outlined.Lock, t("Блокировка приложения", "App lock"),
+                    remember(lockMode) { com.honerai.app.extras.lock.appLockSummary(lockContext, settings.isEnglish) },
+                    tag = "settings.appLock") { push(SettingsPage.APP_LOCK) }
+                SettingsDivider()
                 SettingsRow(
                     Icons.Outlined.FamilyRestroom, t("Родительский контроль", "Parental control"),
                     if (parental.rules.enabled) t("включён", "on") else t("выключен", "off"), tag = "settings.parental",
@@ -183,6 +196,8 @@ private fun SettingsRootPage(listState: androidx.compose.foundation.lazy.LazyLis
                 SettingsRow(Icons.AutoMirrored.Outlined.MenuBook, t("Руководство и возможности", "Guide and features"), tag = "settings.guide") { push(SettingsPage.GUIDE) }
                 SettingsDivider()
                 SettingsRow(Icons.Outlined.Description, "Honer AI", tag = "settings.about") { push(SettingsPage.ABOUT) }
+                SettingsDivider() // extras: перечитать лицензионное соглашение.
+                SettingsRow(Icons.Outlined.Gavel, t("Лицензионное соглашение", "License agreement"), tag = "settings.license") { push(SettingsPage.LICENSE) }
             }
         }
     }

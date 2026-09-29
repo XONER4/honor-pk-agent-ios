@@ -64,7 +64,14 @@ enum class HonerTool(val rawValue: String) {
     EDIT_IMAGE("edit_image"),
     // media: приложения на телефоне и медиа в чат.
     OPEN_APP("open_app"),
-    SEND_MEDIA("send_media");
+    SEND_MEDIA("send_media"),
+    // extras: инструменты устройства (extras/device/DeviceToolSchemas.kt).
+    SET_ALARM("set_alarm"),
+    SET_TIMER("set_timer"),
+    TAKE_SCREENSHOT("take_screenshot"),
+    SCREEN_RECORDING("start_screen_recording"),
+    SYSTEM_HEALTH("system_health"),
+    PHONE_DATA("phone_data");
 
     /** Инструмент ходит в интернет (доступен только с кнопкой «Поиск»). */
     val isWeb: Boolean
@@ -76,10 +83,12 @@ enum class HonerTool(val rawValue: String) {
     val isExtra: Boolean
         get() = this in setOf(CREATE_TABLE, UPDATE_TABLE, READ_TABLE, LIST_MEMORY, UPDATE_MEMORY, DELETE_MEMORY,
             READ_MANY_PAGES, YOUTUBE_SEARCH, YOUTUBE_VIDEO, GITHUB, MARKETPLACE_SEARCH, VK_PAGE, TELEGRAM_CHANNEL,
-            VIEW_IMAGE, TRANSCRIBE_MEDIA, EDIT_IMAGE)
+            VIEW_IMAGE, TRANSCRIBE_MEDIA, EDIT_IMAGE) ||
+            com.honerai.app.extras.device.DeviceToolSchemas.isDeviceTool(this) // extras
 
     /** Выполняется асинхронно (сеть, контакты, медиа). */
-    val isAsync: Boolean get() = isWeb || this == FIND_CONTACT || this == OPEN_APP /* media */ || this == VIEW_IMAGE || this == TRANSCRIBE_MEDIA || this == EDIT_IMAGE
+    val isAsync: Boolean get() = isWeb || this == FIND_CONTACT || this == OPEN_APP /* media */ || this == VIEW_IMAGE || this == TRANSCRIBE_MEDIA || this == EDIT_IMAGE ||
+        com.honerai.app.extras.device.DeviceToolSchemas.isDeviceTool(this) // extras
 
     /** Описание для API: имя, назначение и параметры в формате JSON Schema. */
     val schema: JsonObject

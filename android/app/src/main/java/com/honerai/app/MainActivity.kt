@@ -3,7 +3,7 @@ package com.honerai.app
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -12,7 +12,8 @@ import com.honerai.app.ui.HonerRoot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-class MainActivity : ComponentActivity() {
+// extras: FragmentActivity (наследник ComponentActivity) — нужен BiometricPrompt для блокировки приложения.
+class MainActivity : FragmentActivity() {
     /** Файлы и текст, присланные в Honer AI через «Поделиться». */
     private val _sharedIntent = MutableStateFlow<Intent?>(null)
     val sharedIntent: StateFlow<Intent?> get() = _sharedIntent

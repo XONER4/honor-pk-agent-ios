@@ -123,6 +123,7 @@ object HelpLibrary {
             editorSection, webSection, integrationsSection, tablesSection,
             memorySection, chatsSection, voiceSection, gamesSection,
             backgroundSection, privacySection, parentalSection, appearanceSection,
+            extrasSection, // extras: блокировка, инструменты телефона, соглашение
         )
     }
 

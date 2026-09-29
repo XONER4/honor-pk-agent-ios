@@ -13,10 +13,10 @@ import java.io.File
 class HelpLibraryTest {
     @Test
     fun sectionsAndArticlesHaveUniqueIds() {
-        assertEquals(16, HelpLibrary.sections.size)
+        assertEquals(17, HelpLibrary.sections.size) // extras: +1 раздел
         assertEquals(HelpLibrary.sections.size, HelpLibrary.sections.map { it.id }.toSet().size)
         val ids = HelpLibrary.allArticles.map { it.id }
-        assertEquals(57, ids.size) // media: +статья «Поисковики, приложения и загрузки»
+        assertEquals(60, ids.size) // media: +1 статья, extras: +3 статьи
         assertEquals(ids.size, ids.toSet().size)
         assertEquals(HelpLibrary.lifehacks.size, HelpLibrary.lifehacks.map { it.id }.toSet().size)
         assertEquals(HelpLibrary.chips.size, HelpLibrary.chips.map { it.id }.toSet().size)

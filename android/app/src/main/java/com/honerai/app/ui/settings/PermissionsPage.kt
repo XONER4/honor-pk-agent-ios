@@ -160,6 +160,7 @@ internal fun PermissionsPage(onBack: () -> Unit) {
                 }
             }
         }
+        item(key = "extras.device") { com.honerai.app.extras.device.DeviceAccessSettingsGroup() } // extras
         item(key = "open") {
             SettingsGroup {
                 SettingsButtonRow(t("Открыть настройки Android", "Open Android settings"), tag = "permissions.openSettings") { openAppSettings(context) }

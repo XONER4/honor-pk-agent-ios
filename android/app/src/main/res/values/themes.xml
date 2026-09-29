@@ -4,6 +4,8 @@
         <item name="android:windowBackground">@color/honer_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- extras: окно отпечатка BiometricPrompt на Android 7–8 — диалог AppCompat, ему нужна своя тема. -->
+        <item name="alertDialogTheme">@style/Theme.AppCompat.DayNight.Dialog.Alert</item>
     </style>
     <style name="Theme.Honer.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/honer_icon_background</item>

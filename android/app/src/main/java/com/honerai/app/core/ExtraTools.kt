@@ -101,7 +101,8 @@ object ExtraToolSchemas {
             "operations" to s.array(kotlinx.serialization.json.buildJsonObject { put("type", JsonPrimitive("object")) },
                 "Список операций: [{\"type\":\"remove_background\"}, {\"type\":\"text\",\"text\":\"Привет\",\"x\":0.5,\"y\":0.85}]"),
         ), listOf("operations"))
-        else -> s.function(tool.rawValue, "", emptyMap(), emptyList())
+        else -> com.honerai.app.extras.device.DeviceToolSchemas.schema(tool) // extras
+            ?: s.function(tool.rawValue, "", emptyMap(), emptyList())
     }
 
     /** Шаг для ленты «что делает Honer AI». */
@@ -126,6 +127,7 @@ object ExtraToolSchemas {
             HonerTool.TRANSCRIBE_MEDIA -> GenerationStep(kind = "read", title = "Слушаю и расшифровываю", detail = argument("source"))
             HonerTool.EDIT_IMAGE -> GenerationStep(kind = "draw", title = "Редактирую фото")
             else -> MediaToolSchemas.step(call) // media: open_app, send_media
+                ?: com.honerai.app.extras.device.DeviceToolSchemas.step(call) // extras
         }
     }
 
@@ -141,6 +143,7 @@ object ExtraToolSchemas {
             HonerTool.UPDATE_MEMORY to "Обновляю память…", HonerTool.DELETE_MEMORY to "Обновляю память…",
         )
         return map.firstOrNull { it.first.rawValue in names }?.second ?: MediaToolSchemas.status(names) // media:
+            ?: com.honerai.app.extras.device.DeviceToolSchemas.status(names) // extras
     }
 }
 
@@ -408,7 +411,8 @@ class ExtraToolExecutor(
             HonerTool.VIEW_IMAGE -> media.viewImage(call, text("url"), text("question"))
             HonerTool.TRANSCRIBE_MEDIA -> media.transcribe(call, text("source"), text("language"), progress)
             HonerTool.EDIT_IMAGE -> media.editImage(call, text("source"), arguments["operations"] ?: arguments)
-            else -> executeLocal(call)
+            // extras: будильник, таймер, экран, состояние и данные телефона.
+            else -> com.honerai.app.extras.device.DeviceTools.execute(call, context, progress) ?: executeLocal(call)
         }
     }
 }

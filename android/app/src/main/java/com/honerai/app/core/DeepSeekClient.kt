@@ -216,7 +216,9 @@ class DeepSeekClient(
         val english = configuration.language == "en"
         var instruction = (if (english) HonerIdentity.englishInstruction else HonerIdentity.instruction) +
             MediaToolSchemas.PROMPT /* media: приложения, медиа, запрет платежей */ +
-            HonerIdentity.currentDateTimeBlock() + deviceSummary()
+            HonerIdentity.currentDateTimeBlock() + deviceSummary() +
+            // extras: инструменты телефона и состояние переключателя доступа к данным.
+            com.honerai.app.extras.device.DeviceToolSchemas.promptBlock(com.honerai.app.extras.device.DeviceAccess.enabled.value)
         if (systemInstruction.isNotBlank()) {
             instruction += "\nПерсональные настройки пользователя. Применяй выбранные тон, обращение и длину ответа к каждому ответу, если текущий вопрос явно не просит иначе:\n$systemInstruction"
             if (PersonalizationPolicy.prefersBriefAnswers(systemInstruction)) {
