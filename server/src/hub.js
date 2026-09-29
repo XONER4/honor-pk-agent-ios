@@ -166,11 +166,11 @@ export class Hub {
     return { online, inBackground };
   }
 
-  kickDevice(deviceId, reason) {
+  kickDevice(deviceId, reason, until = null) {
     const e = this.devices.get(deviceId);
     if (!e) return;
     for (const ws of [...e.sockets]) {
-      this.send(ws, { t: 'blocked', message: reason || '' });
+      this.send(ws, { t: 'blocked', message: reason || '', until: until ? new Date(until).toISOString() : null });
       try { ws.close(4003, 'blocked'); } catch { /* ignore */ }
     }
   }

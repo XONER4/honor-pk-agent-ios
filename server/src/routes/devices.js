@@ -1,6 +1,10 @@
-// Эндпоинты устройства: регистрация, профиль, статистика.
+// Эндпоинты устройства: регистрация, профиль, статистика, отчёты об ошибках.
 import { randomUUID } from 'node:crypto';
 import { blocked, rateLimited } from '../errors.js';
+import { unblockIfExpired } from '../auth.js';
+import { json } from '../db.js';
+import { recordDeviceEvent } from '../device-events.js';
+import { ensurePublicId } from '../public-id.js';
 import { deviceProfileProps } from './schemas.js';
 
 // API-поле → колонка devices (только из этого словаря).
@@ -17,8 +21,17 @@ const PROFILE_COLUMNS = {
   pushToken: 'push_token',
 };
 
-/** Обновляет присланные поля профиля устройства. */
+/** Персональные ограничения устройства (как хранятся в devices.overrides). */
+export const deviceOverrides = (device) => {
+  const o = json(device?.overrides, null);
+  return o && typeof o === 'object' && !Array.isArray(o) ? o : {};
+};
+
+/** Обновляет присланные поля профиля устройства; смена appVersion пишет событие update (from → to). */
 async function updateProfile(db, deviceId, body, extraSets = []) {
+  const before = body.appVersion !== undefined
+    ? await db.one('SELECT app_version FROM devices WHERE id = $1', [deviceId])
+    : null;
   const sets = [...extraSets];
   const params = [deviceId];
   for (const [field, col] of Object.entries(PROFILE_COLUMNS)) {
@@ -32,6 +45,9 @@ async function updateProfile(db, deviceId, body, extraSets = []) {
   // Один push-токен — одно устройство (после переустановки токен может «переехать»).
   if (body.pushToken) {
     await db.query('UPDATE devices SET push_token = NULL WHERE push_token = $1 AND id <> $2', [body.pushToken, deviceId]);
+  }
+  if (before?.app_version && body.appVersion && before.app_version !== body.appVersion) {
+    await recordDeviceEvent(db, deviceId, 'update', { from: before.app_version, to: body.appVersion });
   }
 }
 
@@ -50,6 +66,7 @@ export default async function deviceRoutes(app) {
     if (!limits.register.take(req.ip)) throw rateLimited();
     const b = req.body;
     let device = await db.one('SELECT * FROM devices WHERE install_id = $1', [b.installId]);
+    let created = false;
 
     if (!device) {
       const now = new Date();
@@ -65,17 +82,23 @@ export default async function deviceRoutes(app) {
         await db.query(
           `INSERT INTO counters (name, value) VALUES ('installs', 1)
            ON CONFLICT (name) DO UPDATE SET value = counters.value + 1`);
+        created = true;
       } else {
         await db.query('DELETE FROM users WHERE id = $1', [userId]); // проиграли гонку параллельной регистрации
       }
       device = await db.one('SELECT * FROM devices WHERE install_id = $1', [b.installId]);
     }
-    if (device.blocked) throw blocked(device.block_reason);
+    device = await unblockIfExpired(db, device);
+    if (device.blocked) throw blocked(device.block_reason, device.blocked_until);
 
     await updateProfile(db, device.id, b, ['register_count = register_count + 1']);
+    if (created) await recordDeviceEvent(db, device.id, 'install', { to: b.appVersion });
     const chat = (await chats.getDeviceChat(device.id)) || (await chats.createChatForDevice(device.id));
     const token = await auth.issueDeviceToken(device.id);
-    return { deviceId: device.id, token, userId: device.user_id, adminChatId: chat.id };
+    const publicId = await ensurePublicId(db, device.user_id);
+    return {
+      deviceId: device.id, token, userId: device.user_id, adminChatId: chat.id, publicId, overrides: deviceOverrides(device),
+    };
   });
 
   app.patch('/v1/devices/me', {
@@ -83,7 +106,8 @@ export default async function deviceRoutes(app) {
     schema: { body: { type: 'object', properties: deviceProfileProps } },
   }, async (req) => {
     await updateProfile(db, req.device.id, req.body || {});
-    return { ok: true };
+    const publicId = await ensurePublicId(db, req.device.user_id);
+    return { ok: true, publicId, overrides: deviceOverrides(req.device) };
   });
 
   app.post('/v1/devices/me/stats', {
@@ -107,5 +131,36 @@ export default async function deviceRoutes(app) {
        WHERE id = $1`,
       [req.device.id, messagesSent, secondsInApp]);
     return { ok: true };
+  });
+
+  // Ошибка или падение приложения. Длинные тексты обрезаются, частота ограничена на устройство.
+  app.post('/v1/devices/me/report', {
+    preHandler: auth.requireDevice,
+    bodyLimit: 256 * 1024,
+    schema: {
+      body: {
+        type: 'object',
+        required: ['kind', 'message'],
+        properties: {
+          kind: { type: 'string', enum: ['error', 'crash'] },
+          message: { type: 'string', minLength: 1, maxLength: 20_000 },
+          stack: { type: ['string', 'null'], maxLength: 200_000 },
+          appVersion: { type: ['string', 'null'], maxLength: 50 },
+          at: { type: ['string', 'null'], format: 'date-time' },
+        },
+      },
+    },
+  }, async (req) => {
+    if (!limits.report.take(req.device.id)) throw rateLimited('Слишком много отчётов, попробуйте позже');
+    const b = req.body;
+    // Время события — с телефона (падение могло случиться давно), но не из будущего.
+    const at = b.at && new Date(b.at).getTime() <= Date.now() ? new Date(b.at) : new Date();
+    const id = randomUUID();
+    await db.query(
+      `INSERT INTO client_reports (id, device_id, kind, message, stack, app_version, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, req.device.id, b.kind, b.message.slice(0, 2000), b.stack ? b.stack.slice(0, 16_000) : null,
+        b.appVersion || req.device.app_version || null, at]);
+    return { ok: true, id };
   });
 }

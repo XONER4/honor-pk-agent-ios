@@ -59,15 +59,27 @@ class CloudApi(
         call("POST", "/v1/devices/register", CloudJson.encodeToString(RegisterRequest.serializer(), request), RegisterResponse.serializer(), auth = false)
 
     /** Есть ли на сервере ключ нейросети (GET /health → ai). Ошибка связи — null. */
-    fun serverAiReady(): Boolean? = runCatching {
+    fun serverAiReady(): Boolean? = serverHealth()?.first
+
+    /**
+     * GET /health → (ai, aiEnabled): есть ли ключ нейросети и не выключил ли ИИ администратор
+     * (старый сервер без aiEnabled — true). Ошибка связи — null.
+     */
+    fun serverHealth(): Pair<Boolean, Boolean>? = runCatching {
         http.newCall(Request.Builder().url(CloudUrls.api(base, "/health")).get().build()).execute().use { response ->
             if (!response.isSuccessful) return@use null
             val body = response.body?.string().orEmpty()
-            Regex("\"ai\"\\s*:\\s*(true|false)").find(body)?.groupValues?.get(1)?.toBoolean() ?: false
+            fun flag(name: String): Boolean? =
+                Regex("\"$name\"\\s*:\\s*(true|false)").find(body)?.groupValues?.get(1)?.toBoolean()
+            (flag("ai") ?: false) to (flag("aiEnabled") ?: true)
         }
     }.getOrNull()
 
-    fun patchMe(fields: JsonObject) { exec("PATCH", "/v1/devices/me", fields.toString()) }
+    /** PATCH /v1/devices/me; новый сервер отвечает publicId и ограничениями (старый — {"ok":true}). */
+    fun patchMe(fields: JsonObject): MeResponse = call("PATCH", "/v1/devices/me", fields.toString(), MeResponse.serializer())
+
+    /** Отчёт об ошибке или падении (POST /v1/devices/me/report). */
+    fun report(report: ReportRequest) { exec("POST", "/v1/devices/me/report", CloudJson.encodeToString(ReportRequest.serializer(), report)) }
 
     fun stats(stats: StatsRequest) { exec("POST", "/v1/devices/me/stats", CloudJson.encodeToString(StatsRequest.serializer(), stats)) }
 

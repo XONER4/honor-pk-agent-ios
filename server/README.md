@@ -10,7 +10,7 @@
 
 ```bash
 npm install
-npm test                               # 43 теста на pg-mem, без настоящего Postgres
+npm test                               # 58 тестов на pg-mem, без настоящего Postgres
 DB_MODE=memory ADMIN_KEY=dev npm start # сервер с БД в памяти → http://localhost:3000/health
 ```
 
@@ -56,7 +56,13 @@ src/
   media.js           файловое хранилище, HTTP Range
   ratelimit.js       in-memory лимитеры
   errors.js          формат ошибок {"error","message"}
-  routes/            devices, chats (устройство + админ), media, notifications, ai (прокси), admin
+  passwords.js       пароли админа (scrypt + соль, сравнение за постоянное время)
+  public-id.js       4-значный публичный ID пользователя
+  metrics.js         метрики в памяти (запросы/с, задержки) и расход ИИ по дням (usage_daily)
+  ai-control.js      общий выключатель ИИ и расписание (server_settings)
+  device-events.js   события установки/обновления и журнал действий админов
+  routes/            devices, chats (устройство + админ), media, notifications, ai (прокси), admin,
+                     admin-insights (метрики, ИИ, отчёты, заметки, журнал, ограничения)
 test/                node:test + pg-mem, мок DeepSeek на локальном HTTP-сервере
 ```
 
@@ -65,4 +71,4 @@ test/                node:test + pg-mem, мок DeepSeek на локальном
 Токены — 32 случайных байта, в БД только SHA-256; ключ DeepSeek, токены и тела запросов не логируются
 (в логе запросов URL без query-string); весь SQL параметризован; входные данные валидируются JSON-схемами;
 лимиты размера тела (1 МБ JSON, 4 МБ для AI-прокси, 100 МБ файл); CORS закрыт; заголовки nosniff/DENY/CSP/HSTS;
-ключ админа сравнивается за постоянное время; неудачные входы ограничены по IP.
+ключ админа сравнивается за постоянное время; пароли админа — scrypt со случайной солью; неудачные входы ограничены по IP.

@@ -26,7 +26,7 @@ class SessionStore(context: Context) {
     private val _session = MutableStateFlow(readSession())
     val session: StateFlow<AdminSession?> get() = _session
 
-    private val _serverUrl = MutableStateFlow(normalizeUrl(plain.getString(KEY_URL, null) ?: BuildConfig.HONER_CLOUD_URL))
+    private val _serverUrl = MutableStateFlow(initialServerUrl())
     val serverUrl: StateFlow<String> get() = _serverUrl
 
     /** Причина последнего выхода (истёк токен) — показывается на экране входа. */
@@ -34,6 +34,14 @@ class SessionStore(context: Context) {
     val logoutReason: StateFlow<String?> get() = _logoutReason
 
     val buildServerUrl: String get() = normalizeUrl(BuildConfig.HONER_CLOUD_URL)
+
+    /** Сохранённый адрес; устаревший (Railway напрямую, localhost) заменяется адресом из сборки (релей). */
+    private fun initialServerUrl(): String {
+        val saved = plain.getString(KEY_URL, null)
+        val resolved = resolveServerUrl(saved, BuildConfig.HONER_CLOUD_URL)
+        if (saved != null && resolved != normalizeUrl(saved)) plain.edit().putString(KEY_URL, resolved).apply()
+        return resolved
+    }
 
     fun setServerUrl(url: String) {
         val clean = normalizeUrl(url)
@@ -94,6 +102,24 @@ class SessionStore(context: Context) {
         private const val KEY_EMAIL = "email"
         private const val KEY_NAME = "name"
         private const val KEY_URL = "serverUrl"
+
+        /**
+         * Какой адрес сервера использовать: сохранённый, если он есть и не устарел; иначе — из сборки.
+         * Устаревшие: *.up.railway.app (Railway недоступен из России — ходим через релей) и локальные адреса.
+         */
+        fun resolveServerUrl(saved: String?, build: String): String {
+            val fromBuild = normalizeUrl(build)
+            val stored = saved?.let { normalizeUrl(it) }.orEmpty()
+            if (stored.isEmpty()) return fromBuild
+            if (fromBuild.isNotEmpty() && stored != fromBuild && isObsoleteUrl(stored)) return fromBuild
+            return stored
+        }
+
+        fun isObsoleteUrl(url: String): Boolean {
+            val host = runCatching { java.net.URI(url).host }.getOrNull()?.lowercase() ?: return false
+            return host.endsWith(".up.railway.app") || host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2" ||
+                host.endsWith(".localhost")
+        }
 
         /** «honer.up.railway.app/» → «https://honer.up.railway.app». */
         fun normalizeUrl(raw: String): String {

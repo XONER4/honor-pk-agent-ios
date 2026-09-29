@@ -7,12 +7,19 @@ import com.honerai.admin.data.Presence
 /** Фильтры списка пользователей: Все / В сети / В фоне / Заблокированы. */
 enum class UserFilter { ALL, ONLINE, BACKGROUND, BLOCKED }
 
+/** Порядок списка: по активности (как раньше) или по расходу токенов ИИ. */
+enum class UserSort { ACTIVITY, TOKENS }
+
 /** Чистая логика списка пользователей и живых счётчиков — тестируется без Android. */
 object UserList {
 
-    /** Фильтр, поиск по имени/модели и порядок: непрочитанные, в сети, в фоне, затем по времени визита. */
-    fun visible(devices: Collection<DeviceSummary>, filter: UserFilter, query: String): List<DeviceSummary> {
+    /**
+     * Фильтр, поиск по имени/модели/ID («0427» или «#0427») и порядок: непрочитанные, в сети, в фоне,
+     * затем по времени визита; [sort] = TOKENS — сначала те, кто потратил больше токенов.
+     */
+    fun visible(devices: Collection<DeviceSummary>, filter: UserFilter, query: String, sort: UserSort = UserSort.ACTIVITY): List<DeviceSummary> {
         val needle = query.trim().lowercase()
+        val idNeedle = needle.removePrefix("#").takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
         return devices.asSequence()
             .filter {
                 when (filter) {
@@ -24,12 +31,18 @@ object UserList {
             }
             .filter {
                 needle.isEmpty() || it.displayName.lowercase().contains(needle) || it.deviceModel.lowercase().contains(needle) ||
-                    it.deviceName.lowercase().contains(needle) || it.deviceId.lowercase().startsWith(needle)
+                    it.deviceName.lowercase().contains(needle) || it.deviceId.lowercase().startsWith(needle) ||
+                    (idNeedle != null && it.publicId?.contains(idNeedle) == true)
             }
             .sortedWith(
-                compareByDescending<DeviceSummary> { it.unreadForAdmin > 0 }
-                    .thenBy { presenceRank(it.presence) }
-                    .thenByDescending { Times.parse(it.lastSeen)?.toEpochMilli() ?: 0L },
+                if (sort == UserSort.TOKENS) {
+                    compareByDescending<DeviceSummary> { it.aiTokens }
+                        .thenBy { presenceRank(it.presence) }
+                } else {
+                    compareByDescending<DeviceSummary> { it.unreadForAdmin > 0 }
+                        .thenBy { presenceRank(it.presence) }
+                        .thenByDescending { Times.parse(it.lastSeen)?.toEpochMilli() ?: 0L }
+                },
             )
             .toList()
     }

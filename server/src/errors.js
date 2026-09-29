@@ -1,18 +1,21 @@
 // Единый формат ошибок API: HTTP-статус + {"error":"code","message":"текст (ru)"}.
 
 export class ApiError extends Error {
-  constructor(status, code, message) {
+  /** extra — дополнительные поля тела ответа (например, until у blocked). */
+  constructor(status, code, message, extra = null) {
     super(message || code);
     this.statusCode = status;
     this.code = code;
     this.expose = true;
+    this.extra = extra;
   }
 }
 
 export const badRequest = (msg = 'Некорректный запрос') => new ApiError(400, 'bad_request', msg);
 export const unauthorized = (msg = 'Требуется авторизация') => new ApiError(401, 'unauthorized', msg);
 export const forbidden = (msg = 'Доступ запрещён') => new ApiError(403, 'forbidden', msg);
-export const blocked = (reason) => new ApiError(403, 'blocked', reason || '');
+export const blocked = (reason, until = null) =>
+  new ApiError(403, 'blocked', reason || '', { until: until ? new Date(until).toISOString() : null });
 export const notFound = (msg = 'Не найдено') => new ApiError(404, 'not_found', msg);
 export const conflict = (msg = 'Конфликт') => new ApiError(409, 'conflict', msg);
 export const rateLimited = (msg = 'Слишком много запросов, попробуйте позже') => new ApiError(429, 'rate_limited', msg);
@@ -31,7 +34,7 @@ const STATUS_CODES = {
 /** Fastify error handler: приводит любые ошибки к формату контракта, не раскрывая внутренности. */
 export function errorHandler(err, request, reply) {
   if (err instanceof ApiError) {
-    return reply.code(err.statusCode).send({ error: err.code, message: err.message });
+    return reply.code(err.statusCode).send({ error: err.code, message: err.message, ...(err.extra || {}) });
   }
   if (err.validation) {
     const detail = err.validation[0];

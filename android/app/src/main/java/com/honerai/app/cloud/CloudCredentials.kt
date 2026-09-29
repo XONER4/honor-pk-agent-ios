@@ -87,6 +87,15 @@ class CloudCredentials(context: Context) {
         get() = plain.getString("profileFingerprint", null)
         set(value) = plain.edit().putString("profileFingerprint", value).apply()
 
+    /** Короткий публичный ID пользователя («0427») — показывается в настройках. */
+    var publicId: String?
+        get() = plain.getString("publicId", null)
+        set(value) = plain.edit().putString("publicId", value).apply()
+    /** Последние ограничения от администратора (JSON CloudOverrides) — действуют и без сети. */
+    var overridesJson: String?
+        get() = plain.getString("overrides", null)
+        set(value) = plain.edit().putString("overrides", value).apply()
+
     fun clearSession() {
         token = null
         plain.edit().remove("profileFingerprint").apply()

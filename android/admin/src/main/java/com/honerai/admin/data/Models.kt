@@ -101,6 +101,10 @@ data class Overview(
     val inBackground: Int = 0,
     val blocked: Int = 0,
     val messagesToday: Int = 0,
+    val updates: Int = 0,
+    val uninstalls: Int = 0,
+    val inactive: Int = 0,
+    val inactiveDays: Int = 7,
 )
 
 /** Строка списка пользователей (GET /v1/admin/devices). */
@@ -108,6 +112,7 @@ data class Overview(
 data class DeviceSummary(
     val deviceId: String,
     val userId: String = "",
+    val publicId: String? = null,
     val displayName: String = "",
     val deviceModel: String = "",
     val deviceName: String = "",
@@ -122,6 +127,9 @@ data class DeviceSummary(
     val secondsInApp: Long = 0,
     val unreadForAdmin: Int = 0,
     val adminChatId: String = "",
+    val blockedUntil: String? = null,
+    val aiTokens: Long = 0,
+    val reports: Int = 0,
 )
 
 /** Карточка пользователя (GET /v1/admin/devices/:id) — DeviceSummary + подробности. */
@@ -129,6 +137,7 @@ data class DeviceSummary(
 data class DeviceDetail(
     val deviceId: String,
     val userId: String = "",
+    val publicId: String? = null,
     val displayName: String = "",
     val deviceModel: String = "",
     val deviceName: String = "",
@@ -149,15 +158,22 @@ data class DeviceDetail(
     val licenseAcceptedAt: String? = null,
     val blockReason: String? = null,
     val installs: Int = 0,
+    val blockedUntil: String? = null,
+    val aiTokens: Long = 0,
+    val reports: Int = 0,
+    val overrides: Overrides = Overrides(),
+    val usage: DeviceUsage? = null,
 ) {
     fun summary(): DeviceSummary = DeviceSummary(
-        deviceId, userId, displayName, deviceModel, deviceName, platform, appVersion, installedAt, lastSeen,
-        presence, typingIn, blocked, messagesSent, secondsInApp, unreadForAdmin, adminChatId,
+        deviceId = deviceId, userId = userId, publicId = publicId, displayName = displayName, deviceModel = deviceModel,
+        deviceName = deviceName, platform = platform, appVersion = appVersion, installedAt = installedAt, lastSeen = lastSeen,
+        presence = presence, typingIn = typingIn, blocked = blocked, messagesSent = messagesSent, secondsInApp = secondsInApp,
+        unreadForAdmin = unreadForAdmin, adminChatId = adminChatId, blockedUntil = blockedUntil, aiTokens = aiTokens, reports = reports,
     )
 }
 
 @Serializable
-data class LoginResponse(val token: String, val email: String = "", val name: String = "")
+data class LoginResponse(val token: String, val email: String = "", val name: String = "", val login: String? = null)
 
 @Serializable
 data class BroadcastResult(val ok: Boolean = true, val count: Int? = null)
@@ -172,6 +188,9 @@ data class SendMessageBody(
     val attachments: List<AttachmentRef> = emptyList(),
     val replyTo: String? = null,
 )
+
+/** «#0427» — короткий публичный ID пользователя (или пусто, если сервер его ещё не выдал). */
+fun DeviceSummary.idLabel(): String = publicId?.takeIf { it.isNotBlank() }?.let { "#$it" }.orEmpty()
 
 /** Имя для показа: displayName, иначе модель телефона. */
 fun DeviceSummary.title(english: Boolean): String =

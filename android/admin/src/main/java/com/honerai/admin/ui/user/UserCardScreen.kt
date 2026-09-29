@@ -47,7 +47,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.honerai.admin.AdminContainer
 import com.honerai.admin.core.PresenceText
 import com.honerai.admin.core.Times
+import com.honerai.admin.core.BlockTerm
+import com.honerai.admin.data.AdminAction
+import com.honerai.admin.data.AdminNote
+import com.honerai.admin.data.ClientReport
 import com.honerai.admin.data.DeviceDetail
+import com.honerai.admin.data.DeviceEvent
+import com.honerai.admin.data.idLabel
+import kotlinx.serialization.json.JsonObject
+import java.time.Instant
 import com.honerai.admin.data.Presence
 import com.honerai.admin.data.title
 import com.honerai.admin.net.friendlyError
@@ -93,6 +101,12 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
     var blockDialog by remember { mutableStateOf(false) }
     var reason by remember { mutableStateOf("") }
     var blockBusy by remember { mutableStateOf(false) }
+    var blockTerm by remember { mutableStateOf(BlockTerm.FOREVER) }
+    var events by remember { mutableStateOf<List<DeviceEvent>>(emptyList()) }
+    var notes by remember { mutableStateOf<List<AdminNote>>(emptyList()) }
+    var actions by remember { mutableStateOf<List<AdminAction>>(emptyList()) }
+    var reports by remember { mutableStateOf<List<ClientReport>>(emptyList()) }
+    var extraBusy by remember { mutableStateOf(false) }
     val now = rememberNow()
     val zone = remember { ZoneId.systemDefault() }
 
@@ -109,6 +123,37 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
         }
     }
 
+    // История, заметки, журнал и отчёты — отдельными запросами: их ошибка не мешает карточке.
+    LaunchedEffect(deviceId, reload) {
+        runCatching { container.api.deviceEvents(deviceId) }.onSuccess { events = it }
+        runCatching { container.api.notes(deviceId) }.onSuccess { notes = it }
+        runCatching { container.api.actions(deviceId, limit = 30) }.onSuccess { actions = it }
+        runCatching { container.api.reports(deviceId = deviceId, limit = 10) }.onSuccess { reports = it }
+    }
+
+    /** Действие с карточкой (заметки, ограничения): тост с ошибкой, потом перечитываем журнал. */
+    fun act(block: suspend () -> Unit) {
+        extraBusy = true
+        scope.launch {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                toast.show(friendlyError(e, english))
+            } finally {
+                extraBusy = false
+                runCatching { container.api.actions(deviceId, limit = 30) }.onSuccess { actions = it }
+            }
+        }
+    }
+
+    fun changeOverrides(patch: JsonObject) = act {
+        val updated = container.api.setOverrides(deviceId, patch)
+        detail = detail?.copy(overrides = updated)
+        toast.show(if (english) "Restrictions saved" else "Ограничения сохранены")
+    }
+
     // Живые поля (присутствие, «печатает») берём из списка — он обновляется кадрами WebSocket.
     val d = detail
     val presence = summary?.presence ?: d?.presence ?: Presence.OFFLINE
@@ -121,16 +166,19 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
         blockBusy = true
         scope.launch {
             try {
-                val updated = container.api.setBlocked(deviceId, value, reason.takeIf { value })
+                val until = if (value) blockTerm.until(Instant.now()) else null
+                val updated = container.api.setBlocked(deviceId, value, reason.takeIf { value }, until)
                 container.repo.setBlockedLocally(deviceId, value)
                 if (updated != null) {
                     detail = updated
                     container.repo.putDetail(updated)
                 } else {
-                    detail = detail?.copy(blocked = value, blockReason = if (value) reason.trim().ifEmpty { null } else null)
+                    detail = detail?.copy(blocked = value, blockReason = if (value) reason.trim().ifEmpty { null } else null, blockedUntil = until)
                 }
                 toast.show(if (value) (if (english) "User blocked" else "Пользователь заблокирован") else (if (english) "User unblocked" else "Пользователь разблокирован"))
                 reason = ""
+                blockTerm = BlockTerm.FOREVER
+                runCatching { container.api.actions(deviceId, limit = 30) }.onSuccess { actions = it }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -161,6 +209,9 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
                         Avatar(name, deviceId, if (blocked) null else presence, size = 88.dp, blocked = blocked)
                         Spacer(Modifier.height(12.dp))
                         Text(name, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = colors.foreground, textAlign = TextAlign.Center)
+                        (summary ?: d?.summary())?.idLabel()?.takeIf { it.isNotEmpty() }?.let {
+                            Text("ID $it", fontSize = 14.sp, color = colors.secondary)
+                        }
                         Spacer(Modifier.height(4.dp))
                         if (summary?.typingIn != null) {
                             TypingLabel(tr("печатает", "typing"), fontSize = 14)
@@ -172,9 +223,12 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
                             Spacer(Modifier.height(10.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.Block, null, tint = colors.danger, modifier = Modifier.size(16.dp))
+                                val until = Times.parse(summary?.blockedUntil ?: d?.blockedUntil)
                                 Text(
-                                    " " + tr("Заблокирован", "Blocked") + (d?.blockReason?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""),
-                                    color = colors.danger, fontSize = 14.sp,
+                                    " " + tr("Заблокирован", "Blocked") +
+                                        (until?.let { tr(" до ", " until ") + PresenceText.dateTime(it, zone) } ?: tr(" навсегда", " permanently")) +
+                                        (d?.blockReason?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""),
+                                    color = colors.danger, fontSize = 14.sp, textAlign = TextAlign.Center,
                                 )
                             }
                         }
@@ -204,6 +258,25 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
                             Spacer(Modifier.height(12.dp))
                             Text(error.orEmpty(), color = colors.danger, fontSize = 13.sp)
                         }
+                        if (d != null) {
+                            CardLabel(tr("Нейросеть", "AI usage"))
+                            UsageCard(d.usage, summary?.reports ?: d.reports)
+                            CardLabel(tr("Ограничения", "Restrictions"))
+                            OverridesCard(d.overrides, extraBusy, ::changeOverrides)
+                        }
+                        CardLabel(tr("Ошибки и падения", "Errors and crashes"))
+                        UserReportsCard(reports, now)
+                        CardLabel(tr("История версий", "Version history"))
+                        EventsCard(events, zone)
+                        CardLabel(tr("Заметки", "Notes"))
+                        NotesCard(
+                            notes, extraBusy, zone,
+                            onAdd = { text -> act { val n = container.api.addNote(deviceId, text); notes = listOf(n) + notes } },
+                            onEdit = { note, text -> act { val n = container.api.editNote(note.id, text); notes = notes.map { if (it.id == n.id) n else it } } },
+                            onDelete = { note -> act { container.api.deleteNote(note.id); notes = notes.filter { it.id != note.id } } },
+                        )
+                        CardLabel(tr("Действия администраторов", "Admin actions"))
+                        ActionsCard(actions, now, zone)
                     }
                 }
             }
@@ -221,7 +294,12 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
             onDismiss = { blockDialog = false },
             onConfirm = { blockDialog = false; setBlocked(!blocked) },
             content = if (blocked) null else {
-                { HonerField(reason, { reason = it }, tr("Причина (необязательно)", "Reason (optional)"), singleLine = false, minLines = 2) }
+                {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        HonerField(reason, { reason = it }, tr("Причина (необязательно)", "Reason (optional)"), singleLine = false, minLines = 2)
+                        BlockTermPicker(blockTerm) { blockTerm = it }
+                    }
+                }
             },
         )
     }
@@ -259,6 +337,7 @@ private fun InfoCard(
         })
         add(tr("Лицензия принята", "License accepted") to PresenceText.dateTime(Times.parse(d?.licenseAcceptedAt), zone))
         add(tr("Установок (загрузок)", "Installs (downloads)") to (d?.installs?.toString() ?: none))
+        add(tr("ID пользователя", "User ID") to (d?.publicId?.let { "#$it" } ?: none))
         add(tr("ID устройства", "Device ID") to (d?.deviceId ?: none))
     }
     SectionCard {

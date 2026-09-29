@@ -1,6 +1,7 @@
 // WebSocket /v1/ws?token=<device|admin token>: presence, typing, read receipts, ping/pong.
 // Рассылки (message, message.updated, typing, read, presence, …) делает Hub.
 import { tokenFromRequest } from './auth.js';
+import { iso } from './db.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STATES = new Set(['foreground', 'background']);
@@ -21,7 +22,7 @@ export default async function wsRoutes(app) {
 
     if (who.kind === 'device' && who.device.blocked) {
       // Заблокированное устройство: сообщаем и закрываем (приложение покажет экран блокировки).
-      socket.send(JSON.stringify({ t: 'blocked', message: who.device.block_reason || '' }));
+      socket.send(JSON.stringify({ t: 'blocked', message: who.device.block_reason || '', until: iso(who.device.blocked_until) }));
       socket.close(4003, 'blocked');
       return;
     }

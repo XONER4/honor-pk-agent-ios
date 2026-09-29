@@ -42,6 +42,8 @@ import com.honerai.admin.ui.broadcast.BroadcastScreen
 import com.honerai.admin.ui.chat.ChatScreen
 import com.honerai.admin.ui.common.EmptyState
 import com.honerai.admin.ui.home.HomeScreen
+import com.honerai.admin.ui.insights.AiSettingsScreen
+import com.honerai.admin.ui.insights.ReportsScreen
 import com.honerai.admin.ui.login.LoginScreen
 import com.honerai.admin.ui.settings.SettingsScreen
 import com.honerai.admin.ui.theme.HonerAdminTheme
@@ -58,6 +60,8 @@ sealed interface Route {
     data class Chat(val chatId: String, val deviceId: String?) : Route { override val key = "chat:$chatId" }
     data class Broadcast(val deviceId: String?) : Route { override val key = "broadcast:${deviceId ?: "all"}" }
     data object Settings : Route { override val key = "settings" }
+    data object Ai : Route { override val key = "ai" }
+    data object Reports : Route { override val key = "reports" }
 }
 
 /** Простой стек экранов; «Назад» снимает верхний. */
@@ -169,6 +173,8 @@ private fun RouteContent(route: Route, container: AdminContainer, navigator: Nav
             is Route.Chat -> ChatScreen(container, navigator, route.chatId, route.deviceId)
             is Route.Broadcast -> BroadcastScreen(container, navigator, route.deviceId)
             Route.Settings -> SettingsScreen(container, navigator)
+            Route.Ai -> AiSettingsScreen(container, navigator)
+            Route.Reports -> ReportsScreen(container, navigator)
         }
     }
 }

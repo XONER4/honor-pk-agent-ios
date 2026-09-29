@@ -2,6 +2,7 @@
 // Токен = префикс (d_ устройство / a_ админ) + 32 случайных байта base64url. В БД хранится только SHA-256.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { blocked, forbidden, unauthorized } from './errors.js';
+import { logAdminAction } from './device-events.js';
 
 export const newToken = (prefix) => `${prefix}_${randomBytes(32).toString('base64url')}`;
 export const hashToken = (token) => createHash('sha256').update(String(token)).digest('hex');
@@ -23,6 +24,20 @@ export function tokenFromRequest(request, { allowQuery = false } = {}) {
   return null;
 }
 
+/** Срок блокировки истёк? (blocked_until в прошлом; NULL — навсегда). */
+export const blockExpired = (device, now = Date.now()) =>
+  Boolean(device?.blocked && device.blocked_until && new Date(device.blocked_until).getTime() <= now);
+
+/** Снимает истёкшую блокировку в БД; возвращает актуальную строку устройства. */
+export async function unblockIfExpired(db, device) {
+  if (!blockExpired(device)) return device;
+  const r = await db.query(
+    'UPDATE devices SET blocked = FALSE, block_reason = NULL, blocked_until = NULL WHERE id = $1 AND blocked = TRUE AND blocked_until <= $2',
+    [device.id, new Date()]);
+  if (r.rowCount) await logAdminAction(db, { deviceId: device.id, action: 'unblock_auto' });
+  return { ...device, blocked: false, block_reason: null, blocked_until: null };
+}
+
 export function createAuth({ db }) {
   /** Возвращает { kind: 'device', device } | { kind: 'admin', admin } | null. */
   async function resolve(token) {
@@ -32,7 +47,7 @@ export function createAuth({ db }) {
     if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) return null;
     if (row.kind === 'device' && token.startsWith('d_')) {
       const device = await db.one('SELECT * FROM devices WHERE id = $1', [row.subject_id]);
-      return device ? { kind: 'device', device } : null;
+      return device ? { kind: 'device', device: await unblockIfExpired(db, device) } : null;
     }
     if (row.kind === 'admin' && token.startsWith('a_')) {
       const admin = await db.one('SELECT * FROM admins WHERE id = $1', [row.subject_id]);
@@ -64,7 +79,7 @@ export function createAuth({ db }) {
     if (!who) throw unauthorized();
     if (!accept.includes(who.kind)) throw forbidden();
     if (who.kind === 'device') {
-      if (who.device.blocked) throw blocked(who.device.block_reason);
+      if (who.device.blocked) throw blocked(who.device.block_reason, who.device.blocked_until);
       request.device = who.device;
     } else {
       request.admin = who.admin;

@@ -1,6 +1,10 @@
 package com.honerai.admin.core
 
+import com.honerai.admin.data.AiSettings
+import com.honerai.admin.data.AiWindow
+import com.honerai.admin.data.ClientReport
 import com.honerai.admin.data.DeviceDetail
+import com.honerai.admin.data.Metrics
 import com.honerai.admin.data.DeviceSummary
 import com.honerai.admin.data.Overview
 import com.honerai.admin.data.Sender
@@ -25,6 +29,15 @@ data class UsersState(
 
 data class OverviewState(val overview: Overview? = null, val loading: Boolean = false, val error: String? = null)
 
+/** Живые метрики: последний снимок, история для мини-графиков, ошибка запроса. */
+data class MetricsState(val metrics: Metrics? = null, val history: MetricsHistory = MetricsHistory(), val error: String? = null)
+
+/** Общий выключатель ИИ и расписание. */
+data class AiState(val settings: AiSettings? = null, val busy: Boolean = false, val error: String? = null)
+
+/** Последние ошибки/падения из приложений (главный экран). */
+data class ReportsState(val reports: List<ClientReport> = emptyList(), val loaded: Boolean = false, val error: String? = null)
+
 /**
  * Пользователи и счётчики админки. Первичные данные — REST, дальше живые поправки из кадров
  * presence / message / typing / read; раз в несколько секунд после всплеска событий — сверка с сервером.
@@ -40,6 +53,15 @@ class AdminRepository(
     private val _overview = MutableStateFlow(OverviewState())
     val overview: StateFlow<OverviewState> get() = _overview
 
+    private val _metrics = MutableStateFlow(MetricsState())
+    val metrics: StateFlow<MetricsState> get() = _metrics
+
+    private val _ai = MutableStateFlow(AiState())
+    val ai: StateFlow<AiState> get() = _ai
+
+    private val _reports = MutableStateFlow(ReportsState())
+    val reports: StateFlow<ReportsState> get() = _reports
+
     /** Открытый сейчас на экране чат: его сообщения не считаются непрочитанными. */
     @Volatile var visibleChatId: String? = null
 
@@ -52,6 +74,73 @@ class AdminRepository(
     fun refreshAll(query: String = lastQuery) {
         refreshOverview()
         refreshUsers(query)
+        refreshMetrics()
+        refreshAi()
+        refreshReports()
+    }
+
+    fun refreshMetrics() {
+        scope.launch {
+            try {
+                onMetrics(api.metrics())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _metrics.update { it.copy(error = friendlyError(e, english)) }
+            }
+        }
+    }
+
+    private fun onMetrics(m: Metrics) {
+        _metrics.update { it.copy(metrics = m, history = it.history.add(m, System.currentTimeMillis()), error = null) }
+        // Счётчики «в сети»/«в фоне» заодно сверяем с сервером.
+        _overview.update { s -> s.copy(overview = s.overview?.copy(online = m.online, inBackground = m.inBackground)) }
+        val current = _ai.value.settings
+        // Расписание переключило ИИ — перечитываем настройки, чтобы переключатель на экране был верным.
+        if (current != null && (current.effective && current.configured) != m.model.enabled && !_ai.value.busy) refreshAi()
+    }
+
+    fun refreshAi() {
+        scope.launch {
+            try {
+                val settings = api.aiSettings()
+                _ai.update { it.copy(settings = settings, error = null) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _ai.update { it.copy(error = friendlyError(e, english)) }
+            }
+        }
+    }
+
+    /** Включить/выключить ИИ и/или сохранить расписание; результат — ошибка для показа или null. */
+    suspend fun updateAi(enabled: Boolean? = null, schedule: List<AiWindow>? = null): String? {
+        _ai.update { it.copy(busy = true) }
+        return try {
+            val settings = api.updateAiSettings(enabled, schedule)
+            _ai.value = AiState(settings)
+            refreshMetrics()
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val message = friendlyError(e, english)
+            _ai.update { it.copy(busy = false, error = message) }
+            message
+        }
+    }
+
+    fun refreshReports() {
+        scope.launch {
+            try {
+                val list = api.reports(limit = 5)
+                _reports.value = ReportsState(list, loaded = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _reports.update { it.copy(error = friendlyError(e, english)) }
+            }
+        }
     }
 
     fun refreshOverview() {
@@ -138,6 +227,8 @@ class AdminRepository(
                 updateByChat(frame.chatId) { it.copy(typingIn = if (frame.typing) frame.chatId else null) }
             }
             is ServerFrame.Read -> if (frame.who == Sender.ADMIN) markChatRead(frame.chatId)
+            is ServerFrame.MetricsFrame -> onMetrics(frame.metrics)
+            is ServerFrame.AiChanged -> _ai.update { it.copy(settings = frame.settings, error = null) }
             else -> Unit
         }
     }
@@ -169,6 +260,9 @@ class AdminRepository(
         syncJob?.cancel()
         _users.value = UsersState()
         _overview.value = OverviewState()
+        _metrics.value = MetricsState()
+        _ai.value = AiState()
+        _reports.value = ReportsState()
         visibleChatId = null
     }
 }

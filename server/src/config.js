@@ -57,6 +57,14 @@ export function loadConfig(env = process.env) {
     registerRateMax: int(env.REGISTER_RATE_MAX, 60),
     registerRateWindowMs: int(env.REGISTER_RATE_WINDOW_MS, 10 * 60 * 1000),
 
+    // admin2: метрики, отчёты об ошибках, расписание ИИ, «не выходили на связь».
+    metricsPushMs: int(env.METRICS_PUSH_MS, 5_000),
+    reportRateMax: int(env.REPORT_RATE_MAX, 30),
+    reportRateWindowMs: int(env.REPORT_RATE_WINDOW_MS, 10 * 60 * 1000),
+    aiScheduleTimezone: env.AI_SCHEDULE_TZ || 'Europe/Moscow',
+    inactiveDays: int(env.INACTIVE_DAYS, 7),
+    blockSweepMs: int(env.BLOCK_SWEEP_MS, 60_000),
+
     firebaseServiceAccount: parseServiceAccount(env.FIREBASE_SERVICE_ACCOUNT),
 
     presenceOfflineMs: int(env.PRESENCE_OFFLINE_MS, 40_000),

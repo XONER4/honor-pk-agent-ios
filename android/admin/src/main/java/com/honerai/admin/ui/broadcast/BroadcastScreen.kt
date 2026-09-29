@@ -48,6 +48,7 @@ import com.honerai.admin.data.title
 import com.honerai.admin.net.friendlyError
 import com.honerai.admin.ui.Navigator
 import com.honerai.admin.ui.common.Avatar
+import com.honerai.admin.core.HistoryText
 import com.honerai.admin.ui.common.ConfirmDialog
 import com.honerai.admin.ui.common.HonerField
 import com.honerai.admin.ui.common.HonerPill
@@ -79,6 +80,8 @@ fun BroadcastScreen(container: AdminContainer, navigator: Navigator, initialDevi
     var error by remember { mutableStateOf<String?>(null) }
 
     val target = deviceId?.let { users.devices[it] }
+    // Рассылка «всем» уходит незаблокированным пользователям.
+    val recipients = users.devices.values.count { !it.blocked }
     val canSend = title.isNotBlank() && body.isNotBlank() && (toAll || deviceId != null) && !busy
 
     fun send() {
@@ -106,7 +109,7 @@ fun BroadcastScreen(container: AdminContainer, navigator: Navigator, initialDevi
 
     Box(Modifier.fillMaxSize().background(colors.background)) {
         Column(Modifier.fillMaxSize()) {
-            TopBar(tr("Уведомление", "Notification"), onBack = { navigator.pop() })
+            TopBar(if (toAll) tr("Рассылка", "Broadcast") else tr("Уведомление", "Notification"), onBack = { navigator.pop() })
             Column(
                 Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState())
                     .windowInsetsPadding(WindowInsets.navigationBars).padding(16.dp),
@@ -173,7 +176,7 @@ fun BroadcastScreen(container: AdminContainer, navigator: Navigator, initialDevi
 
     if (confirmAll) {
         ConfirmDialog(
-            title = tr("Отправить всем?", "Send to everyone?"),
+            title = tr("Отправить ", "Send to ") + HistoryText.usersDative(recipients, english) + "?",
             text = tr("Уведомление получат все пользователи Honer AI.", "Every Honer AI user will receive this notification."),
             confirm = tr("Отправить", "Send"),
             onDismiss = { confirmAll = false },

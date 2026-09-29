@@ -112,6 +112,39 @@ data class RegisterResponse(
     val token: String,
     val userId: String = "",
     val adminChatId: String = "",
+    /** Короткий публичный ID пользователя («0427»); старый сервер его не присылает. */
+    val publicId: String? = null,
+    val overrides: CloudOverrides? = null,
+)
+
+/** Ответ PATCH /v1/devices/me. */
+@Serializable
+data class MeResponse(val ok: Boolean = true, val publicId: String? = null, val overrides: CloudOverrides? = null)
+
+/**
+ * Персональные ограничения от администратора (server/API.md → overrides). Сервер их не применяет —
+ * это делает приложение; ключ отсутствует — ограничения нет.
+ */
+@Serializable
+data class CloudOverrides(
+    /** "ru" | "en" — язык интерфейса, выбранный администратором. */
+    val forceLanguage: String? = null,
+    /** true — поиск в интернете выключен. */
+    val disableSearch: Boolean? = null,
+    /** Лимит сообщений нейросети в день. */
+    val maxMessagesPerDay: Int? = null,
+) {
+    val isEmpty: Boolean get() = forceLanguage == null && disableSearch != true && maxMessagesPerDay == null
+}
+
+/** Отчёт об ошибке или падении (POST /v1/devices/me/report). kind: error | crash. */
+@Serializable
+data class ReportRequest(
+    val kind: String,
+    val message: String,
+    val stack: String? = null,
+    val appVersion: String? = null,
+    val at: String? = null,
 )
 
 @Serializable
@@ -135,6 +168,8 @@ sealed class CloudFrame {
     data class Presence(val deviceId: String?, val state: String, val lastSeen: String?) : CloudFrame()
     data class Blocked(val message: String) : CloudFrame()
     data class Notification(val notification: CloudNotification) : CloudFrame()
+    /** Администратор изменил ограничения этого пользователя. */
+    data class Overrides(val overrides: CloudOverrides) : CloudFrame()
     object Pong : CloudFrame()
 
     companion object {
@@ -152,6 +187,7 @@ sealed class CloudFrame {
                 "presence" -> Presence(str("deviceId"), str("state") ?: "offline", str("lastSeen"))
                 "blocked" -> Blocked(str("message").orEmpty())
                 "notification" -> Notification(CloudJson.decodeFromJsonElement(CloudNotification.serializer(), json["notification"] as JsonObject))
+                "overrides" -> Overrides(CloudJson.decodeFromJsonElement(CloudOverrides.serializer(), json["overrides"] as JsonObject))
                 "pong" -> Pong
                 else -> null
             }
@@ -181,6 +217,8 @@ class CloudHttpException(val status: Int, val code: String, val serverMessage: S
     java.io.IOException("Honer Cloud $status $code ${serverMessage.take(200)}") {
     val isBlocked: Boolean get() = status == 403 && code == "blocked"
     val isUnauthorized: Boolean get() = status == 401
+    /** ИИ выключен администратором (глобально или по расписанию). */
+    val isAiDisabled: Boolean get() = status == 503 && code == "ai_disabled"
 
     companion object {
         /** Тело ошибки → (code, message); непонятное тело — пустые строки. */

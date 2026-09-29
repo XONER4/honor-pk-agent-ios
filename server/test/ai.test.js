@@ -80,7 +80,8 @@ describe('AI proxy /v1/ai/chat/completions', () => {
     const seen = upstream.requests.at(-1);
     assert.equal(seen.url, '/chat/completions');
     assert.equal(seen.headers.authorization, 'Bearer sk-test-key');
-    assert.deepEqual(seen.body, body, 'body forwarded unchanged');
+    // Тело уходит как есть, плюс stream_options.include_usage (usage в последнем чанке — для статистики токенов).
+    assert.deepEqual(seen.body, { ...body, stream_options: { include_usage: true } }, 'body forwarded unchanged + include_usage');
   });
 
   test('non-streaming JSON and upstream errors are passed through', async () => {

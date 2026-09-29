@@ -26,8 +26,8 @@ export function systemPrompt({ userName, language }) {
   ].join(' ');
 }
 
-/** Вызов DeepSeek без стриминга. Возвращает текст ответа. */
-export async function deepseekComplete(config, body, fetchImpl = fetch) {
+/** Вызов DeepSeek без стриминга. Возвращает текст ответа; onUsage({prompt, completion}) — расход токенов. */
+export async function deepseekComplete(config, body, fetchImpl = fetch, onUsage = null) {
   const res = await fetchImpl(`${config.deepseekBaseUrl}/chat/completions`, {
     method: 'POST',
     headers: { authorization: `Bearer ${config.deepseekApiKey}`, 'content-type': 'application/json' },
@@ -36,19 +36,24 @@ export async function deepseekComplete(config, body, fetchImpl = fetch) {
   });
   if (!res.ok) throw new Error(`deepseek http ${res.status}`);
   const data = await res.json();
+  if (onUsage && data?.usage) {
+    onUsage({ prompt: Number(data.usage.prompt_tokens) || 0, completion: Number(data.usage.completion_tokens) || 0 });
+  }
   const text = data?.choices?.[0]?.message?.content;
   if (typeof text !== 'string' || !text.trim()) throw new Error('deepseek empty answer');
   return text.trim();
 }
 
-export function createGroupAi({ db, hub, chats, config, logger, fetchImpl = fetch }) {
+export function createGroupAi({ db, hub, chats, config, logger, fetchImpl = fetch, aiControl = null, metrics = null, usage = null }) {
+  // ИИ выключен администратором (глобально или по расписанию) — групповой ИИ молчит.
+  const allowed = () => !aiControl || aiControl.isEnabled();
   const questionTimers = new Map(); // chatId -> timer
   const running = new Set(); // chatId, где сейчас идёт генерация
   const rerun = new Set(); // chatId, где за время генерации пришёл новый повод ответить
   let stopped = false;
 
   function onMessage(chat, message, row) {
-    if (!chat.ai_enabled || message.sender === 'ai' || message.deleted || stopped) return;
+    if (!chat.ai_enabled || message.sender === 'ai' || message.deleted || stopped || !allowed()) return;
     if (message.sender === 'admin') {
       // Админ ответил — отложенный вопрос больше не ждёт ИИ.
       clearTimeout(questionTimers.get(chat.id));
@@ -97,7 +102,7 @@ export function createGroupAi({ db, hub, chats, config, logger, fetchImpl = fetc
 
   async function generate(chatId) {
     const chat = await chats.getChat(chatId);
-    if (!chat || !chat.ai_enabled || !config.deepseekApiKey) return;
+    if (!chat || !chat.ai_enabled || !config.deepseekApiKey || !allowed()) return;
     const device = await db.one('SELECT display_name, language FROM devices WHERE id = $1', [chat.device_id]);
     hub.setTyping(chat, 'ai', true);
     try {
@@ -114,7 +119,19 @@ export function createGroupAi({ db, hub, chats, config, logger, fetchImpl = fetc
         if (r.sender === 'ai') messages.push({ role: 'assistant', content });
         else messages.push({ role: 'user', content: `[${r.sender === 'admin' ? 'Администратор' : 'Пользователь'}] ${content}` });
       }
-      const text = await deepseekComplete(config, { model: config.aiGroupModel, messages, temperature: 0.7, max_tokens: 1000 }, fetchImpl);
+      const started = Date.now();
+      let tokens = null;
+      let text;
+      try {
+        text = await deepseekComplete(config, { model: config.aiGroupModel, messages, temperature: 0.7, max_tokens: 1000 },
+          fetchImpl, (u) => { tokens = u; });
+      } catch (err) {
+        metrics?.recordAi({ ms: Date.now() - started, error: true });
+        usage?.add(chat.device_id, { requests: 1, errors: 1 });
+        throw err;
+      }
+      metrics?.recordAi({ ms: Date.now() - started, error: false });
+      usage?.add(chat.device_id, { prompt: tokens?.prompt, completion: tokens?.completion, requests: 1 });
       const fresh = await chats.getChat(chatId);
       if (!fresh?.ai_enabled || stopped) return;
       await chats.sendMessage(fresh, { sender: 'ai', clientId: `ai-${randomUUID()}`, text: text.slice(0, 10_000) });

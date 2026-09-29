@@ -145,7 +145,7 @@ test('block → 403 on every device endpoint (incl. re-register), unblock restor
   ]) {
     const x = await s.api(m, u, { token: dev.token, body });
     assert.equal(x.status, 403, `${m} ${u}`);
-    assert.deepEqual(x.body, { error: 'blocked', message: 'Спам' });
+    assert.deepEqual(x.body, { error: 'blocked', message: 'Спам', until: null });
   }
   const re = await s.api('POST', '/v1/devices/register', { body: { installId, platform: 'android' } });
   assert.equal(re.status, 403);

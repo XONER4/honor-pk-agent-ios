@@ -36,6 +36,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Group
@@ -70,6 +71,11 @@ import com.honerai.admin.core.PresenceText
 import com.honerai.admin.core.Times
 import com.honerai.admin.core.UserFilter
 import com.honerai.admin.core.UserList
+import com.honerai.admin.core.UserSort
+import com.honerai.admin.core.Numbers
+import com.honerai.admin.data.idLabel
+import com.honerai.admin.ui.common.ToastHost
+import com.honerai.admin.ui.common.rememberToastState
 import com.honerai.admin.data.DeviceSummary
 import com.honerai.admin.data.Overview
 import com.honerai.admin.data.Presence
@@ -103,11 +109,16 @@ fun HomeScreen(container: AdminContainer, navigator: Navigator) {
     val repo = container.repo
     val users by repo.users.collectAsStateWithLifecycle()
     val overview by repo.overview.collectAsStateWithLifecycle()
+    val metrics by repo.metrics.collectAsStateWithLifecycle()
+    val ai by repo.ai.collectAsStateWithLifecycle()
+    val reports by repo.reports.collectAsStateWithLifecycle()
+    val toast = rememberToastState()
     val connection by container.realtime.state.collectAsStateWithLifecycle()
     val session by container.session.session.collectAsStateWithLifecycle()
     val english = LocalEnglish.current
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(UserFilter.ALL) }
+    var sort by rememberSaveable { mutableStateOf(UserSort.ACTIVITY) }
     val listState = rememberLazyListState()
     val now = rememberNow()
 
@@ -122,10 +133,17 @@ fun HomeScreen(container: AdminContainer, navigator: Navigator) {
     }
     LaunchedEffect(Unit) { if (!users.loaded && !users.loading) repo.refreshAll(query) }
     LaunchedEffect(users.loading) { if (!users.loading) pulled = false }
+    // Метрики приходят кадром раз в 5 с; без WebSocket — опрашиваем сами, пока экран открыт.
+    LaunchedEffect(connection) {
+        while (connection != ConnectionState.CONNECTED) {
+            repo.refreshMetrics()
+            delay(5_000)
+        }
+    }
 
     // Фильтр и сортировка — вне композиции.
-    val visible by produceState(emptyList<DeviceSummary>(), users.devices, filter, query) {
-        value = withContext(Dispatchers.Default) { UserList.visible(users.devices.values, filter, query) }
+    val visible by produceState(emptyList<DeviceSummary>(), users.devices, filter, query, sort) {
+        value = withContext(Dispatchers.Default) { UserList.visible(users.devices.values, filter, query, sort) }
     }
     val counts by produceState(IntArray(4), users.devices) {
         value = withContext(Dispatchers.Default) {
@@ -139,72 +157,88 @@ fun HomeScreen(container: AdminContainer, navigator: Navigator) {
         }
     }
 
-    Column(Modifier.fillMaxSize().background(HonerTheme.colors.background)) {
-        TopBar(
-            title = "Honer Admin",
-            subtitle = session?.email?.takeIf { it.isNotBlank() } ?: session?.name,
-            actions = {
-                IconCircle(Icons.Rounded.Campaign, tr("Рассылка", "Broadcast"), { navigator.push(Route.Broadcast(null)) })
-                IconCircle(Icons.Rounded.Settings, tr("Настройки", "Settings"), { navigator.push(Route.Settings) })
-            },
-            leading = { AdminBadge() },
-        )
-        PullToRefreshBox(
-            isRefreshing = pulled && users.loading,
-            onRefresh = { pulled = true; repo.refreshAll(query) },
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            LazyColumn(
-                state = listState,
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().background(HonerTheme.colors.background)) {
+            TopBar(
+                title = "Honer Admin",
+                subtitle = session?.email?.takeIf { it.isNotBlank() } ?: session?.name,
+                actions = {
+                    IconCircle(Icons.Rounded.BugReport, tr("Ошибки и падения", "Errors and crashes"), { navigator.push(Route.Reports) })
+                    IconCircle(Icons.Rounded.Campaign, tr("Рассылка", "Broadcast"), { navigator.push(Route.Broadcast(null)) })
+                    IconCircle(Icons.Rounded.Settings, tr("Настройки", "Settings"), { navigator.push(Route.Settings) })
+                },
+                leading = { AdminBadge() },
+            )
+            PullToRefreshBox(
+                isRefreshing = pulled && users.loading,
+                onRefresh = { pulled = true; repo.refreshAll(query) },
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
             ) {
-                item(key = "connection", contentType = "banner") {
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        ConnectionBanner(connection != ConnectionState.CONNECTED, Modifier.padding(top = 8.dp))
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
+                ) {
+                    item(key = "connection", contentType = "banner") {
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            ConnectionBanner(connection != ConnectionState.CONNECTED, Modifier.padding(top = 8.dp))
+                        }
                     }
-                }
-                item(key = "overview", contentType = "overview") {
-                    OverviewGrid(overview.overview, overview.error, onRetry = { repo.refreshOverview() }) { f -> filter = f }
-                }
-                item(key = "search", contentType = "search") {
-                    SearchField(query, { query = it })
-                }
-                item(key = "filters", contentType = "filters") {
-                    Row(
-                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        HonerPill(tr("Все", "All"), filter == UserFilter.ALL, { filter = UserFilter.ALL }, count = counts[0])
-                        HonerPill(tr("В сети", "Online"), filter == UserFilter.ONLINE, { filter = UserFilter.ONLINE }, count = counts[1])
-                        HonerPill(tr("В фоне", "Background"), filter == UserFilter.BACKGROUND, { filter = UserFilter.BACKGROUND }, count = counts[2])
-                        HonerPill(tr("Заблокированы", "Blocked"), filter == UserFilter.BLOCKED, { filter = UserFilter.BLOCKED }, count = counts[3])
+                    item(key = "ai", contentType = "ai") {
+                        AiSwitchCard(ai, onToggle = { repo.updateAi(enabled = it) }, onOpen = { navigator.push(Route.Ai) },
+                            onError = { toast.show(it) })
                     }
-                }
-                when {
-                    !users.loaded && users.error != null -> item(key = "error") {
-                        ErrorPanel(users.error.orEmpty(), { repo.refreshAll(query) })
+                    item(key = "metrics", contentType = "metrics") {
+                        MetricsGrid(metrics, onRetry = { repo.refreshMetrics() })
                     }
-                    !users.loaded -> item(key = "loading") { LoadingBox(Modifier.height(200.dp)) }
-                    visible.isEmpty() -> item(key = "empty") {
-                        EmptyState(Icons.Rounded.Group, if (query.isNotBlank()) tr("Никого не нашли", "Nobody found") else tr("Пока пусто", "Nothing here yet"))
+                    item(key = "overview", contentType = "overview") {
+                        OverviewGrid(overview.overview, overview.error, onRetry = { repo.refreshOverview() }) { f -> filter = f }
                     }
-                    else -> items(visible, key = { it.deviceId }, contentType = { "user" }) { device ->
-                        UserRow(
-                            device, now, english,
-                            onOpen = { navigator.push(Route.User(device.deviceId)) },
-                            onChat = { navigator.push(Route.Chat(device.adminChatId, device.deviceId)) },
-                        )
+                    item(key = "reports", contentType = "reports") {
+                        RecentReports(reports, now, onOpenAll = { navigator.push(Route.Reports) }, onOpenUser = { navigator.push(Route.User(it)) })
                     }
-                }
-                if (users.loaded && users.error != null) {
-                    item(key = "refresh-error") {
-                        Text(users.error.orEmpty(), color = HonerTheme.colors.danger, fontSize = 13.sp,
-                            modifier = Modifier.fillMaxWidth().padding(16.dp).clickable { repo.refreshAll(query) })
+                    item(key = "search", contentType = "search") {
+                        SearchField(query, { query = it })
+                    }
+                    item(key = "filters", contentType = "filters") {
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            HonerPill(tr("Все", "All"), filter == UserFilter.ALL, { filter = UserFilter.ALL }, count = counts[0])
+                            HonerPill(tr("В сети", "Online"), filter == UserFilter.ONLINE, { filter = UserFilter.ONLINE }, count = counts[1])
+                            HonerPill(tr("В фоне", "Background"), filter == UserFilter.BACKGROUND, { filter = UserFilter.BACKGROUND }, count = counts[2])
+                            HonerPill(tr("Заблокированы", "Blocked"), filter == UserFilter.BLOCKED, { filter = UserFilter.BLOCKED }, count = counts[3])
+                            HonerPill(tr("По токенам", "By tokens"), sort == UserSort.TOKENS,
+                                { sort = if (sort == UserSort.TOKENS) UserSort.ACTIVITY else UserSort.TOKENS })
+                        }
+                    }
+                    when {
+                        !users.loaded && users.error != null -> item(key = "error") {
+                            ErrorPanel(users.error.orEmpty(), { repo.refreshAll(query) })
+                        }
+                        !users.loaded -> item(key = "loading") { LoadingBox(Modifier.height(200.dp)) }
+                        visible.isEmpty() -> item(key = "empty") {
+                            EmptyState(Icons.Rounded.Group, if (query.isNotBlank()) tr("Никого не нашли", "Nobody found") else tr("Пока пусто", "Nothing here yet"))
+                        }
+                        else -> items(visible, key = { it.deviceId }, contentType = { "user" }) { device ->
+                            UserRow(
+                                device, now, english, showTokens = sort == UserSort.TOKENS,
+                                onOpen = { navigator.push(Route.User(device.deviceId)) },
+                                onChat = { navigator.push(Route.Chat(device.adminChatId, device.deviceId)) },
+                            )
+                        }
+                    }
+                    if (users.loaded && users.error != null) {
+                        item(key = "refresh-error") {
+                            Text(users.error.orEmpty(), color = HonerTheme.colors.danger, fontSize = 13.sp,
+                                modifier = Modifier.fillMaxWidth().padding(16.dp).clickable { repo.refreshAll(query) })
+                        }
                     }
                 }
             }
         }
+        ToastHost(toast, bottom = 40.dp)
     }
 }
 
@@ -226,10 +260,14 @@ private fun OverviewGrid(overview: Overview?, error: String?, onRetry: () -> Uni
         Triple(tr("В фоне", "Background"), o?.inBackground, UserFilter.BACKGROUND),
         Triple(tr("Заблокированы", "Blocked"), o?.blocked, UserFilter.BLOCKED),
         Triple(tr("Сообщений сегодня", "Messages today"), o?.messagesToday, null),
+        Triple(tr("Обновления", "Updates"), o?.updates, null),
+        Triple(tr("Удалили (вероятно)", "Uninstalled (likely)"), o?.uninstalls, null),
+        Triple(tr("Не заходили >", "Inactive >") + (o?.inactiveDays ?: 7) + tr(" дн.", " d"), o?.inactive, null),
     )
-    val accents = listOf(colors.foreground, colors.foreground, colors.online, colors.away, colors.danger, colors.accent)
+    val accents = listOf(colors.foreground, colors.foreground, colors.online, colors.away, colors.danger, colors.accent,
+        colors.foreground, colors.secondary, colors.secondary)
     BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        val columns = if (maxWidth >= 560.dp) 6 else 3
+        val columns = if (maxWidth >= 560.dp) 9 else 3
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             tiles.indices.chunked(columns).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -274,7 +312,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
         Icon(Icons.Rounded.Search, null, tint = colors.secondary, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
         Box(Modifier.weight(1f)) {
-            if (query.isEmpty()) Text(tr("Поиск по имени или устройству", "Search by name or device"), color = colors.secondary, fontSize = 15.sp, maxLines = 1)
+            if (query.isEmpty()) Text(tr("Поиск по имени, ID или модели", "Search by name, ID or model"), color = colors.secondary, fontSize = 15.sp, maxLines = 1)
             BasicTextField(
                 value = query, onValueChange = onChange, singleLine = true,
                 textStyle = TextStyle(color = colors.foreground, fontSize = 15.sp),
@@ -290,7 +328,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
 }
 
 @Composable
-private fun UserRow(device: DeviceSummary, now: Instant, english: Boolean, onOpen: () -> Unit, onChat: () -> Unit) {
+private fun UserRow(device: DeviceSummary, now: Instant, english: Boolean, showTokens: Boolean, onOpen: () -> Unit, onChat: () -> Unit) {
     val colors = HonerTheme.colors
     val name = device.title(english)
     Row(
@@ -303,6 +341,10 @@ private fun UserRow(device: DeviceSummary, now: Instant, english: Boolean, onOpe
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.foreground, maxLines = 1,
                     overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                device.idLabel().takeIf { it.isNotEmpty() }?.let {
+                    Spacer(Modifier.width(6.dp))
+                    Text(it, fontSize = 13.sp, color = colors.secondary, maxLines = 1)
+                }
                 if (device.blocked) {
                     Spacer(Modifier.width(6.dp))
                     Icon(Icons.Rounded.Block, tr("Заблокирован", "Blocked"), tint = colors.danger, modifier = Modifier.size(15.dp))
@@ -315,7 +357,10 @@ private fun UserRow(device: DeviceSummary, now: Instant, english: Boolean, onOpe
                 val status = PresenceText.status(device.presence, Times.parse(device.lastSeen), now, ZoneId.systemDefault(), english)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        listOf(device.deviceModel, device.appVersion.takeIf { it.isNotBlank() }?.let { "v$it" })
+                        listOf(
+                            if (showTokens) Numbers.compact(device.aiTokens, english) + if (english) " tok." else " ток." else null,
+                            device.deviceModel, device.appVersion.takeIf { it.isNotBlank() }?.let { "v$it" },
+                        )
                             .filter { !it.isNullOrBlank() }.joinToString(" · "),
                         fontSize = 13.sp, color = colors.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),

@@ -11,6 +11,7 @@ class HonerApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        com.honerai.app.cloud.CloudCrashReporter.install(this) // admin2: падения → отчёт администратору
         val container = AppContainer.get(this)
         HonerNotifications.createChannels(this)
         UpdateScheduler.schedule(this, enabled = container.settings.autoUpdate.value)

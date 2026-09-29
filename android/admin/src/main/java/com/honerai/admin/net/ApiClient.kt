@@ -1,7 +1,17 @@
 package com.honerai.admin.net
 
 import com.honerai.admin.core.SessionStore
+import com.honerai.admin.data.AdminAction
 import com.honerai.admin.data.AdminJson
+import com.honerai.admin.data.AdminNote
+import com.honerai.admin.data.AiSettings
+import com.honerai.admin.data.AiWindow
+import com.honerai.admin.data.ClientReport
+import com.honerai.admin.data.DeviceEvent
+import com.honerai.admin.data.Metrics
+import com.honerai.admin.data.Overrides
+import com.honerai.admin.data.OverridesResponse
+import com.honerai.admin.data.SetupStatus
 import com.honerai.admin.data.ApiError
 import com.honerai.admin.data.AttachmentRef
 import com.honerai.admin.data.BroadcastResult
@@ -18,6 +28,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -138,6 +149,24 @@ class ApiClient(
     suspend fun loginWithKey(key: String): LoginResponse =
         login(buildJsonObject { put("adminKey", key) })
 
+    /** Основной вход: логин и пароль аккаунта администратора. */
+    suspend fun loginWithPassword(login: String, password: String): LoginResponse =
+        login(buildJsonObject { put("login", login); put("password", password) })
+
+    /** Есть ли уже аккаунт администратора (иначе — экран «Создать администратора»). */
+    suspend fun setupStatus(): SetupStatus {
+        val text = execute(request(url("/v1/admin/setup-status"), auth = false).get().build())
+        return AdminJson.decodeFromString(SetupStatus.serializer(), text)
+    }
+
+    /** Создание первого аккаунта; текущий ключ администратора подтверждает владельца сервера. */
+    suspend fun setupAccount(login: String, password: String, adminKey: String): LoginResponse {
+        val body = buildJsonObject { put("login", login); put("password", password) }.toString().toRequestBody(jsonType)
+        val builder = request(url("/v1/admin/setup"), auth = false).post(body)
+        if (adminKey.isNotBlank()) builder.header("x-admin-key", adminKey.trim())
+        return AdminJson.decodeFromString(LoginResponse.serializer(), execute(builder.build()))
+    }
+
     private suspend fun login(body: JsonElement): LoginResponse {
         val text = execute(request(url("/v1/admin/login"), auth = false).post(body.toString().toRequestBody(jsonType)).build())
         return AdminJson.decodeFromString(LoginResponse.serializer(), text)
@@ -152,13 +181,61 @@ class ApiClient(
 
     suspend fun device(deviceId: String): DeviceDetail = get("/v1/admin/devices/$deviceId", DeviceDetail.serializer())
 
-    /** Сервер возвращает обновлённую карточку устройства (NOTES.md). */
-    suspend fun setBlocked(deviceId: String, blocked: Boolean, reason: String?): DeviceDetail? {
+    /** Сервер возвращает обновлённую карточку устройства (NOTES.md). [until] — ISO конца блокировки, null — навсегда. */
+    suspend fun setBlocked(deviceId: String, blocked: Boolean, reason: String?, until: String? = null): DeviceDetail? {
         val text = send("POST", "/v1/admin/devices/$deviceId/block", buildJsonObject {
             put("blocked", blocked)
             if (!reason.isNullOrBlank()) put("reason", reason.trim())
+            if (blocked && until != null) put("until", until)
         })
         return decodeOrNull(DeviceDetail.serializer(), text)
+    }
+
+    // --- Метрики, ИИ, отчёты, история, заметки, журнал, ограничения ------------------------------------------
+
+    suspend fun metrics(): Metrics = get("/v1/admin/metrics", Metrics.serializer())
+
+    suspend fun aiSettings(): AiSettings = get("/v1/admin/ai", AiSettings.serializer())
+
+    /** Общий выключатель ИИ и/или расписание (null — не менять). */
+    suspend fun updateAiSettings(enabled: Boolean? = null, schedule: List<AiWindow>? = null, timezone: String? = null): AiSettings {
+        val text = send("POST", "/v1/admin/ai", buildJsonObject {
+            if (enabled != null) put("enabled", enabled)
+            if (schedule != null) put("schedule", AdminJson.encodeToJsonElement(ListSerializer(AiWindow.serializer()), schedule))
+            if (timezone != null) put("timezone", timezone)
+        })
+        return AdminJson.decodeFromString(AiSettings.serializer(), text)
+    }
+
+    suspend fun reports(deviceId: String? = null, kind: String? = null, limit: Int = 50, before: String? = null): List<ClientReport> =
+        get("/v1/admin/reports", ListSerializer(ClientReport.serializer()),
+            mapOf("deviceId" to deviceId, "kind" to kind, "limit" to limit.toString(), "before" to before))
+
+    suspend fun deviceEvents(deviceId: String): List<DeviceEvent> =
+        get("/v1/admin/devices/$deviceId/events", ListSerializer(DeviceEvent.serializer()))
+
+    suspend fun notes(deviceId: String): List<AdminNote> =
+        get("/v1/admin/devices/$deviceId/notes", ListSerializer(AdminNote.serializer()))
+
+    suspend fun addNote(deviceId: String, text: String): AdminNote =
+        AdminJson.decodeFromString(AdminNote.serializer(),
+            send("POST", "/v1/admin/devices/$deviceId/notes", buildJsonObject { put("text", text) }))
+
+    suspend fun editNote(noteId: String, text: String): AdminNote =
+        AdminJson.decodeFromString(AdminNote.serializer(),
+            send("PATCH", "/v1/admin/notes/$noteId", buildJsonObject { put("text", text) }))
+
+    suspend fun deleteNote(noteId: String) {
+        execute(request(url("/v1/admin/notes/$noteId")).delete().build())
+    }
+
+    suspend fun actions(deviceId: String? = null, limit: Int = 50): List<AdminAction> =
+        get("/v1/admin/actions", ListSerializer(AdminAction.serializer()), mapOf("deviceId" to deviceId, "limit" to limit.toString()))
+
+    /** Изменение ограничений: в [patch] только меняемые ключи; JsonNull снимает ограничение. */
+    suspend fun setOverrides(deviceId: String, patch: JsonObject): Overrides {
+        val text = send("PATCH", "/v1/admin/devices/$deviceId/overrides", patch)
+        return AdminJson.decodeFromString(OverridesResponse.serializer(), text).overrides
     }
 
     /** Возвращает, сколько устройств получили уведомление ({"ok":true,"count":n}), если сервер сообщил. */

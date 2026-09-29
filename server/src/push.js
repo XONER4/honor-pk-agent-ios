@@ -1,6 +1,7 @@
 // Push через FCM HTTP v1 (без firebase-admin): OAuth2-токен сервисного аккаунта получаем через google-auth-library JWT.
 // Отправляем data-сообщения { type, chatId, title, body } только устройствам, которые сейчас НЕ в foreground.
 import { JWT } from 'google-auth-library';
+import { recordDeviceEvent } from './device-events.js';
 
 const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 
@@ -47,7 +48,9 @@ export function createPush({ db, hub, config, logger, transport }) {
     };
     const result = await t.send(row.push_token, data);
     if (result === 'invalid_token') {
-      await db.query('UPDATE devices SET push_token = NULL WHERE id = $1 AND push_token = $2', [deviceId, row.push_token]);
+      const r = await db.query('UPDATE devices SET push_token = NULL WHERE id = $1 AND push_token = $2', [deviceId, row.push_token]);
+      // FCM не знает токен (UNREGISTERED) — приложение, скорее всего, удалено. Это лишь признак: устройство может вернуться.
+      if (r.rowCount) await recordDeviceEvent(db, deviceId, 'uninstall');
     }
     return result === 'ok';
   }

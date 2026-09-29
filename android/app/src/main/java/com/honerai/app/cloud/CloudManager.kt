@@ -92,6 +92,8 @@ object CloudManager {
     private val _banner = MutableStateFlow<CloudBanner?>(null)
     private val _chatVisible = MutableStateFlow(false)
     private val _socketState = MutableStateFlow(CloudSocket.State.CLOSED)
+    private val _publicId = MutableStateFlow<String?>(null)
+    private val _overrides = MutableStateFlow(CloudOverrides())
 
     val registered: StateFlow<Boolean> = _registered.asStateFlow()
     val deviceId: StateFlow<String?> = _deviceId.asStateFlow()
@@ -111,6 +113,13 @@ object CloudManager {
     val uploads: StateFlow<Map<String, Float>> = _uploads.asStateFlow()
     val banner: StateFlow<CloudBanner?> = _banner.asStateFlow()
     val socketState: StateFlow<CloudSocket.State> = _socketState.asStateFlow()
+    /** Короткий публичный ID пользователя («0427»), null — сервер ещё не выдал. */
+    val publicId: StateFlow<String?> = _publicId.asStateFlow()
+    /**
+     * Ограничения от администратора (язык, поиск, лимит сообщений). Здесь только хранятся и обновляются
+     * (ответ регистрации/PATCH и кадр WebSocket); применять их — дело экранов приложения.
+     */
+    val overrides: StateFlow<CloudOverrides> = _overrides.asStateFlow()
 
     /** Непрочитанные сообщения администратора. */
     val unread: StateFlow<Int> = combine(_entries, _lastReadMs, _chat) { list, lastRead, chat ->
@@ -159,6 +168,10 @@ object CloudManager {
         _deviceId.value = credentials.deviceId
         _blocked.value = credentials.blockReason
         _lastReadMs.value = credentials.lastReadMs
+        _publicId.value = credentials.publicId
+        credentials.overridesJson?.let { raw ->
+            runCatching { CloudJson.decodeFromString(CloudOverrides.serializer(), raw) }.getOrNull()?.let { _overrides.value = it }
+        }
         loadCache()
 
         scope.launch {
@@ -169,7 +182,10 @@ object CloudManager {
             // Готов ли ИИ на сервере: проверка при запуске и раз в 10 минут.
             launch(Dispatchers.IO) {
                 while (true) {
-                    api.serverAiReady()?.let { AiProxy.serverAiReady = it }
+                    api.serverHealth()?.let { (ai, aiEnabled) ->
+                        AiProxy.serverAiReady = ai
+                        AiProxy.aiDisabledByAdmin = !aiEnabled
+                    }
                     delay(10 * 60_000L)
                 }
             }
@@ -206,6 +222,8 @@ object CloudManager {
 
     private fun onRegistered() {
         _registered.value = true
+        // Падения с прошлых запусков — администратору.
+        scope.launch(Dispatchers.IO) { CloudCrashReporter.uploadPending { api.report(it) } }
         if (foreground) {
             openSocket()
             scope.launch { refreshAll() }
@@ -231,6 +249,7 @@ object CloudManager {
                 if (response.adminChatId.isNotEmpty()) credentials.adminChatId = response.adminChatId
                 credentials.profileFingerprint = profileFingerprint(request)
                 scope.launch {
+                    applyServerProfile(response.publicId, response.overrides)
                     _deviceId.value = response.deviceId
                     if (_blocked.value != null) onUnblocked()
                     onRegistered()
@@ -313,7 +332,50 @@ object CloudManager {
             put("appVersion", request.appVersion)
             request.licenseAcceptedAt?.let { put("licenseAcceptedAt", it) }
         }
-        if (runCatching { authed { it.patchMe(body) } }.isSuccess) credentials.profileFingerprint = fingerprint
+        runCatching { authed { it.patchMe(body) } }.onSuccess { me ->
+            credentials.profileFingerprint = fingerprint
+            applyServerProfile(me.publicId, me.overrides)
+        }
+    }
+
+    /** publicId и ограничения из ответа сервера (null — сервер их не прислал, оставляем прежние). */
+    private fun applyServerProfile(publicId: String?, overrides: CloudOverrides?) {
+        if (publicId != null && publicId != _publicId.value) {
+            credentials.publicId = publicId
+            _publicId.value = publicId
+        }
+        if (overrides != null) applyOverrides(overrides)
+    }
+
+    private fun applyOverrides(value: CloudOverrides) {
+        if (value == _overrides.value) return
+        android.util.Log.i("HonerCloud", "overrides from admin: $value")
+        credentials.overridesJson = CloudJson.encodeToString(CloudOverrides.serializer(), value)
+        _overrides.value = value
+    }
+
+    // ---- Отчёты об ошибках ----
+
+    private val recentReports = HashMap<String, Long>()
+
+    /**
+     * Отчёт об ошибке администратору (POST /v1/devices/me/report), в фоне и без ожидания.
+     * Одинаковые сообщения — не чаще раза в минуту; без облака или регистрации — ничего.
+     */
+    fun reportError(message: String, stack: String? = null, kind: String = "error") {
+        if (!enabled || credentials.token == null || message.isBlank()) return
+        val now = System.currentTimeMillis()
+        synchronized(recentReports) {
+            val last = recentReports[message]
+            if (last != null && now - last < 60_000) return
+            recentReports[message] = now
+            if (recentReports.size > 50) recentReports.entries.removeAll { now - it.value > 60_000 }
+        }
+        val report = ReportRequest(kind = kind, message = message.take(2000), stack = stack?.take(16_000),
+            appVersion = BuildConfig.VERSION_NAME, at = Instant.ofEpochMilli(now).toString())
+        scope.launch {
+            runCatching { authed { it.report(report) } }.onFailure { android.util.Log.w("HonerCloud", "report failed", it) }
+        }
     }
 
     // ---- Жизненный цикл ----
@@ -499,6 +561,7 @@ object CloudManager {
             is CloudFrame.Presence -> Unit // приходит только администраторам
             is CloudFrame.Blocked -> onBlocked(frame.message)
             is CloudFrame.Notification -> onServerNotification(frame.notification, quiet = false)
+            is CloudFrame.Overrides -> applyOverrides(frame.overrides)
             CloudFrame.Pong -> Unit
         }
         if (_blocked.value != null && frame !is CloudFrame.Blocked) onUnblocked()

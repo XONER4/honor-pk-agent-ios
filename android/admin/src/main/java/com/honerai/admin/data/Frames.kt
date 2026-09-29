@@ -20,6 +20,10 @@ sealed interface ServerFrame {
     data class PresenceChanged(val deviceId: String, val state: String, val typingIn: String?, val lastSeen: String?) : ServerFrame
     data class Blocked(val message: String) : ServerFrame
     data class NotificationFrame(val notification: Notification) : ServerFrame
+    /** Метрики раз в 5 с (только админам). */
+    data class MetricsFrame(val metrics: Metrics) : ServerFrame
+    /** Изменились общий выключатель ИИ / расписание. */
+    data class AiChanged(val settings: AiSettings) : ServerFrame
     data object Pong : ServerFrame
     data class Unknown(val type: String) : ServerFrame
 
@@ -49,6 +53,8 @@ sealed interface ServerFrame {
                 "notification" -> NotificationFrame(
                     AdminJson.decodeFromJsonElement(Notification.serializer(), obj.getValue("notification")),
                 )
+                "metrics" -> MetricsFrame(AdminJson.decodeFromJsonElement(Metrics.serializer(), obj))
+                "ai" -> AiChanged(AdminJson.decodeFromJsonElement(AiSettings.serializer(), obj))
                 "pong" -> Pong
                 else -> Unknown(type)
             }

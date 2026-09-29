@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Notifications
@@ -228,6 +229,8 @@ fun CloudSettingsGroup() {
     val unread by CloudManager.unread.collectAsState()
     val notificationEntries by CloudManager.notifications.entries.collectAsState()
     var copied by remember { mutableStateOf(false) }
+    val publicId by CloudManager.publicId.collectAsState()
+    var idCopied by remember { mutableStateOf(false) }
     val status = when {
         !registered -> t(english, "не подключено", "not connected")
         socket == CloudSocket.State.OPEN -> t(english, "подключено", "connected")
@@ -240,6 +243,15 @@ fun CloudSettingsGroup() {
             "Honer AI cloud: administrator chat, notifications and protected access to the AI."),
     ) {
         SettingsRow(Icons.Outlined.Cloud, t(english, "Статус", "Status"), status, chevron = false, tag = "settings.cloud.status")
+        SettingsDivider()
+        // admin2: короткий ID пользователя — его называют администратору.
+        SettingsRow(
+            Icons.Outlined.Badge, t(english, "Ваш ID", "Your ID"),
+            if (idCopied) t(english, "скопировано", "copied") else publicId?.let { "#$it" } ?: "—",
+            chevron = false, tag = "settings.cloud.publicId",
+        ) {
+            publicId?.let { copyToClipboard(context, it); idCopied = true }
+        }
         SettingsDivider()
         SettingsRow(
             Icons.Outlined.Fingerprint, t(english, "ID устройства", "Device ID"),

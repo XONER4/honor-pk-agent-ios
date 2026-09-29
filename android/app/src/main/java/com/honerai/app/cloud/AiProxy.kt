@@ -23,9 +23,15 @@ object AiProxy {
      */
     @Volatile var serverAiReady = false
 
+    /**
+     * Администратор выключил ИИ (GET /health → aiEnabled:false или ответ 503 ai_disabled). Тогда запросы
+     * всё равно идут через сервер (он ответит понятной ошибкой или уже снова пустит) — не напрямую со своим ключом.
+     */
+    @Volatile var aiDisabledByAdmin = false
+
     /** Адрес и ключ запроса. Облако без токена — регистрация (в фоне, не дольше 20 с). */
     fun route(configuration: DeepSeekConfiguration): AiRoute {
-        if (!active || (!serverAiReady && configuration.apiKey.isNotEmpty())) {
+        if (!active || (!serverAiReady && !aiDisabledByAdmin && configuration.apiKey.isNotEmpty())) {
             return AiRoute.select("", null, configuration.baseURL, configuration.apiKey)!!
         }
         val token = CloudManager.tokenBlocking()
@@ -44,7 +50,16 @@ object AiProxy {
         if (!active || !CloudUrls.isOwnUrl(CloudConfig.baseUrl, request.url.toString())) return null
         val (code, message) = CloudHttpException.parseBody(raw)
         val english = english()
+        if (status == 503 && code == "ai_disabled") {
+            aiDisabledByAdmin = true
+        } else if (status in 500..599 || status == 400) {
+            // Сбой ИИ на сервере — отчёт администратору (лимиты, блокировка и выключение ИИ — не ошибки).
+            CloudManager.reportError("AI HTTP $status ${code.ifEmpty { "error" }}: ${message.take(300)}".trim())
+        }
         return when {
+            status == 503 && code == "ai_disabled" -> CloudAiError(message.ifBlank {
+                if (english) "The AI is temporarily disabled by the administrator." else "ИИ временно отключён администратором."
+            })
             status == 403 && (code == "blocked" || code.isEmpty()) -> {
                 CloudManager.onBlocked(message)
                 CloudAiError(message.ifBlank { if (english) "The administrator has restricted access to Honer AI." else "Администратор ограничил доступ к Honer AI." })

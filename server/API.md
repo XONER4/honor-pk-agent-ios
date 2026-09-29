@@ -10,7 +10,8 @@ Every endpoint lives under `/v1`. Errors: HTTP status + `{"error":"code","messag
 - **Device token** (user app): `Authorization: Bearer d_<token>` — issued by `POST /v1/devices/register`.
 - **Admin token**: `Authorization: Bearer a_<token>` — issued by `POST /v1/admin/login`.
 - Tokens are random 32-byte base64url; server stores only SHA-256 hashes.
-- Blocked device → every device endpoint returns `403 {"error":"blocked","message":"<reason or empty>"}`.
+- Blocked device → every device endpoint returns `403 {"error":"blocked","message":"<reason or empty>","until":ISO|null}`
+  (`until` — end of a temporary block, `null` = permanent; the server lifts expired blocks by itself).
 
 ## Device endpoints (user app)
 
@@ -18,12 +19,14 @@ Every endpoint lives under `/v1`. Errors: HTTP status + `{"error":"code","messag
 Body: `{ "installId": "UUID generated once per install", "platform": "android|ios", "deviceModel": "vivo V2250",
 "deviceName": "user-visible device name", "osVersion": "14", "appVersion": "10.44.0", "displayName": "Имя",
 "birthday": "2008-05-01" | null, "language": "ru|en", "licenseAcceptedAt": ISO | null, "pushToken": "fcm token" | null }`
-Response: `{ "deviceId": "uuid", "token": "d_…", "userId": "uuid", "adminChatId": "uuid" }`.
+Response: `{ "deviceId": "uuid", "token": "d_…", "userId": "uuid", "adminChatId": "uuid", "publicId": "0427",
+"overrides": Overrides }` (`publicId` — the user's short public ID, see Models).
 Idempotent per installId: re-register returns a NEW token for the same deviceId (old one revoked) and updates fields.
 Each register with a new installId counts as a download ("installs" counter).
 
 ### PATCH /v1/devices/me
 Body: any subset of register fields (displayName, birthday, pushToken, appVersion, language, licenseAcceptedAt).
+Response `{ "ok": true, "publicId": "0427", "overrides": Overrides }`. A changed `appVersion` is recorded as an `update` event.
 
 ### POST /v1/devices/me/stats
 Body: `{ "messagesSent": int (total so far), "secondsInApp": int (total so far) }` — absolute counters, server keeps max.
@@ -41,8 +44,10 @@ Server → client frames:
 - `{"t":"typing","chatId","who":"admin|user|ai","typing":bool}`
 - `{"t":"read","chatId","who":"admin|user","messageId"}`
 - `{"t":"presence","deviceId","state":"foreground|background|offline","typingIn":chatId|null,"lastSeen":ISO}` (admins only)
-- `{"t":"blocked","message":"reason"}` (device) — app shows the blocked screen.
+- `{"t":"blocked","message":"reason","until":ISO|null}` (device) — app shows the blocked screen.
 - `{"t":"notification","notification":Notification}`
+- `{"t":"overrides","overrides":Overrides}` (device) — personal restrictions changed by the admin.
+- `{"t":"metrics", …Metrics}` (admins, every 5 s) and `{"t":"ai", …AiSettings}` (admins, when AI settings change).
 Presence = `offline` when no socket for 40 s. `lastSeen` = last time the socket was alive.
 
 ### Chats (device)
@@ -63,27 +68,88 @@ Presence = `offline` when no socket for 40 s. `lastSeen` = last time the socket 
   The server injects the key, forwards to `https://api.deepseek.com/chat/completions`, and pipes the response bytes back
   unchanged (SSE when streaming) with no buffering. Rate limit: 60 requests / 10 min / device (429 `rate_limited`).
   Allowed models: `deepseek-flash` (used by the apps), `deepseek-chat`, `deepseek-reasoner`. Blocked devices get 403.
+  For `stream:true` the server adds `stream_options.include_usage:true`, so the last SSE chunk is
+  `{"choices":[],"usage":{…}}` (clients must skip chunks with empty `choices`). Token usage is counted per device.
+  When the admin has switched the AI off (globally or by schedule): `503 {"error":"ai_disabled","code":"ai_disabled",
+  "message":"ИИ временно отключён администратором."}` — clients show the message and must NOT fall back to a direct key.
 
 ## Admin endpoints
 
+### GET /v1/admin/setup-status → `{ "hasAccount": bool }` (no auth)
+Whether an admin account with login/password exists.
+
+### POST /v1/admin/setup (no auth token)
+Body `{ "login": "boss", "password": "…" }`, header `x-admin-key: <ADMIN_KEY>` (not needed only when `ADMIN_KEY`
+is not configured). Allowed ONLY while no account exists (`409 conflict` afterwards). Login: 3–64 chars `[A-Za-z0-9._@-]`,
+stored lowercase; password ≥ 8 chars, stored as scrypt with a random salt. Wrong/missing key → `401`. Response = login response.
+
 ### POST /v1/admin/login
-Body either `{ "googleIdToken": "…" }` (verified against `GOOGLE_CLIENT_IDS`; email must be in `ADMIN_EMAILS`)
-or `{ "adminKey": "…" }` (equals env `ADMIN_KEY`; fallback until Google sign-in is configured).
-Response `{ "token": "a_…", "email": "…", "name": "…" }`.
+Body one of: `{ "login": "…", "password": "…" }` (main way), `{ "googleIdToken": "…" }` (verified against
+`GOOGLE_CLIENT_IDS`; email must be in `ADMIN_EMAILS`) or `{ "adminKey": "…" }` (equals env `ADMIN_KEY`; spare way).
+Response `{ "token": "a_…", "email": "…", "name": "…", "login": "boss"|null }`.
+Wrong login/password → `401 {"error":"unauthorized","message":"Неверный логин или пароль"}`; 10 failures / 15 min / IP → 429.
 
 ### GET /v1/admin/overview
-`{ "users": int, "installs": int, "online": int, "inBackground": int, "blocked": int, "messagesToday": int }`
+`{ "users": int, "installs": int, "online": int, "inBackground": int, "blocked": int, "messagesToday": int,
+"updates": int, "uninstalls": int, "inactive": int, "inactiveDays": 7 }` — `updates` = app updates seen, `uninstalls` = push
+tokens rejected by FCM (a hint, not proof), `inactive` = devices with no contact for more than `inactiveDays` days.
 
-### GET /v1/admin/devices?query=&status=all|online|blocked
-`[DeviceSummary]` — `{ deviceId, userId, displayName, deviceModel, deviceName, platform, appVersion, installedAt,
-lastSeen, presence: "foreground|background|offline", typingIn: chatId|null, blocked: bool, messagesSent, secondsInApp,
-unreadForAdmin: int, adminChatId }`
+### GET /v1/admin/devices?query=&status=all|online|blocked&sort=activity|tokens
+`[DeviceSummary]` — `{ deviceId, userId, publicId, displayName, deviceModel, deviceName, platform, appVersion, installedAt,
+lastSeen, presence: "foreground|background|offline", typingIn: chatId|null, blocked: bool, blockedUntil: ISO|null,
+messagesSent, secondsInApp, unreadForAdmin: int, adminChatId, aiTokens: int (all time), reports: int }`.
+`query` matches name, device model/name, public ID (`0427` or `#0427`), ids, version. `sort=tokens` — by `aiTokens` desc.
 
-### GET /v1/admin/devices/:deviceId → DeviceSummary + `{ birthday, language, osVersion, licenseAcceptedAt, blockReason, installs: int }`
-### POST /v1/admin/devices/:deviceId/block body `{ "blocked": bool, "reason": "optional" }`
+### GET /v1/admin/devices/:deviceId → DeviceSummary + `{ birthday, language, osVersion, licenseAcceptedAt, blockReason, installs: int,
+  overrides: Overrides, usage: { today: Usage, total: Usage } }`
+### POST /v1/admin/devices/:deviceId/block body `{ "blocked": bool, "reason": "optional", "until": ISO | null }`
+`until` — temporary block (must be in the future, else 400); `null`/absent = permanent. Returns the device card.
 ### Admin chat endpoints: same as device chats under `/v1/admin/chats/...` (list: `GET /v1/admin/chats`), plus
 - `POST /v1/admin/chats/:chatId/ai` body `{ "enabled": bool }` — "Добавить ИИ в чат" (group chat admin + user + AI).
 - `POST /v1/admin/notifications` body `{ "deviceId": uuid | null (all), "title", "body" }` — broadcast/personal notification.
+
+## Admin: metrics, AI switch, reports, history, notes, overrides (admin2)
+
+### GET /v1/admin/metrics
+```
+{ at, online, inBackground, rps, requests1m, errors1m,
+  tokensToday: int, tokensTotal: int, tokens: { today: Usage, total: Usage },
+  aiRequestsToday, aiErrorsToday, reportsToday, errorsToday,          // errorsToday = aiErrorsToday + reportsToday (UTC day)
+  aiLatencyMs: { p50, p95, avg, count }, apiLatencyMs: { p50, p95, avg, count },   // ms, null when there are no samples
+  model: { enabled: bool, switchedOn: bool, scheduled: bool, configured: bool, name } }
+```
+`rps`/`errors1m` — last 60 s (in memory); AI latency — AI proxy + group AI over the last 15 min; API latency — last 5 min.
+Token sums are persisted in `usage_daily`. Admin WebSockets also receive the same object every 5 s as
+`{"t":"metrics", …}` (only while some admin is connected). `model.enabled` — AI effectively on and the key is configured.
+
+### GET /v1/admin/ai → AiSettings; POST /v1/admin/ai body `{ "enabled"?: bool, "schedule"?: [Window], "timezone"?: "Europe/Moscow" }`
+`AiSettings { enabled, schedule: [Window], timezone, effective: bool, configured: bool }`,
+`Window { days: [1..7] (1 = Mon … 7 = Sun; empty = every day), from: "HH:MM", to: "HH:MM" }`.
+`enabled` is the master switch. With a non-empty schedule the AI works only inside its windows (`to < from` — crosses
+midnight, `from == to` — whole day). `effective` — AI allowed right now. When not effective: the proxy answers 503
+`ai_disabled`, the group AI stays silent, `/health` → `aiEnabled:false`. Admins get `{"t":"ai", …AiSettings}` on change.
+
+### Client reports
+- Device: `POST /v1/devices/me/report` body `{ "kind": "error"|"crash", "message", "stack"?, "appVersion"?, "at"?: ISO }` →
+  `{ "ok": true, "id" }`. Limit 30 / 10 min / device (429). The first 2000 chars of message and 16000 of stack are kept.
+- Admin: `GET /v1/admin/reports?deviceId=&kind=error|crash&limit=50&before=ISO` → `[Report]`, newest first.
+  `Report { id, deviceId, publicId, displayName, deviceModel, kind, message, stack|null, appVersion|null, at }`.
+
+### Device history, notes, action log, overrides
+- `GET /v1/admin/devices/:deviceId/events` → `[DeviceEvent]` newest first,
+  `DeviceEvent { id, deviceId, kind: "install|update|uninstall|open", fromVersion|null, toVersion|null, at }`
+  (`install` — first registration of an installId; `update` — appVersion changed; `uninstall` — FCM rejected the push token;
+  `open` — reserved).
+- Notes: `GET /v1/admin/devices/:deviceId/notes` → `[Note]`; `POST …/notes` `{ "text" }` → 201 Note;
+  `PATCH /v1/admin/notes/:noteId` `{ "text" }` → Note; `DELETE /v1/admin/notes/:noteId` → `{ "ok": true }`.
+  `Note { id, deviceId, adminId, adminName, text, createdAt, updatedAt|null }`.
+- `GET /v1/admin/actions?deviceId=&limit=50&before=ISO` → `[AdminAction]`, newest first,
+  `AdminAction { id, adminId|null, adminName, deviceId|null, action, detail: object|null, at }`; actions: `block`, `unblock`,
+  `unblock_auto` (server, term expired), `notify`, `broadcast`, `overrides`, `ai_settings`, `admin_setup`.
+- `PATCH /v1/admin/devices/:deviceId/overrides` body — any of `{ "forceLanguage": "ru"|"en"|null, "disableSearch": bool|null,
+  "maxMessagesPerDay": 1..100000|null }`; `null`/`false` removes the key → `{ "overrides": Overrides }`. The device gets
+  `{"t":"overrides","overrides":{…}}` over WebSocket and the same object in register/PATCH responses.
+  The server does NOT enforce them — the app applies them.
 
 ## Models
 
@@ -97,7 +163,13 @@ Message { id, clientId, chatId, sender: "admin|user|ai", text, attachments: [Att
 AttachmentRef { id, kind: "image|video|audio|voice|file", name, mime, size, durationMs|null, width|null, height|null,
                 url: "/v1/media/<id>" }
 Notification { id, title, body, createdAt, read: bool, chatId: string|null, kind: "admin|system|ai" }
+Usage { prompt, completion, total, requests, errors }          // AI tokens / requests / AI errors
+Overrides { forceLanguage?: "ru"|"en", disableSearch?: true, maxMessagesPerDay?: int }   // only set keys
 ```
+
+### Public user ID
+Every user gets a random unique `publicId` — 4 digits as a string (`"0000"`…`"9999"`, leading zeros kept); when all
+10 000 are taken, 5 digits, and so on. Assigned at registration; existing users get one at server start.
 
 ## Group chat with AI (`aiEnabled`)
 When enabled, after every new user/admin message the server decides whether the AI should answer:
@@ -113,3 +185,5 @@ Without FCM the app falls back to its WebSocket (foreground/background service) 
 ## Env
 `DATABASE_URL`, `DEEPSEEK_API_KEY`, `ADMIN_KEY`, `ADMIN_EMAILS` (comma list), `GOOGLE_CLIENT_IDS` (comma list),
 `MEDIA_DIR` (Railway volume path, default ./media), `FIREBASE_SERVICE_ACCOUNT` (optional), `PORT`.
+Optional (admin2): `AI_SCHEDULE_TZ` (default `Europe/Moscow`), `INACTIVE_DAYS` (7), `METRICS_PUSH_MS` (5000),
+`REPORT_RATE_MAX` (30) / `REPORT_RATE_WINDOW_MS` (600000), `BLOCK_SWEEP_MS` (60000).

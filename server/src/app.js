@@ -23,6 +23,11 @@ import mediaRoutes from './routes/media.js';
 import notificationRoutes from './routes/notifications.js';
 import aiProxyRoutes from './routes/ai.js';
 import adminRoutes from './routes/admin.js';
+import adminInsightsRoutes, { createMetricsSnapshot } from './routes/admin-insights.js';
+import { LiveMetrics, createUsage } from './metrics.js';
+import { createAiControl } from './ai-control.js';
+import { backfillPublicIds } from './public-id.js';
+import { logAdminAction } from './device-events.js';
 
 /**
  * @param {object} config — результат loadConfig()
@@ -45,6 +50,7 @@ export async function buildApp(config, overrides = {}) {
 
   const db = overrides.db || (await createDb(config, app.log));
   await migrate(db);
+  await backfillPublicIds(db, app.log);
 
   const hub = new Hub({
     config,
@@ -56,7 +62,11 @@ export async function buildApp(config, overrides = {}) {
   await media.init();
   const push = createPush({ db, hub, config, logger: app.log, transport: overrides.pushTransport });
   const chats = createChatService({ db, hub, push, media, logger: app.log });
-  const groupAi = createGroupAi({ db, hub, chats, config, logger: app.log });
+  const metrics = new LiveMetrics();
+  const usage = createUsage({ db, logger: app.log });
+  const aiControl = createAiControl({ db, config, logger: app.log });
+  await aiControl.load();
+  const groupAi = createGroupAi({ db, hub, chats, config, logger: app.log, aiControl, metrics, usage });
   chats.listeners.push(groupAi.onMessage);
 
   const googleClient = new OAuth2Client();
@@ -69,10 +79,23 @@ export async function buildApp(config, overrides = {}) {
     ai: new RateLimiter({ max: config.aiRateMax, windowMs: config.aiRateWindowMs }),
     login: new RateLimiter({ max: config.loginRateMax, windowMs: config.loginRateWindowMs }),
     register: new RateLimiter({ max: config.registerRateMax, windowMs: config.registerRateWindowMs }),
+    report: new RateLimiter({ max: config.reportRateMax, windowMs: config.reportRateWindowMs }),
   };
+  const metricsSnapshot = createMetricsSnapshot({ db, hub, metrics, usage, aiControl, config });
 
   app.decorate('ctx', {
     config, db, hub, media, push, chats, groupAi, limits, verifyGoogleIdToken, auth: createAuth({ db }),
+    metrics, usage, aiControl, metricsSnapshot,
+  });
+
+  // Метрики: каждый входящий запрос (кроме WebSocket) — в «запросы/сек»; время ответа и 5xx — по завершении.
+  // AI-прокси считает свою задержку сам (ответ идёт потоком мимо Fastify).
+  const skipLatency = (url) => url.startsWith('/v1/ws') || url.startsWith('/v1/ai/');
+  app.addHook('onRequest', async (req) => {
+    if (!String(req.url).startsWith('/v1/ws')) metrics.recordRequest();
+  });
+  app.addHook('onResponse', async (req, reply) => {
+    if (!skipLatency(String(req.url))) metrics.recordResponse(reply.statusCode, reply.elapsedTime);
   });
 
   // CORS закрыт по умолчанию: мобильным приложениям он не нужен; веб-клиенты — только из CORS_ORIGINS.
@@ -108,7 +131,8 @@ export async function buildApp(config, overrides = {}) {
   app.setNotFoundHandler(notFoundHandler);
 
   // ai — есть ли на сервере ключ нейросети: без него приложения ходят к ИИ напрямую (запасной путь).
-  app.get('/health', async () => ({ ok: true, ai: Boolean(config.deepseekApiKey) }));
+  // aiEnabled — ИИ сейчас разрешён администратором (общий выключатель и расписание).
+  app.get('/health', async () => ({ ok: true, ai: Boolean(config.deepseekApiKey), aiEnabled: aiControl.isEnabled() }));
 
   await app.register(wsRoutes);
   await app.register(deviceRoutes);
@@ -118,8 +142,43 @@ export async function buildApp(config, overrides = {}) {
   await app.register(notificationRoutes);
   await app.register(aiProxyRoutes);
   await app.register(adminRoutes);
+  await app.register(adminInsightsRoutes);
+
+  // Раз в METRICS_PUSH_MS — кадр {"t":"metrics"} подключённым админам (если они есть).
+  let pushing = false;
+  const metricsTimer = setInterval(async () => {
+    if (pushing || hub.admin.sockets.size === 0) return;
+    pushing = true;
+    try {
+      hub.sendToAdmins({ t: 'metrics', ...(await metricsSnapshot()) });
+    } catch (err) {
+      app.log.warn({ err: { message: err.message } }, 'metrics push failed');
+    } finally {
+      pushing = false;
+    }
+  }, Math.max(500, config.metricsPushMs));
+  metricsTimer.unref();
+
+  // Снятие блокировок с истёкшим сроком (для списков админки; при входе устройства проверяется сразу).
+  const blockTimer = setInterval(async () => {
+    try {
+      const now = new Date();
+      const rows = await db.many('SELECT id FROM devices WHERE blocked = TRUE AND blocked_until IS NOT NULL AND blocked_until <= $1', [now]);
+      for (const r of rows) {
+        const res = await db.query(
+          'UPDATE devices SET blocked = FALSE, block_reason = NULL, blocked_until = NULL WHERE id = $1 AND blocked = TRUE AND blocked_until <= $2',
+          [r.id, now]);
+        if (res.rowCount) await logAdminAction(db, { deviceId: r.id, action: 'unblock_auto' }, app.log);
+      }
+    } catch (err) {
+      app.log.warn({ err: { message: err.message } }, 'block sweep failed');
+    }
+  }, Math.max(1000, config.blockSweepMs));
+  blockTimer.unref();
 
   app.addHook('onClose', async () => {
+    clearInterval(metricsTimer);
+    clearInterval(blockTimer);
     groupAi.stop();
     hub.stop();
     for (const l of Object.values(limits)) l.stop();

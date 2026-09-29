@@ -143,6 +143,88 @@ const STATEMENTS = [
      name TEXT PRIMARY KEY,
      value BIGINT NOT NULL DEFAULT 0
    )`,
+
+  // ---------- admin2: только добавления (существующие данные сохраняются) ----------
+
+  // Аккаунты администраторов с логином и паролем (scrypt). Старые строки (вход по ключу/Google) остаются без пароля.
+  `ALTER TABLE admins ADD COLUMN IF NOT EXISTS login TEXT`,
+  `ALTER TABLE admins ADD COLUMN IF NOT EXISTS password_hash TEXT`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS admins_login_idx ON admins (login)`,
+
+  // Публичный ID пользователя из 4 цифр ("0000".."9999"; когда заняты все — 5 цифр и т. д.).
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS public_id TEXT`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS users_public_id_idx ON users (public_id)`,
+
+  // Блокировка на срок (NULL — навсегда) и персональные ограничения устройства (JSON).
+  `ALTER TABLE devices ADD COLUMN IF NOT EXISTS blocked_until TIMESTAMPTZ`,
+  `ALTER TABLE devices ADD COLUMN IF NOT EXISTS overrides JSONB`,
+
+  // События установки/обновления/удаления. kind: install | update | uninstall | open.
+  `CREATE TABLE IF NOT EXISTS device_events (
+     id UUID PRIMARY KEY,
+     device_id UUID NOT NULL,
+     kind TEXT NOT NULL,
+     from_version TEXT,
+     to_version TEXT,
+     at TIMESTAMPTZ NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS device_events_device_idx ON device_events (device_id, at)`,
+  `CREATE INDEX IF NOT EXISTS device_events_kind_idx ON device_events (kind)`,
+
+  // Расход ИИ по дням (UTC, "YYYY-MM-DD") и устройствам; запросы админа — под нулевым UUID.
+  `CREATE TABLE IF NOT EXISTS usage_daily (
+     day TEXT NOT NULL,
+     device_id UUID NOT NULL,
+     tokens_prompt BIGINT NOT NULL DEFAULT 0,
+     tokens_completion BIGINT NOT NULL DEFAULT 0,
+     requests BIGINT NOT NULL DEFAULT 0,
+     errors BIGINT NOT NULL DEFAULT 0,
+     PRIMARY KEY (day, device_id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS usage_daily_device_idx ON usage_daily (device_id)`,
+
+  // Ошибки и падения, присланные приложениями. kind: error | crash.
+  `CREATE TABLE IF NOT EXISTS client_reports (
+     id UUID PRIMARY KEY,
+     device_id UUID NOT NULL,
+     kind TEXT NOT NULL,
+     message TEXT NOT NULL,
+     stack TEXT,
+     app_version TEXT,
+     created_at TIMESTAMPTZ NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS client_reports_device_idx ON client_reports (device_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS client_reports_created_idx ON client_reports (created_at)`,
+
+  // Журнал действий администраторов (admin_id NULL — действие сервера, например снятие блокировки по сроку).
+  `CREATE TABLE IF NOT EXISTS admin_actions (
+     id UUID PRIMARY KEY,
+     admin_id UUID,
+     device_id UUID,
+     action TEXT NOT NULL,
+     detail TEXT,
+     at TIMESTAMPTZ NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS admin_actions_device_idx ON admin_actions (device_id, at)`,
+  `CREATE INDEX IF NOT EXISTS admin_actions_at_idx ON admin_actions (at)`,
+
+  // Заметки администраторов о пользователе.
+  `CREATE TABLE IF NOT EXISTS admin_notes (
+     id UUID PRIMARY KEY,
+     device_id UUID NOT NULL,
+     admin_id UUID,
+     text TEXT NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL,
+     updated_at TIMESTAMPTZ
+   )`,
+  `CREATE INDEX IF NOT EXISTS admin_notes_device_idx ON admin_notes (device_id, created_at)`,
+
+  // Настройки сервера «ключ → JSON-строка» (например, ai: включён ли ИИ и расписание).
+  `CREATE TABLE IF NOT EXISTS server_settings (
+     key TEXT PRIMARY KEY,
+     value TEXT NOT NULL,
+     updated_at TIMESTAMPTZ NOT NULL
+   )`,
 ];
 
 export async function migrate(db) {
