@@ -1,0 +1,16 @@
+{
+  "tasks": {
+    "start": "deno run -A --unstable-kv main.ts",
+    "test": "deno test -A --unstable-kv"
+  },
+  "unstable": ["kv"],
+  "exclude": ["tests", "server-node-reference"],
+  "deploy": {
+    "org": "xoner4",
+    "app": "honor-srv"
+  }
+}
+
+
+
+
