@@ -66,11 +66,19 @@ jobs:
           mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk "out/HonerAI-$VERSION_NAME.apk"
           "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs "out/HonerAI-$VERSION_NAME.apk" | head -3 || true
+          # Админ-приложение — только в артефактах: в публичный релиз (канал автообновления) не попадает.
+          mkdir -p admin-out
+          cp admin/build/outputs/apk/release/admin-release.apk "admin-out/HonerAdmin-$VERSION_NAME.apk"
 
       - uses: actions/upload-artifact@v4
         with:
           name: HonerAI-android
           path: android/out/*.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HonerAdmin-android
+          path: android/admin-out/*.apk
 
       - uses: actions/upload-artifact@v4
         if: always()
