@@ -71,7 +71,10 @@ enum class HonerTool(val rawValue: String) {
     TAKE_SCREENSHOT("take_screenshot"),
     SCREEN_RECORDING("start_screen_recording"),
     SYSTEM_HEALTH("system_health"),
-    PHONE_DATA("phone_data");
+    PHONE_DATA("phone_data"),
+    // agent: действия в приложениях через службу специальных возможностей.
+    RUN_DEVICE_TASK("run_device_task"),
+    CONFIRM_PENDING_ACTION("confirm_pending_action");
 
     /** Инструмент ходит в интернет (доступен только с кнопкой «Поиск»). */
     val isWeb: Boolean
@@ -97,11 +100,13 @@ enum class HonerTool(val rawValue: String) {
 
     /** Выполняется асинхронно (сеть, контакты, медиа). */
     val isAsync: Boolean get() = isWeb || this == FIND_CONTACT || this == OPEN_APP /* media */ || this == VIEW_IMAGE || this == TRANSCRIBE_MEDIA || this == EDIT_IMAGE ||
+        this == RUN_DEVICE_TASK /* agent */ ||
         com.honerai.app.extras.device.DeviceToolSchemas.isDeviceTool(this) // extras
 
     /** Описание для API: имя, назначение и параметры в формате JSON Schema. */
     val schema: JsonObject
         get() {
+            if (com.honerai.app.core.agent.AgentToolSchemas.isAgentTool(this)) return com.honerai.app.core.agent.AgentToolSchemas.schema(this) // agent
             if (isExtra) return ExtraToolSchemas.schema(this)
             if (this == OPEN_APP || this == SEND_MEDIA) return MediaToolSchemas.schema(this) // media:
             return when (this) {

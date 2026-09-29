@@ -49,6 +49,10 @@ interface ChatStoreApi {
     val statistics: StateFlow<UsageStatistics>
     /** Игра, которую попросила открыть нейросеть (сырой идентификатор: chess, checkers, durak, slots). */
     val requestedGame: StateFlow<String?>
+    // agent: важное действие агента, ждущее подтверждения (карточка «Подтвердить»/«Отмена»).
+    val pendingAgentAction: StateFlow<com.honerai.app.core.agent.AgentPendingAction?>
+    /** Подтвердить (true) или отменить (false) действие агента. */
+    fun confirmPendingAction(confirm: Boolean)
 
     val canSend: Boolean
     fun selectedConversation(): Conversation?

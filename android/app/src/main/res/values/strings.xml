@@ -4,4 +4,7 @@
     <string name="notification_channel_answers">Ответы Honer AI</string>
     <string name="notification_channel_work">Работа в фоне</string>
     <string name="notification_channel_updates">Обновления</string>
+    <!-- agent: описание службы специальных возможностей для системного экрана. -->
+    <string name="agent_accessibility_description">Позволяет Honer AI по вашей просьбе выполнять действия в других приложениях: искать товары, заполнять формы, открывать чаты и меню. Honer AI никогда не вводит пароли и коды и всегда спрашивает подтверждение перед оплатой или отправкой.</string>
+    <string name="agent_accessibility_summary">Действия в приложениях по вашей просьбе</string>
 </resources>

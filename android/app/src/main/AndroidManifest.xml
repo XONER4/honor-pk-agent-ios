@@ -137,6 +137,20 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection|microphone" />
 
+        <!-- agent: служба специальных возможностей — действия в приложениях по просьбе пользователя. -->
+        <service
+            android:name=".device.agent.DeviceAgentService"
+            android:exported="false"
+            android:label="@string/agent_accessibility_summary"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/agent_accessibility_config" />
+        </service>
+
         <!-- Автообновление: итог установки и запуск после обновления. -->
         <receiver
             android:name=".device.UpdateInstallReceiver"

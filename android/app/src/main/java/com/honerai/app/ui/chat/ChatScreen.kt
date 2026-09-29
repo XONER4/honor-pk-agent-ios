@@ -1076,6 +1076,18 @@ private fun MainScreen(
                 enter = fadeIn() + slideInVertically { it / 2 }, exit = fadeOut() + slideOutVertically { it / 2 }) {
                 ToastBubble(toastMessage.orEmpty(), Modifier.padding(bottom = 10.dp))
             }
+            // agent: карточка подтверждения важного действия агента над полем ввода.
+            val pendingAgentAction by store.pendingAgentAction.collectAsState()
+            pendingAgentAction?.let { pending ->
+                com.honerai.app.ui.agent.ConfirmationCard(
+                    action = pending,
+                    english = english,
+                    fontScale = fontScale,
+                    onConfirm = { store.confirmPendingAction(true) },
+                    onCancel = { store.confirmPendingAction(false) },
+                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+                )
+            }
             val lastError = messages.lastOrNull()?.error
             Composer(
                 store = store,

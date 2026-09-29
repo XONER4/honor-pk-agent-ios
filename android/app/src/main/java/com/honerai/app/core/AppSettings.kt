@@ -42,6 +42,8 @@ class AppSettings(context: Context) {
     private val _birthday = string("honer.birthday", "")
     private val _autoUpdate = bool("honer.autoUpdate", true)
     private val _reduceMotion = bool("honer.reduceMotion", false)
+    // agent: главный переключатель функции «Действия в приложениях» (по умолчанию выключен).
+    private val _agentEnabled = bool("honor.agentEnabled", false)
     // extras: принятие лицензионного соглашения (время в мс и версия текста).
     private val _licenseAcceptedAt = MutableStateFlow(prefs.getLong("honor.licenseAcceptedAt", 0L))
     private val _licenseVersion = int("honor.licenseVersion", 0)
@@ -66,6 +68,8 @@ class AppSettings(context: Context) {
     val autoUpdate: StateFlow<Boolean> = _autoUpdate.asStateFlow()
     /** Меньше анимаций — для слабых телефонов (включается само на устройствах с малой памятью). */
     val reduceMotion: StateFlow<Boolean> = _reduceMotion.asStateFlow()
+    // agent: включена ли функция «Действия в приложениях (агент)».
+    val agentEnabled: StateFlow<Boolean> = _agentEnabled.asStateFlow()
     // extras: когда (epoch ms, 0 — ещё нет) и какую версию соглашения принял пользователь — для отправки на сервер.
     val licenseAcceptedAt: StateFlow<Long> = _licenseAcceptedAt.asStateFlow()
     val licenseVersion: StateFlow<Int> = _licenseVersion.asStateFlow()
@@ -79,6 +83,8 @@ class AppSettings(context: Context) {
         accountCreatedAt = if (saved > 0) Instant.ofEpochMilli(saved) else Instant.now().also {
             prefs.edit().putLong(key, it.toEpochMilli()).apply()
         }
+        // agent: зеркалим переключатель в статический флаг для системной инструкции и проверки доступа.
+        com.honerai.app.core.agent.AgentAvailability.set(_agentEnabled.value)
     }
 
     val isEnglish: Boolean get() = _language.value == "en"
@@ -104,6 +110,10 @@ class AppSettings(context: Context) {
     fun setBirthday(value: String) = put("honer.birthday", value, _birthday)
     fun setAutoUpdate(value: Boolean) = putBool("honer.autoUpdate", value, _autoUpdate)
     fun setReduceMotion(value: Boolean) = putBool("honer.reduceMotion", value, _reduceMotion)
+    fun setAgentEnabled(value: Boolean) { // agent
+        putBool("honor.agentEnabled", value, _agentEnabled)
+        com.honerai.app.core.agent.AgentAvailability.set(value)
+    }
     // extras: пользователь принял соглашение версии [version].
     fun setLicenseAccepted(version: Int, acceptedAt: Long = System.currentTimeMillis()) {
         prefs.edit().putLong("honor.licenseAcceptedAt", acceptedAt).putInt("honor.licenseVersion", version).apply()

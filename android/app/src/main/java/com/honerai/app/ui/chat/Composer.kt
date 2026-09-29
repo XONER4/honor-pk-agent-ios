@@ -123,6 +123,8 @@ fun Composer(
     val search by store.searchEnabled.collectAsState()
     val generating by store.isGenerating.collectAsState()
     val storeDraft by store.draft.collectAsState()
+    // agent: пока агент ждёт подтверждения, поле ввода активно, а вместо «Стоп» показываем «Отправить».
+    val pendingAgentAction by store.pendingAgentAction.collectAsState()
 
     // Своё значение поля (с курсором) синхронизируется с черновиком хранилища.
     var field by remember { mutableStateOf(TextFieldValue(store.draft.value, TextRange(store.draft.value.length))) }
@@ -234,7 +236,9 @@ fun Composer(
                 if (attachmentsOpen) t("Закрыть вложения", "Close attachments") else t("Добавить вложение", "Add attachment"),
                 "composer.attachments", colors.foreground, 27, onToggleAttachments,
             )
-            if (generating) {
+            // agent: во время ожидания подтверждения даём «Отправить» (для ответа «да»/«отмена»).
+            val awaitingConfirm = pendingAgentAction != null
+            if (generating && !awaitingConfirm) {
                 Box(
                     Modifier.size(width = 40.dp, height = 44.dp).clip(CircleShape).clickable { store.stop() }
                         .semantics { contentDescription = t("Остановить ответ", "Stop response") }.testTag("chat.stop"),
@@ -244,7 +248,7 @@ fun Composer(
                         Icon(Icons.Rounded.Stop, null, tint = colors.background, modifier = Modifier.size(16.dp))
                     }
                 }
-            } else if (canSend && !voice.mode) {
+            } else if ((awaitingConfirm || canSend) && !voice.mode) {
                 Box(
                     Modifier.size(width = 40.dp, height = 44.dp).clip(CircleShape).clickable(onClick = onSend)
                         .semantics { contentDescription = t("Отправить", "Send") }.testTag("chat.send"),
@@ -257,7 +261,7 @@ fun Composer(
             }
             // Микрофон уступает место «Отправить», когда есть текст (на узком экране иначе сплющивается);
             // в голосовом режиме он виден всегда — из него всегда есть выход.
-            if (voice.mode || generating || !canSend) IconBox(
+            if (voice.mode || ((generating || !canSend) && !awaitingConfirm)) IconBox(
                 if (voice.holding) Icons.Rounded.StopCircle else Icons.Rounded.MicNone,
                 if (voice.holding) t("Остановить и отправить", "Stop and send") else t("Голосовой ввод", "Voice input"),
                 "chat.voice", if (voice.holding) colors.accent else colors.foreground, 28, onVoiceTap,

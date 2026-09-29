@@ -104,6 +104,9 @@ class ChatStore internal constructor(
     private val _instructionLibrary = MutableStateFlow<List<SavedInstruction>>(emptyList())
     private val _statistics = MutableStateFlow(loadStatistics())
     private val _requestedGame = MutableStateFlow<String?>(null)
+    // agent: важное действие агента, ждущее подтверждения пользователя.
+    private val _pendingAgentAction = MutableStateFlow<com.honerai.app.core.agent.AgentPendingAction?>(null)
+    private var pendingAgentConfirm: kotlinx.coroutines.CompletableDeferred<Boolean>? = null
 
     override val conversations: StateFlow<List<Conversation>> = _conversations.asStateFlow()
     override val selectedConversationId: StateFlow<String?> = _selected.asStateFlow()
@@ -125,6 +128,8 @@ class ChatStore internal constructor(
     override val instructionLibrary: StateFlow<List<SavedInstruction>> = _instructionLibrary.asStateFlow()
     override val statistics: StateFlow<UsageStatistics> = _statistics.asStateFlow()
     override val requestedGame: StateFlow<String?> = _requestedGame.asStateFlow()
+    // agent: карточка подтверждения действия агента (наблюдает экран чата).
+    override val pendingAgentAction: StateFlow<com.honerai.app.core.agent.AgentPendingAction?> = _pendingAgentAction.asStateFlow()
 
     /** Персональная инструкция (тон, обращение). На iPhone она пустая по умолчанию. */
     var systemInstruction: String = ""
@@ -302,6 +307,16 @@ class ChatStore internal constructor(
     // ---- Переписка ----
 
     override fun send(inputKind: MessageInputKind) {
+        // agent: пока агент ждёт подтверждения, «да/подтверждаю/оплачивай» — это подтверждение,
+        // «нет/отмена/стоп» — отмена. Обычное сообщение в это время не отправляем.
+        if (_pendingAgentAction.value != null) {
+            val verdict = com.honerai.app.core.agent.ConfirmationParser.parse(draft.value)
+            if (verdict != com.honerai.app.core.agent.ConfirmationParser.Verdict.UNKNOWN) {
+                draft.value = ""
+                confirmPendingAction(verdict == com.honerai.app.core.agent.ConfirmationParser.Verdict.YES)
+            }
+            return
+        }
         if (!canSend) return
         if (!hasApiKey) { _errorMessage.value = HonorError.MissingApiKey().message; return }
         // Родительский контроль: лимит времени, тихие часы и запрещённые темы.
@@ -1569,6 +1584,16 @@ class ChatStore internal constructor(
         val online = webToolsOn || (tool?.isOnDemand == true && ParentalGuard.canSearchWeb)
         return when {
             tool == HonerTool.FIND_CONTACT -> ContactLookup.execute(context, call)
+            // agent: действия в приложениях и подтверждение важных шагов.
+            tool == HonerTool.RUN_DEVICE_TASK -> runDeviceTask(call)
+            tool == HonerTool.CONFIRM_PENDING_ACTION -> {
+                val confirm = ToolArgument.bool(call.parsedArguments["confirm"]) ?: true
+                val had = _pendingAgentAction.value != null
+                confirmPendingAction(confirm)
+                ToolCallResult(call.id, call.name,
+                    if (!had) "Сейчас нет действия, ожидающего подтверждения."
+                    else if (confirm) "Подтверждение принято — продолжаю." else "Действие отменено.")
+            }
             // media: кнопка открытия приложения и медиа в чат.
             tool == HonerTool.OPEN_APP -> AppLauncher.execute(context, call)
             tool == HonerTool.SEND_MEDIA -> if (online) MediaSender(webClient, configuration.language).execute(call, progress)
@@ -1585,6 +1610,51 @@ class ChatStore internal constructor(
                 if (online) WebToolExecutor(webClient, configuration.language /* media */).execute(call, progress) else ToolCallResult(call.id, call.name, offline)
             else -> ToolExecutor.executeExtended(call, toolContext)
         }
+    }
+
+    // agent: запуск действия в приложении через службу специальных возможностей.
+    private suspend fun runDeviceTask(call: ToolCallRequest): ToolCallResult {
+        val controller = com.honerai.app.core.agent.AgentController.controller
+        val serviceEnabled = context?.let { com.honerai.app.device.agent.AgentAccessibility.isServiceEnabled(it) } ?: false
+        val availability = com.honerai.app.core.agent.DeviceTaskTool.Availability(
+            masterEnabled = com.honerai.app.core.agent.AgentAvailability.enabled,
+            serviceEnabled = serviceEnabled,
+            connected = com.honerai.app.core.agent.AgentController.connected.value,
+        )
+        val brain = if (availability.ready && controller != null) com.honerai.app.core.agent.ModelAgentBrain(makeClient()) else null
+        val sink = object : com.honerai.app.core.agent.AgentProgressSink {
+            override fun start(title: String, detail: String): String {
+                val id = newId()
+                scope.launch { startStep(GenerationStep(id = id, kind = "settings", title = title, detail = detail)) }
+                return id
+            }
+            override fun update(stepId: String, detail: String?, done: Boolean?) {
+                scope.launch { updateStep(stepId, detail = detail, done = done) }
+            }
+        }
+        val confirm: suspend (String, String?) -> Boolean = { description, amount -> awaitAgentConfirmation(description, amount) }
+        return com.honerai.app.core.agent.DeviceTaskTool.execute(call, controller, brain, availability, sink, confirm)
+    }
+
+    /** Ставит действие агента на подтверждение и ждёт ответа пользователя (кнопка или текст). */
+    private suspend fun awaitAgentConfirmation(description: String, amount: String?): Boolean {
+        val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
+        pendingAgentConfirm = deferred
+        _pendingAgentAction.value = com.honerai.app.core.agent.AgentPendingAction(description, amount)
+        _generationStatus.value = "Жду подтверждения…"
+        return try {
+            deferred.await()
+        } finally {
+            _pendingAgentAction.value = null
+            if (pendingAgentConfirm === deferred) pendingAgentConfirm = null
+        }
+    }
+
+    override fun confirmPendingAction(confirm: Boolean) {
+        val deferred = pendingAgentConfirm ?: return
+        pendingAgentConfirm = null
+        _pendingAgentAction.value = null
+        deferred.complete(confirm)
     }
 
     /** Данные для инструментов: список всех чатов, переписка каждого, настройки, таблицы, память. */

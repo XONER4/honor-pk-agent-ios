@@ -218,7 +218,9 @@ class DeepSeekClient(
             MediaToolSchemas.PROMPT /* media: приложения, медиа, запрет платежей */ +
             HonerIdentity.currentDateTimeBlock() + deviceSummary() +
             // extras: инструменты телефона и состояние переключателя доступа к данным.
-            com.honerai.app.extras.device.DeviceToolSchemas.promptBlock(com.honerai.app.extras.device.DeviceAccess.enabled.value)
+            com.honerai.app.extras.device.DeviceToolSchemas.promptBlock(com.honerai.app.extras.device.DeviceAccess.enabled.value) +
+            // agent: действия в приложениях через службу специальных возможностей.
+            com.honerai.app.core.agent.AgentToolSchemas.promptBlock(com.honerai.app.core.agent.AgentAvailability.enabled)
         if (systemInstruction.isNotBlank()) {
             instruction += "\nПерсональные настройки пользователя. Применяй выбранные тон, обращение и длину ответа к каждому ответу, если текущий вопрос явно не просит иначе:\n$systemInstruction"
             if (PersonalizationPolicy.prefersBriefAnswers(systemInstruction)) {
