@@ -224,25 +224,25 @@ internal fun SettingsRow(
 ) {
     val colors = HonerTheme.colors
     val fontScale by appSettings().fontScale.collectAsState()
-    var modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp)
+    var modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
     if (onClick != null) modifier = modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick)
     if (tag != null) modifier = modifier.testTag(tag)
     Row(
-        modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier.padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(13.dp),
     ) {
-        if (icon != null) Icon(icon, contentDescription = null, tint = if (enabled) titleColor else colors.secondary, modifier = Modifier.padding(horizontal = 2.dp).size(23.dp))
+        if (icon != null) Icon(icon, contentDescription = null, tint = if (enabled) titleColor else colors.secondary, modifier = Modifier.padding(horizontal = 2.dp).size(22.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, color = if (enabled) titleColor else colors.secondary, fontSize = (17 * fontScale).sp)
+            Text(title, color = if (enabled) titleColor else colors.secondary, fontSize = (16 * fontScale).sp)
             if (!subtitle.isNullOrEmpty()) {
                 Text(subtitle, color = colors.secondary, fontSize = 12.sp, lineHeight = 16.sp)
             }
         }
         if (value.isNotEmpty()) {
             Text(
-                value, color = colors.secondary, fontSize = (16 * fontScale).sp, textAlign = TextAlign.End,
-                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp),
+                value, color = colors.secondary, fontSize = (15 * fontScale).sp, textAlign = TextAlign.End,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 140.dp),
             )
         }
         when {
