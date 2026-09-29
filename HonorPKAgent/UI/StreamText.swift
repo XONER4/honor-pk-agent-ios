@@ -2103,6 +2103,38 @@ enum TableColumnLayout {
         }
         return shares
     }
+
+    /// Самые длинные слова ячейки — кандидаты на минимальную ширину столбца.
+    static func longestWords(_ text: String, limit: Int = 2) -> [String] {
+        let cleaned = text.replacingOccurrences(of: "[*_`~]", with: "", options: .regularExpression)
+        return cleaned.split(whereSeparator: { $0.isWhitespace })
+            .map(String.init)
+            .sorted { $0.count > $1.count }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    /// Ширины столбцов в `available`: по долям `shares`, но не уже `minimums`
+    /// (самое длинное слово столбца не должно рваться посередине).
+    /// nil — столбцы не помещаются даже по минимуму, нужна широкая таблица с прокруткой.
+    static func fitWidths(shares: [Double], minimums: [CGFloat], available: CGFloat) -> [CGFloat]? {
+        let count = shares.count
+        guard count > 0, minimums.count == count, minimums.reduce(0, +) <= available else { return nil }
+        var fixed = Array(repeating: false, count: count)
+        var widths = Array(repeating: CGFloat(0), count: count)
+        for _ in 0...count {
+            let freeSpace = available - (0..<count).filter { fixed[$0] }.reduce(0) { $0 + minimums[$1] }
+            let freeShare = (0..<count).filter { !fixed[$0] }.reduce(0.0) { $0 + shares[$1] }
+            var changed = false
+            for index in 0..<count {
+                if fixed[index] { widths[index] = minimums[index]; continue }
+                widths[index] = freeShare > 0 ? CGFloat(shares[index] / freeShare) * freeSpace : freeSpace / CGFloat(count)
+                if widths[index] < minimums[index] { fixed[index] = true; changed = true }
+            }
+            if !changed { return widths }
+        }
+        return (0..<count).map { fixed[$0] ? minimums[$0] : widths[$0] }
+    }
 }
 
 /// Таблица GFM с выравниванием столбцов, сортировкой, фильтром по строкам,
@@ -2242,11 +2274,13 @@ struct MarkdownTableView: View {
                 .overlay(Capsule().stroke(HonorTheme.divider, lineWidth: 0.6))
             }
 
-            if compactMode {
+            if compactMode, let widths = fittedWidths {
                 // Компактный режим — настоящая таблица по ширине экрана: шапка один раз,
                 // строки друг под другом, текст переносится внутри ячейки.
-                fitTable
+                fitTable(widths)
             } else {
+                // Широкий режим — или компактный, в который не помещаются целые слова:
+                // лучше прокрутка, чем «Меркури-й» и таблица шире сообщения.
                 wideTable
             }
 
@@ -2351,26 +2385,27 @@ struct MarkdownTableView: View {
     /// на экран, это и выглядело как «не таблица». Теперь шапка показывается один раз,
     /// строки идут друг под другом, текст переносится внутри ячейки, а ширины столбцов
     /// считаются по содержимому.
-    private var fitTable: some View {
+    private func fitTable(_ widths: [CGFloat]) -> some View {
         // Столбцы делят ширину контейнера, но не поровну: короткий столбец получает
-        // меньше места, длинный — больше (см. TableColumnLayout). Текст переносится
-        // внутри ячейки, поэтому прокрутка не нужна. Ширину берём у родителя строками
-        // фиксированной ширины: так высота таблицы считается по содержимому, а не
-        // обрезается.
-        let shares = TableColumnLayout.shares(headers: headers, rows: shownRows, columnCount: columnCount)
-        return VStack(alignment: .leading, spacing: 0) {
+        // меньше места, длинный — больше (см. TableColumnLayout), и не уже самого
+        // длинного слова. Текст переносится внутри ячейки, поэтому прокрутка не нужна.
+        // Каждая ячейка (шапка, строки, итоги) — ровно своей ширины, поля внутри:
+        // раньше поля строк добавлялись снаружи рамки, и строка выходила за сообщение
+        // на 10 pt на каждый столбец.
+        VStack(alignment: .leading, spacing: 0) {
             if hasHeaderText {
                 HStack(alignment: .top, spacing: 0) {
                     ForEach(0..<columnCount, id: \.self) { index in
                         headerCell(index)
-                            .frame(width: width(index: index, shares: shares))
+                            .frame(width: columnWidth(index, widths))
+                            .overlay(alignment: .trailing) { columnDivider(index) }
                     }
                 }
                 .background(HonorTheme.raised)
                 Rectangle().fill(HonorTheme.divider).frame(height: 1)
             }
             ForEach(Array(shownRows.enumerated()), id: \.offset) { index, cells in
-                fitRow(cells, striped: !index.isMultiple(of: 2), shares: shares)
+                fitRow(cells, striped: !index.isMultiple(of: 2), widths: widths)
                 if index < shownRows.count - 1 {
                     Rectangle().fill(HonorTheme.divider.opacity(0.5)).frame(height: 0.5)
                 }
@@ -2380,28 +2415,59 @@ struct MarkdownTableView: View {
                 HStack(alignment: .top, spacing: 0) {
                     ForEach(0..<columnCount, id: \.self) { column in
                         totalsCell(column)
-                            .frame(width: width(index: column, shares: shares))
+                            .frame(width: columnWidth(column, widths))
                     }
                 }
                 .background(HonorTheme.raised.opacity(0.6))
             }
         }
+        .frame(width: containerWidth, alignment: .leading)
         .background(HonorTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(HonorTheme.divider, lineWidth: 0.6))
     }
 
-    /// Ширина одного столбца в точках. Разделители (0,5 pt) вычитаются, чтобы
-    /// таблица не выходила за границы сообщения.
-    private func width(index: Int, shares: [Double]) -> CGFloat {
-        guard index < shares.count else { return 0 }
-        let dividers = CGFloat(max(0, columnCount - 1)) * 0.5
-        let available = max(0, containerWidth - dividers)
-        return available * CGFloat(shares[index])
+    /// Вертикальный разделитель поверх правого края ячейки: высота — ровно высота строки,
+    /// а ширины столбцов в сумме дают ширину сообщения без поправок на разделители.
+    @ViewBuilder
+    private func columnDivider(_ index: Int) -> some View {
+        if index < columnCount - 1 {
+            Rectangle().fill(HonorTheme.divider.opacity(0.6)).frame(width: 0.5)
+        }
+    }
+
+    private func columnWidth(_ index: Int, _ widths: [CGFloat]) -> CGFloat {
+        index < widths.count ? widths[index] : 0
+    }
+
+    /// Ширины столбцов компактной таблицы (в сумме — ширина сообщения)
+    /// или nil, если целые слова в экран не помещаются.
+    private var fittedWidths: [CGFloat]? {
+        let shares = TableColumnLayout.shares(headers: headers, rows: shownRows, columnCount: columnCount)
+        let available = max(0, containerWidth)
+        let headerFont = UIFont.systemFont(ofSize: fontSize * 0.9, weight: .semibold)
+        let cellFont = UIFont.systemFont(ofSize: fontSize * 0.92)
+        let minimums: [CGFloat] = (0..<columnCount).map { column in
+            var widest: CGFloat = 0
+            if column < headers.count {
+                for word in TableColumnLayout.longestWords(headers[column]) {
+                    widest = max(widest, (word as NSString).size(withAttributes: [.font: headerFont]).width)
+                }
+            }
+            let cellWords = shownRows.flatMap { row in
+                column < row.count ? TableColumnLayout.longestWords(row[column]) : []
+            }.sorted { $0.count > $1.count }.prefix(3)
+            for word in cellWords {
+                widest = max(widest, (word as NSString).size(withAttributes: [.font: cellFont]).width)
+            }
+            // 10 pt полей ячейки + запас на округление.
+            return ceil(widest) + 12
+        }
+        return TableColumnLayout.fitWidths(shares: shares, minimums: minimums, available: available)
     }
 
     /// Строка компактной таблицы: те же столбцы и тот же порядок, что и в шапке.
-    private func fitRow(_ cells: [String], striped: Bool, shares: [Double]) -> some View {
+    private func fitRow(_ cells: [String], striped: Bool, widths: [CGFloat]) -> some View {
         HStack(alignment: .top, spacing: 0) {
             ForEach(0..<columnCount, id: \.self) { column in
                 Group {
@@ -2414,11 +2480,10 @@ struct MarkdownTableView: View {
                             .foregroundStyle(HonorTheme.secondary)
                     }
                 }
-                .frame(width: width(index: column, shares: shares), alignment: frameAlignment(alignment(column)))
+                .frame(maxWidth: .infinity, alignment: frameAlignment(alignment(column)))
                 .padding(.horizontal, 5).padding(.vertical, 7)
-                if column < columnCount - 1 {
-                    Rectangle().fill(HonorTheme.divider.opacity(0.6)).frame(width: 0.5)
-                }
+                .frame(width: columnWidth(column, widths), alignment: frameAlignment(alignment(column)))
+                .overlay(alignment: .trailing) { columnDivider(column) }
             }
         }
         .background(striped ? HonorTheme.raised.opacity(0.25) : Color.clear)
