@@ -42,11 +42,59 @@ function relayWebSocket(req: Request, url: URL): Response {
   return response;
 }
 
+// Поиск города и прогноз через open-meteo — прямо на переходнике (Deno Deploy).
+async function geocodeCity(name: string): Promise<{ name: string; lat: number; lon: number } | null> {
+  for (const lang of ["ru", "en"]) {
+    try {
+      const u = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=5&language=${lang}&format=json`;
+      const r = await fetch(u, { signal: AbortSignal.timeout(7000) });
+      if (!r.ok) continue;
+      const first = (await r.json())?.results?.[0];
+      if (first) {
+        return { name: [first.name, first.admin1, first.country].filter(Boolean).join(", "), lat: first.latitude, lon: first.longitude };
+      }
+    } catch { /* пробуем следующий язык */ }
+  }
+  return null;
+}
+
+async function weather(url: URL): Promise<Response> {
+  const q = url.searchParams;
+  let lat = Number(q.get("lat")), lon = Number(q.get("lon")), place = "";
+  const city = q.get("q");
+  if (city) {
+    const found = await geocodeCity(city);
+    if (!found) return Response.json({ error: "not_found", message: "Город не найден." }, { status: 404 });
+    lat = found.lat; lon = found.lon; place = found.name;
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return Response.json({ error: "bad_request", message: "Нужны параметры q (город) или lat и lon." }, { status: 400 });
+  }
+  const days = Math.min(Math.max(Number(q.get("days")) || 7, 1), 16);
+  const api = "https://api.open-meteo.com/v1/forecast"
+    + `?latitude=${lat}&longitude=${lon}`
+    + "&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m"
+    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+    + `&timezone=auto&wind_speed_unit=ms&forecast_days=${days}`;
+  try {
+    const r = await fetch(api, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return Response.json({ error: "upstream_error", message: "Погодный сервис не ответил." }, { status: 502 });
+    const data = await r.json();
+    if (place) data.honer_place = place;
+    return Response.json(data);
+  } catch {
+    return Response.json({ error: "upstream_error", message: "Погодный сервис не ответил." }, { status: 502 });
+  }
+}
+
 Deno.serve(async (req, info) => {
   const url = new URL(req.url);
   const clientIp = (info.remoteAddr as Deno.NetAddr | undefined)?.hostname;
   if (req.headers.get("upgrade")?.toLowerCase() === "websocket") return relayWebSocket(req, url);
   if (url.pathname === "/relay-health") return Response.json({ ok: true, relay: true });
+  // Погода обрабатывается прямо здесь: open-meteo у операторов (МТС) заблокирован у пользователя,
+  // а Deno Deploy ходит к нему свободно. Так погода не зависит от основного сервера.
+  if (url.pathname === "/v1/weather" && req.method === "GET") return weather(url);
 
   const init: RequestInit = {
     method: req.method,
