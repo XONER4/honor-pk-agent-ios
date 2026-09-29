@@ -92,7 +92,8 @@ internal fun RemoteImage(
         // картинка не рисуется. 1600 пикселей хватает и для полноэкранного просмотра.
         ImageRequest.Builder(context).data(url).size(1600).crossfade(true).build()
     }
-    val painter = rememberAsyncImagePainter(request)
+    // Общий загрузчик с браузерными заголовками — иначе часть сайтов отдаёт 403.
+    val painter = rememberAsyncImagePainter(request, imageLoader = com.honerai.app.ui.common.HonerImages.loader(context))
     val state = painter.state
     var fullScreen by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(12.dp)

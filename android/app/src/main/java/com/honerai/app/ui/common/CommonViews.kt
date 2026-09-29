@@ -135,6 +135,20 @@ object HonerImages {
                 add(VideoFrameDecoder.Factory())
                 if (Build.VERSION.SDK_INT >= 28) add(ImageDecoderDecoder.Factory()) else add(GifDecoder.Factory())
             }
+            // Многие сайты отдают картинку только «браузеру»: подставляем мобильный User-Agent,
+            // Accept и Referer (иначе Coil получает 403 и рисует «Не удалось загрузить изображение»).
+            .okHttpClient {
+                com.honerai.app.core.HonerHttp.web(20).newBuilder().addInterceptor { chain ->
+                    val request = chain.request()
+                    val referer = runCatching { "${request.url.scheme}://${request.url.host}/" }.getOrDefault("")
+                    val builder = request.newBuilder()
+                        .header("User-Agent", com.honerai.app.core.HonerHttp.MOBILE_AGENT)
+                        .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                        .header("Accept-Language", "ru-RU,ru;q=0.9,en;q=0.8")
+                    if (referer.isNotEmpty() && request.header("Referer") == null) builder.header("Referer", referer)
+                    chain.proceed(builder.build())
+                }.build()
+            }
             .crossfade(true)
             .respectCacheHeaders(false)
             .build()
