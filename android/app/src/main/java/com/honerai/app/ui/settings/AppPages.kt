@@ -154,6 +154,8 @@ internal fun IntegrationsPage(onBack: () -> Unit) {
                 }
             }
         }
+        // media: приложения на телефоне (Google, Яндекс, кошельки, установленные программы).
+        item(key = "apps") { AppIntegrationsGroup() }
     }
 }
 

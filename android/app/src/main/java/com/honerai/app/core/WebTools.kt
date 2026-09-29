@@ -275,7 +275,11 @@ suspend fun WebSearchClient.videoResults(query: String, count: Int): List<Pair<S
 typealias ToolProgress = (detail: String, sites: List<String>) -> Unit
 
 /** Интернет-инструменты модели. */
-class WebToolExecutor(private val client: WebSearchClient) {
+class WebToolExecutor(
+    private val client: WebSearchClient,
+    // media: язык интерфейса — подписи к найденным фото переводятся на него.
+    private val language: String = "ru",
+) {
 
     suspend fun execute(call: ToolCallRequest, progress: ToolProgress? = null): ToolCallResult {
         val arguments = call.parsedArguments
@@ -288,7 +292,8 @@ class WebToolExecutor(private val client: WebSearchClient) {
                 try {
                     val sources = client.search(query) { event ->
                         when (event) {
-                            is SearchProgress.Found -> progress?.invoke("Найдено результатов: ${event.count} — Bing, DuckDuckGo, Brave, Википедия", emptyList())
+                            // media: называем поисковики, которые действительно ответили.
+                            is SearchProgress.Found -> progress?.invoke("Найдено результатов: ${event.count}" + SearchEngine.titles(event.engines).let { if (it.isEmpty()) "" else " — $it" }, emptyList())
                             is SearchProgress.Reading -> progress?.invoke("Читаю страницы", event.sites)
                             is SearchProgress.Read -> progress?.invoke("Прочитано страниц: ${event.count}", event.sites)
                         }
@@ -321,8 +326,10 @@ class WebToolExecutor(private val client: WebSearchClient) {
                 val count = (ToolArgument.int(arguments["count"]) ?: 3).coerceIn(1, 6)
                 val images = client.imageResults(query, count)
                 if (images.isEmpty()) return reply("Изображения по запросу «$query» не найдены. Скажи об этом и предложи нарисовать картинку инструментом draw_image.")
-                val lines = images.joinToString("\n") { "![${clean(it.title)}](${it.url})" }
-                reply("Найдено изображений: ${images.size}. Вставь подходящие в ответ строками ровно в таком виде, каждую с новой строки:\n$lines")
+                // media: английские названия файлов заменяются русскими подписями (или названием сайта).
+                val captions = MediaSender(client, language).captions(images.map { MediaItem(it.url, it.title, it.page) })
+                val lines = images.withIndex().joinToString("\n") { (index, image) -> "![${clean(captions[index])}](${image.url})" }
+                reply("Найдено изображений: ${images.size}. Вставь подходящие в ответ строками ровно в таком виде, каждую с новой строки (подписи можно уточнить, но только на языке пользователя):\n$lines")
             }
             HonerTool.FIND_VIDEOS -> {
                 val query = ToolArgument.string(arguments["query"])?.trim().orEmpty()

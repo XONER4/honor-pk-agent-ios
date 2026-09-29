@@ -69,7 +69,8 @@ interface PageRenderer {
 
 /** Ход поиска: сколько нашлось и какие сайты сейчас читаются. */
 sealed class SearchProgress {
-    data class Found(val count: Int) : SearchProgress()
+    // media: engines — какие поисковики ответили.
+    data class Found(val count: Int, val engines: List<String> = emptyList()) : SearchProgress()
     data class Reading(val sites: List<String>) : SearchProgress()
     data class Read(val count: Int, val sites: List<String>) : SearchProgress()
 }
@@ -87,8 +88,8 @@ internal fun WebSource.copyKeepingRaw(
 val WebSource.host: String? get() = url.toHttpUrlOrNull()?.host
 
 /**
- * Поиск по нескольким поисковикам (Bing, DuckDuckGo, Brave, Википедия)
- * и чтение найденных страниц.
+ * Поиск по нескольким поисковикам (media: Яндекс, Google, Bing, DuckDuckGo, Brave, Википедия —
+ * см. MultiEngineSearch) и чтение найденных страниц.
  */
 class WebSearchClient(
     val urlDiscovery: SearchURLDiscovering? = null,
@@ -111,19 +112,11 @@ class WebSearchClient(
             return fetched
         }
         val searchQuery = SearchRelevance.compactQuery(query)
-        // Несколько поисковиков параллельно: если один не ответил, остальные дают выдачу.
-        val candidates = coroutineScope {
-            val bing = async { bingResults(searchQuery) }
-            val duck = async { duckDuckGoResults(searchQuery) }
-            val brave = async { braveResults(searchQuery) }
-            val wiki = async { wikipediaResults(searchQuery) }
-            bing.await() + duck.await() + brave.await() + wiki.await()
-        }
+        // media: Яндекс, Google, Bing, DuckDuckGo, Brave и Википедия параллельно (≤ 4 с на каждый, ≤ 6 с всего),
+        // выдачи склеиваются по адресу; фильтр релевантности внутри слияния отсекает мусор вида «Bing quiz».
+        val outcome = MultiEngineSearch(this).search(searchQuery)
         currentCoroutineContext().ensureActive()
-        val seen = HashSet<String>()
-        // Фильтр релевантности обязателен: без него в контекст попадал мусор вида «Bing homepage quiz».
-        val ranked = candidates.filter { SearchRelevance.score(it, searchQuery) > 0 && seen.add(it.url) }
-            .sortedByDescending { SearchRelevance.score(it, searchQuery) }
+        val ranked = outcome.sources
         if (ranked.isEmpty()) {
             val discovery = urlDiscovery ?: throw HonorError.SearchUnavailable()
             val suggested = discovery.candidates(query)
@@ -137,7 +130,7 @@ class WebSearchClient(
             if (fetched.isEmpty()) throw HonorError.SearchUnavailable()
             return fetched
         }
-        progress?.invoke(SearchProgress.Found(ranked.size))
+        progress?.invoke(SearchProgress.Found(ranked.size, outcome.responded.map { it.id }))
         progress?.invoke(SearchProgress.Reading(ranked.take(5).mapNotNull { it.host }))
         val fetched = readPages(ranked.take(12), 5)
         currentCoroutineContext().ensureActive()

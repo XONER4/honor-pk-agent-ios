@@ -1147,6 +1147,11 @@ class ChatStore internal constructor(
         if (normalizer != null) normalize(run, normalizer)
         recover(run, client, input, instruction, context, toolResults)
         cleanAnnouncements(run, client, input, toolResults)
+        // media: карточки медиа и кнопки приложений не теряются, даже если модель их не вставила.
+        MediaAnswerBlocks.completed(run.content, toolResults.map { it.callID })?.let { text ->
+            run.show(text)
+            mutateMessage(chatId, messageId) { it.copy(content = text) }
+        }
         val final = message(chatId, messageId)
         if (final == null || final.content.isEmpty()) throw HonorError.EmptyResponse()
         if (ChatLogic.isTooShortToBeAnAnswer(final.content)) {
@@ -1414,6 +1419,10 @@ class ChatStore internal constructor(
         val offline = "Интернет выключен. Предложи пользователю включить кнопку «Поиск»."
         return when {
             tool == HonerTool.FIND_CONTACT -> ContactLookup.execute(context, call)
+            // media: кнопка открытия приложения и медиа в чат.
+            tool == HonerTool.OPEN_APP -> AppLauncher.execute(context, call)
+            tool == HonerTool.SEND_MEDIA -> if (webToolsOn) MediaSender(webClient, configuration.language).execute(call, progress)
+                else ToolCallResult(call.id, call.name, offline)
             tool != null && tool.isExtra -> {
                 val executor = ExtraToolExecutor(webClient, toolContext)
                 when {
@@ -1423,7 +1432,7 @@ class ChatStore internal constructor(
                 }
             }
             tool != null && tool.isAsync ->
-                if (webToolsOn) WebToolExecutor(webClient).execute(call, progress) else ToolCallResult(call.id, call.name, offline)
+                if (webToolsOn) WebToolExecutor(webClient, configuration.language /* media */).execute(call, progress) else ToolCallResult(call.id, call.name, offline)
             else -> ToolExecutor.executeExtended(call, toolContext)
         }
     }

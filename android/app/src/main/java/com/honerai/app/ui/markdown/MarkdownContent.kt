@@ -235,7 +235,9 @@ private fun MarkdownBlockView(
             Box(Modifier.width(3.dp).fillMaxHeight().background(colors.accent.copy(alpha = 0.55f)))
             InlineText(block.text, fontSize * 0.96f, FontWeight.Normal, context, fade = fade, color = colors.secondary)
         }
-        is BlockKind.Code -> CodeBlockView(block.text, kind.language, fontSize, context.english)
+        // media: блок ```app — кнопка «Открыть <приложение>».
+        is BlockKind.Code -> if (kind.language.trim().equals("app", true)) AppActionCard(block.text, fontSize, context.english)
+            else CodeBlockView(block.text, kind.language, fontSize, context.english)
         BlockKind.CopyBlock -> CopyBlockView(block.text, fontSize, context.english)
         is BlockKind.Card -> CardBlockView(kind.style, block.text, fontSize, context)
         is BlockKind.Ask -> QuestionsCard(
@@ -290,8 +292,8 @@ internal fun InlineContent(
             key(part.id) {
                 val url = part.imageUrl
                 when {
-                    url != null && VideoLinks.isVideo(url) -> VideoCard(url, part.caption, fontSize, context.english)
-                    url != null -> RemoteImage(url, part.caption, fontSize, context.english)
+                    // media: картинка, видео или аудио с кнопками «Скачать»/«Поделиться» и подписью на языке интерфейса.
+                    url != null -> WebMediaCard(url, part.caption, fontSize, context.english)
                     else -> InlineText(
                         part.text ?: "", fontSize, weight, context,
                         fade = if (index == parts.size - 1) fade else 0,

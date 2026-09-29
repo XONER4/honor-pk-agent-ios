@@ -510,6 +510,7 @@ private fun SourcesCard(message: ChatMessage, english: Boolean, actions: Message
                 modifier = Modifier.weight(1f))
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = colors.secondary, modifier = Modifier.size(16.dp))
         }
+        SearchEngineSummaryChips(message.sources, english) // media: какие поисковики нашли источники
         Text(if (english) "Tap to open the pages and quotes I read" else "Нажмите, чтобы открыть страницы и цитаты, которые я прочитал",
             fontSize = 11.sp, color = colors.secondary.copy(alpha = 0.9f))
     }

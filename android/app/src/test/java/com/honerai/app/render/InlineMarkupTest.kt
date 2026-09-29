@@ -20,7 +20,7 @@ class InlineMarkupTest {
     fun stylesAreAppliedAndMarkupRemoved() {
         val value = InlineMarkup.build("Это **жирный**, *курсив*, `код`, ~~нет~~, ==маркер== и ||тайна||.", palette)
         assertEquals("Это жирный, курсив, код, нет, маркер и тайна.", value.text)
-        val bold = value.spanStyles.first { it.item.fontWeight == FontWeight.Bold }
+        val bold = value.spanStyles.first { it.item.fontWeight == FontWeight.SemiBold }
         assertEquals("жирный", value.text.substring(bold.start, bold.end))
         val italic = value.spanStyles.first { it.item.fontStyle == FontStyle.Italic }
         assertEquals("курсив", value.text.substring(italic.start, italic.end))

@@ -61,12 +61,16 @@ enum class HonerTool(val rawValue: String) {
     TELEGRAM_CHANNEL("telegram_channel"),
     VIEW_IMAGE("view_image"),
     TRANSCRIBE_MEDIA("transcribe_media"),
-    EDIT_IMAGE("edit_image");
+    EDIT_IMAGE("edit_image"),
+    // media: приложения на телефоне и медиа в чат.
+    OPEN_APP("open_app"),
+    SEND_MEDIA("send_media");
 
     /** Инструмент ходит в интернет (доступен только с кнопкой «Поиск»). */
     val isWeb: Boolean
         get() = this in setOf(WEB_SEARCH, OPEN_PAGE, FIND_IMAGES, FIND_VIDEOS, SCREENSHOT_PAGE, GET_WEATHER,
-            READ_MANY_PAGES, YOUTUBE_SEARCH, YOUTUBE_VIDEO, GITHUB, MARKETPLACE_SEARCH, VK_PAGE, TELEGRAM_CHANNEL)
+            READ_MANY_PAGES, YOUTUBE_SEARCH, YOUTUBE_VIDEO, GITHUB, MARKETPLACE_SEARCH, VK_PAGE, TELEGRAM_CHANNEL,
+            SEND_MEDIA) // media: send_media ищет в интернете
 
     /** Новые инструменты (ExtraTools). */
     val isExtra: Boolean
@@ -75,12 +79,13 @@ enum class HonerTool(val rawValue: String) {
             VIEW_IMAGE, TRANSCRIBE_MEDIA, EDIT_IMAGE)
 
     /** Выполняется асинхронно (сеть, контакты, медиа). */
-    val isAsync: Boolean get() = isWeb || this == FIND_CONTACT || this == VIEW_IMAGE || this == TRANSCRIBE_MEDIA || this == EDIT_IMAGE
+    val isAsync: Boolean get() = isWeb || this == FIND_CONTACT || this == OPEN_APP /* media */ || this == VIEW_IMAGE || this == TRANSCRIBE_MEDIA || this == EDIT_IMAGE
 
     /** Описание для API: имя, назначение и параметры в формате JSON Schema. */
     val schema: JsonObject
         get() {
             if (isExtra) return ExtraToolSchemas.schema(this)
+            if (this == OPEN_APP || this == SEND_MEDIA) return MediaToolSchemas.schema(this) // media:
             return when (this) {
                 COPY_TO_CLIPBOARD -> ToolSchema.function(rawValue, "Кладёт переданный текст в буфер обмена телефона. Используй, когда пользователь просит скопировать что-то, чтобы вставить в другом приложении.",
                     mapOf("text" to ToolSchema.string("Текст для копирования")), listOf("text"))
@@ -110,11 +115,11 @@ enum class HonerTool(val rawValue: String) {
                     mapOf("game" to ToolSchema.string("chess, checkers, durak или slots")), listOf("game"))
                 FIND_CONTACT -> ToolSchema.function(rawValue, "Находит контакт в телефонной книге пользователя по имени: телефоны, почту, организацию, день рождения. Работает, если пользователь разрешил доступ к контактам.",
                     mapOf("name" to ToolSchema.string("Имя или фамилия")), listOf("name"))
-                WEB_SEARCH -> ToolSchema.function(rawValue, "Ищет в интернете сразу в нескольких поисковиках (Bing, DuckDuckGo, Brave, Википедия) и читает найденные страницы. Вызывай, когда нужны свежие или точные данные, которых ты не знаешь наверняка: новости, цены, курсы, события, расписания, характеристики, факты о малоизвестном. Для общих знаний, расчётов, кода, советов и болтовни поиск не нужен.",
+                WEB_SEARCH -> ToolSchema.function(rawValue, "Ищет в интернете сразу в нескольких поисковиках (Яндекс, Google, Bing, DuckDuckGo, Brave, Википедия) и читает найденные страницы. Вызывай, когда нужны свежие или точные данные, которых ты не знаешь наверняка: новости, цены, курсы, события, расписания, характеристики, факты о малоизвестном. Для общих знаний, расчётов, кода, советов и болтовни поиск не нужен.",
                     mapOf("query" to ToolSchema.string("Поисковый запрос: только тема, без слов-команд")), listOf("query"))
                 OPEN_PAGE -> ToolSchema.function(rawValue, "Открывает и читает страницу по ссылке, как браузер: выполняет JavaScript, читает публичные каналы Telegram (t.me/…), страницы ВКонтакте, новости, документацию. Возвращает текст страницы и картинки на ней.",
                     mapOf("url" to ToolSchema.string("Полная ссылка https://…; для Telegram можно t.me/имя_канала")), listOf("url"))
-                FIND_IMAGES -> ToolSchema.function(rawValue, "Находит в интернете настоящие фотографии и изображения по теме и возвращает строки для вставки в ответ. Вызывай, когда пользователь просит показать фото, картинку, как что-то выглядит.",
+                FIND_IMAGES -> ToolSchema.function(rawValue, "Находит в интернете настоящие фотографии и изображения по теме и возвращает строки для вставки в ответ. Вызывай, когда пользователь просит показать фото, картинку, как что-то выглядит. Подписи в строках ![подпись](ссылка) пиши на русском.",
                     mapOf("query" to ToolSchema.string("Что должно быть на изображении; лучше на английском"),
                         "count" to ToolSchema.integer("Сколько изображений, 1–6, по умолчанию 3")), listOf("query"))
                 FIND_VIDEOS -> ToolSchema.function(rawValue, "Находит видео (YouTube и другие) по теме и возвращает строки для вставки в ответ: приложение покажет видео с кнопкой воспроизведения прямо в чате.",

@@ -125,7 +125,7 @@ object ExtraToolSchemas {
             HonerTool.VIEW_IMAGE -> GenerationStep(kind = "images", title = "Рассматриваю изображение", detail = argument("question"))
             HonerTool.TRANSCRIBE_MEDIA -> GenerationStep(kind = "read", title = "Слушаю и расшифровываю", detail = argument("source"))
             HonerTool.EDIT_IMAGE -> GenerationStep(kind = "draw", title = "Редактирую фото")
-            else -> null
+            else -> MediaToolSchemas.step(call) // media: open_app, send_media
         }
     }
 
@@ -140,7 +140,7 @@ object ExtraToolSchemas {
             HonerTool.READ_TABLE to "Смотрю таблицу…", HonerTool.LIST_MEMORY to "Смотрю память…",
             HonerTool.UPDATE_MEMORY to "Обновляю память…", HonerTool.DELETE_MEMORY to "Обновляю память…",
         )
-        return map.firstOrNull { it.first.rawValue in names }?.second
+        return map.firstOrNull { it.first.rawValue in names }?.second ?: MediaToolSchemas.status(names) // media:
     }
 }
 

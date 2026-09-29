@@ -154,6 +154,7 @@ fun SourceDetailsSheet(selection: SourceSelection, english: Boolean, onDismiss: 
                             color = colors.foreground, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("[${index + 1}]", fontSize = 12.sp, color = colors.secondary)
                     }
+                    SearchEngineChips(source.engines, english) // media: какие поисковики нашли страницу
                     Text(source.title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = colors.foreground,
                         modifier = Modifier.clickable { openUrl(context, source.url) }.testTag("message.source." + source.id))
                     Text(source.snippet, fontSize = 14.sp, color = colors.secondary, maxLines = 4, overflow = TextOverflow.Ellipsis)

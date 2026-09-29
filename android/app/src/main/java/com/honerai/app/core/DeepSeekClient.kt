@@ -215,6 +215,7 @@ class DeepSeekClient(
         if (configuration.apiKey.isEmpty()) throw HonorError.MissingApiKey()
         val english = configuration.language == "en"
         var instruction = (if (english) HonerIdentity.englishInstruction else HonerIdentity.instruction) +
+            MediaToolSchemas.PROMPT /* media: приложения, медиа, запрет платежей */ +
             HonerIdentity.currentDateTimeBlock() + deviceSummary()
         if (systemInstruction.isNotBlank()) {
             instruction += "\nПерсональные настройки пользователя. Применяй выбранные тон, обращение и длину ответа к каждому ответу, если текущий вопрос явно не просит иначе:\n$systemInstruction"

@@ -164,7 +164,8 @@ private val articleWebMedia: HelpArticle get() {
 // MARK: - Содержание: интеграции
 
 internal val integrationsSection: HelpSection get() {
-    val items: List<HelpArticle> = listOf(articleYouTube, articleGitHub, articleMarketplaces, articleSocial)
+    val items: List<HelpArticle> = listOf(articleYouTube, articleGitHub, articleMarketplaces, articleSocial,
+        articleSearchAppsMedia) // media: поисковики, приложения и загрузки
     return HelpSection(id = "integrations", symbol = "square.stack.3d.up", tint = HelpTint.red,
                        titleRU = "Интеграции", titleEN = "Integrations", articles = items)
 }

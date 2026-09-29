@@ -74,6 +74,8 @@ data class WebSource(
     val snippet: String,
     val content: String? = null,
     val fetchedAt: IsoDate? = null,
+    // media: какие поисковики нашли страницу (yandex, google, bing, ddg, brave, wikipedia).
+    val engines: List<String>? = null,
 ) {
     /** Разметка прочитанной страницы: не сохраняется, нужна для поиска картинок. */
     @kotlinx.serialization.Transient
