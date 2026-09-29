@@ -511,12 +511,21 @@ class WeatherClient(private val fetcher: PageFetcher = { url, max, timeout -> fe
             val name = listOfNotNull(result["name"].str, result["admin1"].str, result["country"].str).joinToString(", ")
             Place(name, latitude, longitude)
         }
-        val api = "https://api.open-meteo.com/v1/forecast".toHttpUrl().newBuilder()
-            .addQueryParameter("latitude", place.latitude.toString()).addQueryParameter("longitude", place.longitude.toString())
-            .addQueryParameter("current", "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m")
-            .addQueryParameter("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max")
-            .addQueryParameter("forecast_days", "7").addQueryParameter("timezone", "auto")
-            .addQueryParameter("wind_speed_unit", "ms").build()
+        // api.open-meteo.com у части операторов (МТС) заблокирован, поэтому при настроенном облаке
+        // берём прогноз через наш сервер (/v1/weather), а напрямую — только если облака нет.
+        val cloudBase = com.honerai.app.cloud.CloudConfig.baseUrl
+        val api = if (cloudBase.isNotEmpty()) {
+            com.honerai.app.cloud.CloudUrls.api(cloudBase, "/v1/weather").toHttpUrl().newBuilder()
+                .addQueryParameter("lat", place.latitude.toString()).addQueryParameter("lon", place.longitude.toString())
+                .addQueryParameter("days", "7").build()
+        } else {
+            "https://api.open-meteo.com/v1/forecast".toHttpUrl().newBuilder()
+                .addQueryParameter("latitude", place.latitude.toString()).addQueryParameter("longitude", place.longitude.toString())
+                .addQueryParameter("current", "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m")
+                .addQueryParameter("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max")
+                .addQueryParameter("forecast_days", "7").addQueryParameter("timezone", "auto")
+                .addQueryParameter("wind_speed_unit", "ms").build()
+        }
         val data = fetcher(api.toString(), 500_000, 12)
         currentCoroutineContext().ensureActive()
         if (data == null || data.status != 200) throw HonorError.SearchUnavailable()

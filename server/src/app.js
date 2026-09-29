@@ -134,6 +134,29 @@ export async function buildApp(config, overrides = {}) {
   // aiEnabled — ИИ сейчас разрешён администратором (общий выключатель и расписание).
   app.get('/health', async () => ({ ok: true, ai: Boolean(config.deepseekApiKey), aiEnabled: aiControl.isEnabled() }));
 
+  // Погода: часть операторов (МТС) блокирует api.open-meteo.com у пользователя,
+  // а сервер к нему ходит свободно. Приложение берёт погоду через этот эндпоинт.
+  app.get('/v1/weather', async (request, reply) => {
+    const q = request.query || {};
+    const lat = Number(q.lat), lon = Number(q.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return reply.code(400).send({ error: 'bad_request', message: 'Нужны параметры lat и lon.' });
+    }
+    const url = 'https://api.open-meteo.com/v1/forecast'
+      + `?latitude=${lat}&longitude=${lon}`
+      + '&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m'
+      + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max'
+      + `&timezone=auto&forecast_days=${Math.min(Math.max(Number(q.days) || 7, 1), 16)}`;
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) return reply.code(502).send({ error: 'upstream_error', message: 'Погодный сервис не ответил.' });
+      reply.header('content-type', 'application/json; charset=utf-8');
+      return reply.send(await r.text());
+    } catch {
+      return reply.code(502).send({ error: 'upstream_error', message: 'Погодный сервис не ответил.' });
+    }
+  });
+
   await app.register(wsRoutes);
   await app.register(deviceRoutes);
   await app.register(chatRoutes({ prefix: '/v1/chats', side: 'user' }));
