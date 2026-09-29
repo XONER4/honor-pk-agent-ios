@@ -916,7 +916,7 @@ private fun MainScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    Modifier.size(width = 44.dp, height = 42.dp).clip(CircleShape).clickable(onClick = onToggleAutoRead)
+                    Modifier.size(width = 42.dp, height = 42.dp).clip(CircleShape).clickable(onClick = onToggleAutoRead)
                         .semantics {
                             contentDescription = if (autoRead) t("Выключить озвучивание", "Disable read aloud") else t("Включить озвучивание", "Enable read aloud")
                             stateDescription = if (autoRead) t("Включено", "On") else t("Выключено", "Off")
@@ -928,12 +928,13 @@ private fun MainScreen(
                         tint = colors.foreground, modifier = Modifier.size(21.dp))
                 }
                 Box(
-                    Modifier.size(width = 44.dp, height = 42.dp).clip(CircleShape).clickable(onClick = onNewChat)
+                    Modifier.size(width = 42.dp, height = 42.dp).clip(CircleShape).clickable(onClick = onNewChat)
                         .semantics { contentDescription = t("Новый чат", "New chat") }.testTag("chat.new"),
                     contentAlignment = Alignment.Center,
                 ) { NewConversationSymbol(colors.foreground) }
+                // cloud: вкладка «Уведомления» — в той же капсуле, чтобы не отнимать место у названия чата.
+                com.honerai.app.ui.cloud.CloudBellButton(english)
             }
-            com.honerai.app.ui.cloud.CloudBellButton(english) // cloud: вкладка «Уведомления»
             if (hasChat) {
                 Box {
                     Box(

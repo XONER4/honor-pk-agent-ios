@@ -167,13 +167,13 @@ fun CloudBellButton(english: Boolean) {
     val entries by CloudManager.notifications.entries.collectAsState()
     val unread = remember(entries) { entries.count { !it.read } }
     Box(
-        Modifier.size(44.dp).clip(CircleShape).clickable { CloudUi.openNotifications() }
+        Modifier.size(width = 42.dp, height = 42.dp).clip(CircleShape).clickable { CloudUi.openNotifications() }
             .semantics { contentDescription = t(english, "Уведомления", "Notifications") + if (unread > 0) ", $unread" else "" }
             .testTag("chat.notifications"),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Outlined.Notifications, null, tint = colors.foreground, modifier = Modifier.size(23.dp))
-        UnreadBadge(unread, Modifier.align(Alignment.TopEnd).offset(x = (-3).dp, y = 5.dp))
+        Icon(Icons.Outlined.Notifications, null, tint = colors.foreground, modifier = Modifier.size(21.dp))
+        UnreadBadge(unread, Modifier.align(Alignment.TopEnd).offset(x = (-4).dp, y = 4.dp))
     }
 }
 

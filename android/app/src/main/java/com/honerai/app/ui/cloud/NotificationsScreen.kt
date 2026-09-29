@@ -184,10 +184,12 @@ private fun NotificationRow(entry: NotificationEntry, english: Boolean, onOpen: 
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(entry.title, fontSize = 15.sp, fontWeight = if (entry.read) FontWeight.Medium else FontWeight.Bold,
-                        color = colors.foreground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    if (entry.kind == NotificationEntry.KIND_MESSAGE || entry.kind == "admin") VerifiedBadge(13.dp)
-                    Box(Modifier.weight(1f))
+                    // Название с галочкой занимает всё свободное место до времени (не половину строки).
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(entry.title, fontSize = 15.sp, fontWeight = if (entry.read) FontWeight.Medium else FontWeight.Bold,
+                            color = colors.foreground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        if (entry.kind == NotificationEntry.KIND_MESSAGE || entry.kind == "admin") VerifiedBadge(13.dp)
+                    }
                     Text(DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(entry.createdAtMs).atZone(ZoneId.systemDefault())),
                         fontSize = 12.sp, color = colors.secondary)
                     if (!entry.read) Box(Modifier.size(8.dp).clip(CircleShape).background(AdminRed))
