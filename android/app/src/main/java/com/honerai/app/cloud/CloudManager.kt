@@ -239,9 +239,11 @@ object CloudManager {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: CloudHttpException) {
+                android.util.Log.w("HonerCloud", "register failed: HTTP ${e.status}", e)
                 if (e.isBlocked) onBlocked(e.serverMessage)
                 false
             } catch (e: Exception) {
+                android.util.Log.w("HonerCloud", "register failed", e)
                 false
             }
         }

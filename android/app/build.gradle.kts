@@ -79,6 +79,14 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
+        // Проверка «боевой» сборки (R8 и всё как в release) рядом с настоящей: свой id и отладочная подпись.
+        create("qa") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".qa"
+            versionNameSuffix = "-qa"
+            matchingFallbacks += listOf("release")
+        }
     }
 
     compileOptions {
