@@ -327,6 +327,19 @@ class SpeechService(context: Context) {
     private var hasFocus = false
     private val choiceCache = HashMap<String, VoiceCatalog.Choice?>()
 
+    // voice: чтение вслух голосом пользователя (клон Fish Audio); создаётся при первом обращении
+    private var cloned: ClonedVoiceSpeaker? = null
+    private var lastGender = "male"
+    private var lastRate = 0.95
+    private var lastVoiceId = ""
+    private fun clonedSpeaker(): ClonedVoiceSpeaker = cloned ?: ClonedVoiceSpeaker(
+        appContext,
+        onSpeaking = { speaking -> _isSpeaking.value = speaking },
+        onError = { message -> _errorMessage.value = message },
+        // При сбое клон-голоса дочитываем кусок голосом устройства, чтобы ответ не молчал.
+        fallback = { text -> withTts { engine -> enqueue(engine, text, lastGender, lastRate, lastVoiceId, flush = false) } },
+    ).also { cloned = it }
+
     /** Прочитать текст целиком (прерывает текущее чтение). gender: "male"/"female". */
     fun speak(text: String, gender: String, rate: Double, voiceId: String = "") {
         val spoken = SpeechText.spokenForm(SpeechText.sanitizedSpeechText(text))
@@ -334,6 +347,10 @@ class SpeechService(context: Context) {
         onMain {
             clearError()
             if (_isRecording.value || _isFinalizing.value) cancelRecordingInternal()
+            // voice: если включён «Мой голос» — читаем им; иначе обычным голосом устройства
+            lastGender = gender; lastRate = rate; lastVoiceId = voiceId
+            if (clonedSpeaker().speak(spoken, flush = true)) return@onMain
+            cloned?.stop()
             withTts { engine ->
                 lastUtteranceId = null
                 try { engine.stop() } catch (_: Exception) {}
@@ -348,11 +365,15 @@ class SpeechService(context: Context) {
         if (spoken.isEmpty()) return
         onMain {
             if (!_isSpeaking.value) clearError()
+            // voice: «Мой голос» — дочитываем следом; иначе обычным голосом устройства
+            lastGender = gender; lastRate = rate; lastVoiceId = voiceId
+            if (clonedSpeaker().speak(spoken, flush = false)) return@onMain
             withTts { engine -> enqueue(engine, spoken, gender, rate, voiceId, flush = false) }
         }
     }
 
     fun stopSpeaking() = onMain {
+        cloned?.stop() // voice: остановить и клон-голос
         lastUtteranceId = null
         pendingActions.clear()
         try { tts?.stop() } catch (_: Exception) {}
@@ -581,6 +602,7 @@ class SpeechService(context: Context) {
 
     fun release() = onMain {
         cancelRecordingInternal()
+        cloned?.release(); cloned = null // voice: освободить плеер клон-голоса
         lastUtteranceId = null
         pendingActions.clear()
         tts?.let { engine ->

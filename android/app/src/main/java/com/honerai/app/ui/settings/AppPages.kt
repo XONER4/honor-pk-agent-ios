@@ -41,6 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.honerai.app.core.Integrations
+import com.honerai.app.device.UpdateCheck
+import com.honerai.app.device.UpdateCheckStatus
 import com.honerai.app.device.UpdateInfo
 import com.honerai.app.device.UpdateManager
 import com.honerai.app.device.UpdateScheduler
@@ -281,10 +283,13 @@ internal fun AboutSettingsPage(onBack: () -> Unit) {
                     scope.launch {
                         val found = runCatching { UpdateManager.checkNow(context) }
                         checking = false
-                        updateStatus = found.fold(
-                            { info -> if (info == null) t("У вас последняя версия.", "You have the latest version.") else null },
-                            { t("Не удалось проверить: ", "Could not check: ") + (it.localizedMessage ?: it.toString()) },
-                        )
+                        // voice: сопоставление результата проверки с состоянием — через UpdateCheck (покрыто тестами)
+                        updateStatus = when (UpdateCheck.status(found, UpdateManager.currentVersionCode, UpdateManager.currentVersionName)) {
+                            UpdateCheckStatus.UP_TO_DATE -> t("У вас последняя версия.", "You have the latest version.")
+                            UpdateCheckStatus.UPDATE_AVAILABLE -> null
+                            UpdateCheckStatus.CHECK_FAILED -> t("Не удалось проверить: ", "Could not check: ") +
+                                (found.exceptionOrNull()?.localizedMessage ?: found.exceptionOrNull()?.toString() ?: "")
+                        }
                     }
                 }
                 if (update != null) {
