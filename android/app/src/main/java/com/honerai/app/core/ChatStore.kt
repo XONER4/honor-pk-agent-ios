@@ -13,6 +13,7 @@ import com.honerai.app.data.ChatInstruction
 import com.honerai.app.data.ChatMessage
 import com.honerai.app.data.ChatTable
 import com.honerai.app.data.Conversation
+import com.honerai.app.data.ConversationKind
 import com.honerai.app.data.DeepSeekConfiguration
 import com.honerai.app.data.GenerationStep
 import com.honerai.app.data.HistoryArchive
@@ -162,6 +163,8 @@ class ChatStore internal constructor(
     internal var liveReasoning = ""; private set
     private var liveReasoningSeconds = 0
     private var backgroundWorkStarted = false
+    // appui: чаты, для которых сейчас готовится краткое содержание (чтобы не запускать дважды).
+    private val summarizingChats = HashSet<String>()
 
     init {
         AttachmentFiles.root = attachmentsRoot
@@ -262,7 +265,8 @@ class ChatStore internal constructor(
         chats.firstOrNull { it.id == _selected.value && it.archivedAt == null }
 
     override fun sortedConversations(): List<Conversation> {
-        val active = chats.filter { it.archivedAt == null }
+        // appui: чаты «Избранное» — локальные, их нет в общем списке и в контексте нейросети.
+        val active = chats.filter { it.archivedAt == null && it.kind == ConversationKind.NORMAL }
         val pinned = active.filter { it.pinned }.sortedWith(compareBy<Conversation> { it.pinOrder }.thenByDescending { it.lastMessageAt })
         val others = active.filter { !it.pinned }.sortedByDescending { it.lastMessageAt }
         return pinned + others
@@ -682,6 +686,114 @@ class ChatStore internal constructor(
         saveSnapshot()
     }
 
+    // ---- Избранное (appui: локальный чат-заметки, наружу ничего не уходит) ----
+
+    override fun ensureDefaultFavorites() {
+        if (isLoading) return
+        if (FavoritesLogic.hasAny(chats)) return
+        val favorite = Conversation(
+            title = FavoritesLogic.defaultTitle(respondsInEnglish),
+            kind = ConversationKind.FAVORITES,
+            pinOrder = 0,
+        )
+        chats = listOf(favorite) + chats
+        saveSnapshot()
+    }
+
+    override fun createFavoritesFolder(name: String): String {
+        val title = name.trim().take(100).ifEmpty { FavoritesLogic.defaultTitle(respondsInEnglish) }
+        if (FavoritesLogic.ordered(chats).size >= FavoritesLogic.MAXIMUM_FOLDERS) {
+            _errorMessage.value = "Слишком много папок избранного."
+            return ""
+        }
+        val folder = Conversation(title = title, kind = ConversationKind.FAVORITES, pinOrder = FavoritesLogic.nextOrder(chats))
+        chats = listOf(folder) + chats
+        saveSnapshot()
+        return folder.id
+    }
+
+    override fun deleteFavoritesFolder(id: String) {
+        val target = chats.firstOrNull { it.id == id && it.kind == ConversationKind.FAVORITES } ?: return
+        if (!FavoritesLogic.canDeleteFolder(chats, id)) {
+            // Последнюю папку не удаляем — очищаем её содержимое.
+            clearFavoritesHistory(id)
+            return
+        }
+        val removed = target.messages.flatMap { it.attachments }
+        chats = chats.filterNot { it.id == id }
+        if (_selected.value == id) setSelected(null)
+        removeUnreferencedAttachments(removed)
+        saveSnapshot()
+    }
+
+    override fun clearFavoritesHistory(id: String) {
+        val target = chats.firstOrNull { it.id == id && it.kind == ConversationKind.FAVORITES } ?: return
+        val removed = target.messages.flatMap { it.attachments }
+        mutateChat(id) { it.copy(messages = emptyList(), updatedAt = Instant.now()) }
+        removeUnreferencedAttachments(removed)
+        saveSnapshot()
+    }
+
+    override fun addFavoriteNote(chatId: String, text: String, attachments: List<MessageAttachment>) {
+        val chat = chats.firstOrNull { it.id == chatId && it.kind == ConversationKind.FAVORITES } ?: return
+        val value = text.trim()
+        if (value.isEmpty() && attachments.isEmpty()) return
+        val note = FavoritesLogic.noteMessage(value, attachments)
+        mutateChat(chatId) { it.copy(messages = it.messages + note, updatedAt = Instant.now()) }
+        saveSnapshot()
+    }
+
+    override fun forwardToFavorites(chatId: String, message: ChatMessage) {
+        val chat = chats.firstOrNull { it.id == chatId && it.kind == ConversationKind.FAVORITES } ?: return
+        // Вложения копируем в отдельные файлы: избранное не должно зависеть от исходного чата.
+        val copy = FavoritesLogic.cloneForFavorites(message) { path -> copyAttachmentFile(path) }
+        mutateChat(chatId) { it.copy(messages = it.messages + copy, updatedAt = Instant.now()) }
+        saveSnapshot()
+    }
+
+    override fun toggleFavoriteMessagePin(chatId: String, messageId: String) {
+        if (chats.none { it.id == chatId && it.kind == ConversationKind.FAVORITES }) return
+        mutateMessage(chatId, messageId) { it.copy(pinnedInChat = !it.pinnedInChat) }
+        saveSnapshot()
+    }
+
+    override fun deleteFavoriteMessage(chatId: String, messageId: String) {
+        val chat = chats.firstOrNull { it.id == chatId && it.kind == ConversationKind.FAVORITES } ?: return
+        val removed = chat.messages.firstOrNull { it.id == messageId }?.attachments.orEmpty()
+        mutateChat(chatId) { it.copy(messages = it.messages.filterNot { m -> m.id == messageId }, updatedAt = Instant.now()) }
+        removeUnreferencedAttachments(removed)
+        saveSnapshot()
+    }
+
+    override fun moveFavorite(id: String, offset: Int) {
+        val ordered = FavoritesLogic.ordered(chats).toMutableList()
+        val position = ordered.indexOfFirst { it.id == id }
+        if (position < 0) return
+        val target = position + offset
+        if (target !in ordered.indices) return
+        java.util.Collections.swap(ordered, position, target)
+        val order = ordered.mapIndexed { index, chat -> chat.id to index }.toMap()
+        chats = chats.map { chat -> order[chat.id]?.let { chat.copy(pinOrder = it) } ?: chat }
+        saveSnapshot()
+    }
+
+    override fun clearPendingAttachments() {
+        if (_attachments.value.isNotEmpty()) setAttachments(emptyList())
+    }
+
+    /** Копия файла вложения в папке приложения с новым именем (для пересылки в избранное). */
+    private fun copyAttachmentFile(sourcePath: String): String? {
+        val source = AttachmentFiles.resolve(sourcePath) ?: File(sourcePath).takeIf { it.isFile } ?: return null
+        return try {
+            val ext = source.name.substringAfterLast('.', "").ifEmpty { "bin" }
+            val target = File(attachmentsRoot, "${newId()}.$ext")
+            source.copyTo(target, overwrite = true)
+            target.absolutePath
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
     // ---- Память ----
 
     override fun setMemoryEnabled(enabled: Boolean) {
@@ -937,11 +1049,47 @@ class ChatStore internal constructor(
 
     private class StaleRun : Exception()
 
+    /**
+     * appui: один лёгкий запрос к модели — обновить краткое содержание ранних сообщений и закэшировать
+     * его на чате. Работает в фоне и не мешает основному ответу; если не удалось — просто не кэшируем.
+     */
+    private fun maybeRefreshSummary(chatId: String, upTo: Int) {
+        if (!hasApiKey || upTo <= 0) return
+        if (!summarizingChats.add(chatId)) return
+        scope.launch {
+            try {
+                val chat = chats.firstOrNull { it.id == chatId } ?: return@launch
+                if (chat.kind != ConversationKind.NORMAL) return@launch
+                val toSummarize = ContextCompressor.messagesToSummarize(chat.messages)
+                if (toSummarize.isEmpty()) return@launch
+                val transcript = ContextCompressor.transcriptForSummary(toSummarize, chat.runningSummary)
+                val instruction = ContextCompressor.summaryInstruction(respondsInEnglish)
+                val client = injectedClient ?: makeClient()
+                val summary = withContext(Dispatchers.IO) {
+                    client.complete(listOf(ChatMessage(role = MessageRole.USER, content = transcript)), false, instruction, "")
+                }.trim()
+                if (summary.isNotEmpty()) {
+                    mutateChat(chatId) { it.copy(runningSummary = summary.take(4000), summarizedUpTo = upTo) }
+                    saveSnapshot()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // Резюме — вспомогательное: неудача не влияет на ответ.
+            } finally {
+                summarizingChats.remove(chatId)
+            }
+        }
+    }
+
     private fun beginGeneration(chatId: String) {
         val chat = chats.firstOrNull { it.id == chatId } ?: return
         _errorMessage.value = null
+        // appui: сжатие контекста — длинную переписку заменяем «краткое содержание + свежий хвост».
+        val compression = ContextCompressor.compress(chat.messages, chat.runningSummary, chat.summarizedUpTo)
+        if (compression.needsSummary) maybeRefreshSummary(chatId, compression.summarizeUpTo)
         // В запрос уходит не вся переписка, а последние сообщения в пределах разумного размера.
-        val input = ChatLogic.requestHistory(chat.messages)
+        val input = ChatLogic.requestHistory(compression.contextMessages)
         val response = ChatMessage(role = MessageRole.ASSISTANT)
         mutateChat(chatId) { it.copy(messages = it.messages + response, updatedAt = Instant.now()) }
         val runId = newId()

@@ -81,25 +81,40 @@ object ChatLogic {
      * больше совпадений — выше, при равенстве новее — выше; остаток — самыми свежими.
      */
     fun relevantMemories(memories: List<HonorMemory>, query: String, limit: Int = 40): List<HonorMemory> {
+        // appui: убираем дубликаты по тексту — одинаковые факты не занимают места в контексте.
+        val deduped = dedupeMemories(memories)
         val words = keywords(query).toHashSet()
-        if (words.isEmpty()) return memories.takeLast(limit)
+        if (words.isEmpty()) return deduped.takeLast(limit)
         val matched = ArrayList<Pair<Int, Int>>()
-        for ((index, memory) in memories.withIndex()) {
+        for ((index, memory) in deduped.withIndex()) {
             val own = memory.keywords.ifEmpty { keywords(memory.text) }
             var score = 0
             for (word in own.toHashSet()) if (word in words) score++
             if (score > 0) matched.add(index to score)
         }
         matched.sortWith { a, b -> if (a.second != b.second) b.second - a.second else b.first - a.first }
-        val result = matched.take(limit).map { memories[it.first] }.toMutableList()
+        val result = matched.take(limit).map { deduped[it.first] }.toMutableList()
         if (result.size >= limit) return result
         val taken = result.mapTo(HashSet()) { it.id }
-        for (memory in memories.asReversed()) {
+        for (memory in deduped.asReversed()) {
             if (memory.id in taken) continue
             result.add(memory)
             if (result.size >= limit) break
         }
         return result
+    }
+
+    /** Факты без повторов по нормализованному тексту; при совпадении оставляем более новый (последний). */
+    fun dedupeMemories(memories: List<HonorMemory>): List<HonorMemory> {
+        if (memories.size < 2) return memories
+        val seen = HashSet<String>()
+        val result = ArrayList<HonorMemory>(memories.size)
+        for (memory in memories.asReversed()) {
+            val key = memory.text.trim().lowercase()
+            if (key.isNotEmpty() && !seen.add(key)) continue
+            result.add(memory)
+        }
+        return result.asReversed()
     }
 
     /** Раздел «Закреплённые инструкции» для модели. */

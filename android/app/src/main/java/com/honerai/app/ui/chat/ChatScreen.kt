@@ -72,6 +72,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.NorthWest
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SportsEsports
@@ -238,6 +239,11 @@ fun ChatRoot(activity: MainActivity) {
     var instructionsTarget by remember { mutableStateOf<String?>(null) }
     var gameHubOpen by remember { mutableStateOf(false) }
     var activeGame by remember { mutableStateOf<String?>(null) }
+    // appui: чат «Избранное», библиотека вложений и пересылка сообщения в избранное.
+    var favoritesFolderId by remember { mutableStateOf<String?>(null) }
+    var libraryOpen by remember { mutableStateOf(false) }
+    var libraryScopeChatId by remember { mutableStateOf<String?>(null) }
+    var forwardFavoritesMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var deviceError by remember { mutableStateOf<String?>(null) }
     var needsPermissionSettings by remember { mutableStateOf(false) }
     var toolsMenuOpen by remember { mutableStateOf(false) }
@@ -435,6 +441,11 @@ fun ChatRoot(activity: MainActivity) {
                 }
             }
             MessageMenuAction.REMEMBER -> memoryDraft = message.content
+            MessageMenuAction.FORWARD_TO_FAVORITES -> {
+                // appui: гарантируем существование папки избранного и открываем выбор куда переслать.
+                store.ensureDefaultFavorites()
+                forwardFavoritesMessage = message
+            }
             MessageMenuAction.PIN_INSTRUCTION -> {
                 if (store.pinInstruction(message.id)) {
                     haptics.success()
@@ -594,6 +605,7 @@ fun ChatRoot(activity: MainActivity) {
                         "share" -> chat?.let { shareText(context, ChatTranscript.build(it, english)) }
                         "pin" -> selectedId?.let { store.togglePin(setOf(it)) }
                         "attachments" -> { focusManager.clearFocus(); galleryOpen = true }
+                        "library" -> { focusManager.clearFocus(); libraryScopeChatId = selectedId; libraryOpen = true } // appui: вложения этого чата
                         "find" -> {
                             focusManager.clearFocus(); findOpen = true
                             scope.launch { delay(150); runCatching { findFocus.requestFocus() } }
@@ -641,6 +653,8 @@ fun ChatRoot(activity: MainActivity) {
                         HistoryDrawer(store, settings, english, fontScale, onClose = {},
                             onSettings = { cancelVoice(); speech.stopSpeaking(); settingsOpen = true },
                             onInstructions = { instructionsTarget = it },
+                            onOpenFavorites = { cancelVoice(); speech.stopSpeaking(); favoritesFolderId = it },
+                            onAllAttachments = { libraryScopeChatId = null; libraryOpen = true },
                             modifier = Modifier.width(drawerWidth).fillMaxHeight())
                         VerticalDivider(color = colors.divider)
                     }
@@ -684,6 +698,8 @@ fun ChatRoot(activity: MainActivity) {
                     HistoryDrawer(store, settings, english, fontScale, onClose = ::closeDrawer,
                         onSettings = { cancelVoice(); speech.stopSpeaking(); closeDrawer(); settingsOpen = true },
                         onInstructions = { instructionsTarget = it },
+                        onOpenFavorites = { cancelVoice(); speech.stopSpeaking(); closeDrawer(); favoritesFolderId = it },
+                        onAllAttachments = { closeDrawer(); libraryScopeChatId = null; libraryOpen = true },
                         modifier = Modifier.width(drawerWidth).fillMaxHeight().graphicsLayer { alpha = progress })
                 }
                 mainScreen(
@@ -746,6 +762,17 @@ fun ChatRoot(activity: MainActivity) {
             if (kind != null) {
                 GameScreen(kind = kind, onResult = { store.postGameResult(it) }, onClose = { activeGame = null })
             }
+        }
+        // appui: чат «Избранное» поверх всего.
+        FullScreenLayer(visible = favoritesFolderId != null, onBack = { favoritesFolderId = null }) {
+            favoritesFolderId?.let { id ->
+                com.honerai.app.ui.favorites.FavoritesScreen(store, english, id, onClose = { favoritesFolderId = null })
+            }
+        }
+        // appui: библиотека вложений (текущего чата или всех).
+        FullScreenLayer(visible = libraryOpen, onBack = { libraryOpen = false }) {
+            com.honerai.app.ui.library.AttachmentLibraryScreen(store, english, libraryScopeChatId,
+                onClose = { libraryOpen = false }, onMessage = { showToast(it) })
         }
         com.honerai.app.ui.cloud.CloudLayers(activity) // cloud: чат с администратором, уведомления, плашка
     }
@@ -817,6 +844,34 @@ fun ChatRoot(activity: MainActivity) {
                     Text(t("Отмена", "Cancel"), color = colors.accent)
                 }
             },
+            containerColor = colors.surface,
+        )
+    }
+    forwardFavoritesMessage?.let { message ->
+        // appui: выбор папки избранного для пересылки сообщения из обычного чата.
+        val folders = remember(conversations) { com.honerai.app.core.FavoritesLogic.ordered(conversations) }
+        AlertDialog(
+            onDismissRequest = { forwardFavoritesMessage = null },
+            title = { Text(t("Переслать в Избранное", "Forward to Saved")) },
+            text = {
+                Column {
+                    folders.forEach { folder ->
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    store.forwardToFavorites(folder.id, message)
+                                    forwardFavoritesMessage = null
+                                    showToast(t("Переслано в Избранное", "Forwarded to Saved"))
+                                }.padding(horizontal = 8.dp).testTag("chat.forwardFavorites." + folder.id),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(Icons.Rounded.PushPin, null, tint = colors.accent, modifier = Modifier.size(18.dp))
+                            Text(folder.title, fontSize = 16.sp, color = colors.foreground)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { forwardFavoritesMessage = null }) { Text(t("Отмена", "Cancel"), color = colors.accent) } },
             containerColor = colors.surface,
         )
     }
@@ -1061,6 +1116,7 @@ private fun ChatToolsMenu(expanded: Boolean, pinned: Boolean, english: Boolean, 
         ToolItem(if (pinned) Icons.Outlined.PushPin else Icons.Rounded.PushPin, if (pinned) t("Открепить", "Unpin") else t("Закрепить", "Pin"),
             "chat.tools.pin") { onTool("pin") }
         ToolItem(Icons.Rounded.AttachFile, t("Загруженные файлы", "Uploaded files"), "chat.tools.attachments") { onTool("attachments") }
+        ToolItem(Icons.Rounded.PhotoLibrary, t("Вложения этого чата", "Attachments in this chat"), "chat.tools.library") { onTool("library") }
         ToolItem(Icons.Rounded.Search, t("Найти в чате", "Find in conversation"), "chat.tools.find") { onTool("find") }
         ToolItem(Icons.Outlined.Info, t("Информация о чате", "Chat information"), "chat.tools.info") { onTool("info") }
         HorizontalDivider(color = colors.divider)

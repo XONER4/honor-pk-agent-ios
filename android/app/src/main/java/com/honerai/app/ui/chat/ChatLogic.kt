@@ -255,7 +255,8 @@ data class NavigationLayout(val count: Int, val available: Float, val spacing: F
 enum class MessageMenuAction(val raw: String) {
     COPY("copy"), SELECT("select"), QUOTE("quote"), EDIT("edit"), SHARE("share"), RETRY("retry"),
     LIKE("like"), DISLIKE("dislike"), SPEAK("speak"), FORK("fork"), REMEMBER("remember"),
-    PIN_INSTRUCTION("pinInstruction");
+    PIN_INSTRUCTION("pinInstruction"),
+    FORWARD_TO_FAVORITES("forwardFavorites"); // appui: переслать сообщение в чат «Избранное»
 
     /** Для пункта нужен текст сообщения: без текста он недоступен. */
     val requiresContent: Boolean
@@ -274,13 +275,14 @@ enum class MessageMenuAction(val raw: String) {
         FORK -> if (english) "Continue in a branch" else "Продолжить в ветке"
         REMEMBER -> if (english) "Remember" else "Запомнить"
         PIN_INSTRUCTION -> if (english) "Pin as instruction" else "Закрепить как инструкцию"
+        FORWARD_TO_FAVORITES -> if (english) "Forward to Saved" else "Переслать в Избранное"
     }
 
     companion object {
         fun available(role: MessageRole): List<MessageMenuAction> = if (role == MessageRole.USER) {
-            listOf(COPY, PIN_INSTRUCTION, SELECT, QUOTE, EDIT, FORK, REMEMBER, SHARE)
+            listOf(COPY, PIN_INSTRUCTION, SELECT, QUOTE, EDIT, FORK, REMEMBER, FORWARD_TO_FAVORITES, SHARE)
         } else {
-            listOf(COPY, SELECT, QUOTE, PIN_INSTRUCTION, RETRY, FORK, REMEMBER, LIKE, DISLIKE, SPEAK, SHARE)
+            listOf(COPY, SELECT, QUOTE, PIN_INSTRUCTION, RETRY, FORK, REMEMBER, FORWARD_TO_FAVORITES, LIKE, DISLIKE, SPEAK, SHARE)
         }
     }
 }

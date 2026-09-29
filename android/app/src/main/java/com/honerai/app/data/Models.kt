@@ -53,6 +53,11 @@ enum class AttachmentKind {
 @Serializable
 enum class MessageInputKind { @SerialName("text") TEXT, @SerialName("voice") VOICE, @SerialName("suggestion") SUGGESTION }
 
+// appui: вид чата. NORMAL — обычный чат с нейросетью, FAVORITES — локальный чат «Избранное»
+// (заметки, пересланные сообщения). По умолчанию NORMAL, чтобы старая история открывалась.
+@Serializable
+enum class ConversationKind { @SerialName("normal") NORMAL, @SerialName("favorites") FAVORITES }
+
 @Serializable
 data class MessageAttachment(
     val id: String = newId(),
@@ -123,6 +128,8 @@ data class ChatMessage(
     val tableIDs: List<String>? = null,
     /** Фрагмент, который пользователь выделил и процитировал в вопросе. */
     val quote: String? = null,
+    // appui: сообщение закреплено внутри чата «Избранное» (показывается в закреплённой панели сверху).
+    val pinnedInChat: Boolean = false,
 )
 
 @Serializable
@@ -168,6 +175,11 @@ data class Conversation(
     val pinOrder: Int = 0,
     val instructions: List<ChatInstruction>? = null,
     val tables: List<ChatTable>? = null,
+    // appui: вид чата (обычный или «Избранное») — по умолчанию обычный, старая история совместима.
+    val kind: ConversationKind = ConversationKind.NORMAL,
+    // appui: сжатие контекста — краткое содержание ранних сообщений и индекс, до которого оно учтено.
+    val runningSummary: String = "",
+    val summarizedUpTo: Int = 0,
 ) {
     /** Время последнего сообщения — по нему чаты сортируются в списке. */
     val lastMessageAt: Instant get() = messages.lastOrNull()?.createdAt ?: updatedAt

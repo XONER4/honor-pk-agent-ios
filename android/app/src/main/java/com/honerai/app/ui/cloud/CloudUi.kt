@@ -205,7 +205,8 @@ fun AdminChatDrawerRow(english: Boolean, onOpened: () -> Unit) {
         AdminAvatar(40.dp, withBadge = false)
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(t(english, "Администратор", "Administrator"), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                // Строка в списке чатов называется «Техподдержка»; в самом чате шапка — «Администратор».
+                Text(t(english, "Техподдержка", "Support"), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                     color = colors.foreground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 VerifiedBadge(15.dp)
             }

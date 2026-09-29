@@ -30,11 +30,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.PushPin
@@ -112,6 +116,7 @@ import coil.compose.AsyncImage
 import com.honerai.app.R
 import com.honerai.app.core.AppSettings
 import com.honerai.app.core.ChatStoreApi
+import com.honerai.app.core.FavoritesLogic
 import com.honerai.app.data.Conversation
 import com.honerai.app.ui.common.HonerCircleButton
 import com.honerai.app.ui.common.HonerImages
@@ -140,6 +145,9 @@ fun HistoryDrawer(
     onClose: () -> Unit,
     onSettings: () -> Unit,
     onInstructions: (String) -> Unit,
+    // appui: открыть чат «Избранное» и библиотеку всех вложений.
+    onOpenFavorites: (String) -> Unit = {},
+    onAllAttachments: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = HonerTheme.colors
@@ -149,6 +157,10 @@ fun HistoryDrawer(
 
     val conversations by store.conversations.collectAsState()
     val selectedId by store.selectedConversationId.collectAsState()
+    // appui: чат «Избранное» по умолчанию создаётся один раз после загрузки истории.
+    val loadingHistory by store.isLoadingHistory.collectAsState()
+    LaunchedEffect(loadingHistory) { if (!loadingHistory) store.ensureDefaultFavorites() }
+    val favorites = remember(conversations) { FavoritesLogic.ordered(conversations) }
     val displayName by settings.displayName.collectAsState()
     val photoPath by settings.profilePhotoPath.collectAsState()
 
@@ -237,9 +249,15 @@ fun HistoryDrawer(
                 Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(start = 7.dp, end = 7.dp, bottom = 10.dp),
             ) {
-                // cloud: закреплённый чат «Администратор Honer AI» (только когда облако настроено).
-                if (!selecting && search.isBlank()) item(key = "cloud.admin") {
-                    com.honerai.app.ui.cloud.AdminChatDrawerRow(english, onOpened = { focusManager.clearFocus(); onClose() })
+                // appui: чаты «Избранное» — закреплены в самом верху, отдельным акцентным блоком.
+                if (!selecting && search.isBlank() && favorites.isNotEmpty()) {
+                    items(favorites, key = { "fav." + it.id }) { fav ->
+                        FavoritesDrawerRow(fav, english) { focusManager.clearFocus(); onOpenFavorites(fav.id) }
+                    }
+                    item(key = "favorites.divider") {
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 7.dp).height(0.5.dp)
+                            .background(colors.divider.copy(alpha = 0.7f)))
+                    }
                 }
                 if (groups.isEmpty()) {
                     item(key = "empty") {
@@ -353,6 +371,25 @@ fun HistoryDrawer(
                         }
                     }
                 } else {
+                    Column(Modifier.fillMaxWidth()) {
+                    // appui: «Все вложения» — библиотека вложений по всем чатам.
+                    Row(
+                        Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(14.dp)).clickable {
+                            focusManager.clearFocus(); onAllAttachments()
+                        }.padding(horizontal = 15.dp).testTag("sidebar.allAttachments"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Icon(Icons.Rounded.PhotoLibrary, null, tint = colors.secondary, modifier = Modifier.size(22.dp))
+                        Text(t("Все вложения", "All attachments"), fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                            color = colors.foreground, modifier = Modifier.weight(1f))
+                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = colors.secondary, modifier = Modifier.size(18.dp))
+                    }
+                    // appui: строка «Техподдержка» (чат с администратором из облачного модуля) перенесена вниз.
+                    // appui: needs cloud row label "Техподдержка" (метка задаётся в модуле cloud/ui.cloud).
+                    Box(Modifier.padding(horizontal = 7.dp)) {
+                        com.honerai.app.ui.cloud.AdminChatDrawerRow(english, onOpened = { focusManager.clearFocus(); onClose() })
+                    }
                     Row(
                         Modifier.fillMaxWidth().height(60.dp).clickable(onClick = onSettings).padding(horizontal = 15.dp)
                             .semantics { contentDescription = t("Профиль и настройки", "Profile and settings") }
@@ -370,6 +407,7 @@ fun HistoryDrawer(
                         Text(displayName.ifEmpty { t("Ваш профиль", "Your profile") }, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                             color = colors.foreground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         Icon(Icons.Rounded.MoreHoriz, null, tint = colors.secondary, modifier = Modifier.size(22.dp))
+                    }
                     }
                 }
             }
@@ -450,6 +488,27 @@ fun HistoryDrawer(
             },
             containerColor = colors.surface,
         )
+    }
+}
+
+/** appui: акцентная строка чата «Избранное» в самом верху истории. */
+@Composable
+private fun FavoritesDrawerRow(favorite: Conversation, english: Boolean, onOpen: () -> Unit) {
+    val colors = HonerTheme.colors
+    val shape = RoundedCornerShape(15.dp)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 46.dp).clip(shape).background(colors.accent.copy(alpha = 0.14f))
+            .border(0.7.dp, colors.accent.copy(alpha = 0.3f), shape).clickable(onClick = onOpen)
+            .padding(horizontal = 13.dp, vertical = 6.dp)
+            .semantics { contentDescription = (if (english) "Saved messages: " else "Избранное: ") + favorite.title }
+            .testTag("history.favorites." + favorite.id),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(Icons.Rounded.Bookmark, null, tint = colors.accent, modifier = Modifier.size(20.dp))
+        Text(favorite.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.foreground,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = colors.accent.copy(alpha = 0.8f), modifier = Modifier.size(16.dp))
     }
 }
 

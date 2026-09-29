@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Downloading
@@ -152,6 +153,7 @@ fun menuIcon(action: MessageMenuAction): ImageVector = when (action) {
     MessageMenuAction.FORK -> Icons.AutoMirrored.Rounded.CallSplit
     MessageMenuAction.REMEMBER -> Icons.Rounded.BookmarkBorder
     MessageMenuAction.PIN_INSTRUCTION -> Icons.Outlined.PushPin
+    MessageMenuAction.FORWARD_TO_FAVORITES -> Icons.Rounded.Bookmark // appui: переслать в Избранное
 }
 
 /**

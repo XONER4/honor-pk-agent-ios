@@ -198,9 +198,10 @@ class ChatLogicTest {
 
     @Test
     fun menuActionsMatchIos() {
-        assertEquals(listOf("copy", "pinInstruction", "select", "quote", "edit", "fork", "remember", "share"),
+        // appui: добавлен пункт «Переслать в Избранное» (forwardFavorites) перед «Поделиться».
+        assertEquals(listOf("copy", "pinInstruction", "select", "quote", "edit", "fork", "remember", "forwardFavorites", "share"),
             MessageMenuAction.available(MessageRole.USER).map { it.raw })
-        assertEquals(listOf("copy", "select", "quote", "pinInstruction", "retry", "fork", "remember", "like", "dislike", "speak", "share"),
+        assertEquals(listOf("copy", "select", "quote", "pinInstruction", "retry", "fork", "remember", "forwardFavorites", "like", "dislike", "speak", "share"),
             MessageMenuAction.available(MessageRole.ASSISTANT).map { it.raw })
         assertTrue(MessageMenuAction.COPY.requiresContent)
         assertFalse(MessageMenuAction.RETRY.requiresContent)

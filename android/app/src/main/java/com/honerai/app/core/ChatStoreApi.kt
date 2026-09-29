@@ -107,6 +107,28 @@ interface ChatStoreApi {
     fun deleteSavedInstruction(id: String)
     fun applySavedInstruction(id: String, chatId: String): Boolean
 
+    // ---- Избранное (appui: локальный чат «Избранное», наружу ничего не уходит) ----
+    /** Создать чат «Избранное» по умолчанию, если ни одного ещё нет. */
+    fun ensureDefaultFavorites()
+    /** Создать дополнительную папку избранного с названием; возвращает её id. */
+    fun createFavoritesFolder(name: String): String
+    /** Удалить папку избранного (последнюю удалить нельзя — она очищается). */
+    fun deleteFavoritesFolder(id: String)
+    /** Очистить всю переписку папки избранного. */
+    fun clearFavoritesHistory(id: String)
+    /** Добавить заметку (текст + вложения) в чат избранного. Вложения уже в папке приложения. */
+    fun addFavoriteNote(chatId: String, text: String, attachments: List<MessageAttachment>)
+    /** Переслать сообщение из обычного чата в папку избранного (копирует текст и вложения). */
+    fun forwardToFavorites(chatId: String, message: ChatMessage)
+    /** Закрепить/открепить сообщение внутри чата избранного. */
+    fun toggleFavoriteMessagePin(chatId: String, messageId: String)
+    /** Удалить одно сообщение из чата избранного. */
+    fun deleteFavoriteMessage(chatId: String, messageId: String)
+    /** Поменять порядок папки избранного среди других папок избранного. */
+    fun moveFavorite(id: String, offset: Int)
+    /** Очистить вложения, ожидающие отправки (используется композером избранного). */
+    fun clearPendingAttachments()
+
     // ---- Таблицы ----
     fun table(id: String): ChatTable?
     fun saveTable(table: ChatTable, byUser: Boolean = true)
