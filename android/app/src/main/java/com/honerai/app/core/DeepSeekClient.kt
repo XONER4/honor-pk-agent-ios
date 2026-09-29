@@ -205,14 +205,14 @@ class DeepSeekClient(
     private val deviceSummary: () -> String = { "" },
 ) : DeepSeekStreaming, RussianTextNormalizing {
 
-    private val endpoint: String get() = configuration.baseURL.trimEnd('/') + "/chat/completions"
 
     /** Тело запроса к chat/completions. */
     fun buildBody(
         messages: List<ChatMessage>, thinking: Boolean, systemInstruction: String,
         searchContext: String, tools: List<JsonObject>? = null, forceAnswer: Boolean = false,
     ): JsonObject {
-        if (configuration.apiKey.isEmpty()) throw HonorError.MissingApiKey()
+        // cloud: через сервер Honer Cloud ключ в приложении не нужен.
+        if (configuration.apiKey.isEmpty() && !com.honerai.app.cloud.AiProxy.active) throw HonorError.MissingApiKey()
         val english = configuration.language == "en"
         var instruction = (if (english) HonerIdentity.englishInstruction else HonerIdentity.instruction) +
             MediaToolSchemas.PROMPT /* media: приложения, медиа, запрет платежей */ +
@@ -350,8 +350,10 @@ class DeepSeekClient(
     fun makeRequest(body: JsonObject, stream: Boolean): Request {
         val text = body.toString()
         if (text.length >= 48 * 1024 * 1024) throw HonorError.RequestTooLarge()
-        return Request.Builder().url(endpoint)
-            .header("Authorization", "Bearer ${configuration.apiKey}")
+        // cloud: облако настроено — запрос идёт на /v1/ai/chat/completions с токеном устройства.
+        val route = com.honerai.app.cloud.AiProxy.route(configuration)
+        return Request.Builder().url(route.url)
+            .header("Authorization", "Bearer ${route.bearer}")
             .header("Content-Type", "application/json")
             .header("Accept", if (stream) "text/event-stream" else "application/json")
             .post(text.toRequestBody(JSON))
@@ -369,6 +371,7 @@ class DeepSeekClient(
             call.execute().use { response ->
                 if (!response.isSuccessful) {
                     val raw = runCatching { response.body?.string().orEmpty().take(16384) }.getOrDefault("")
+                    com.honerai.app.cloud.AiProxy.failure(response.request, response.code, raw)?.let { throw it } // cloud:
                     throw HonorError.Http(response.code, errorMessage(raw))
                 }
                 val input = response.body?.byteStream() ?: throw HonorError.InvalidResponse()
@@ -436,7 +439,10 @@ class DeepSeekClient(
         val client = if (timeoutSeconds != null) http.newBuilder().callTimeout(timeoutSeconds, java.util.concurrent.TimeUnit.SECONDS).build() else http
         client.newCall(makeRequest(body, stream = false)).await().use { response ->
             val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) throw HonorError.Http(response.code, errorMessage(text))
+            if (!response.isSuccessful) {
+                com.honerai.app.cloud.AiProxy.failure(response.request, response.code, text)?.let { throw it } // cloud:
+                throw HonorError.Http(response.code, errorMessage(text))
+            }
             text
         }
     }

@@ -187,6 +187,7 @@ private fun SettingsRootPage(listState: androidx.compose.foundation.lazy.LazyLis
                 )
             }
         }
+        item(key = "cloud") { com.honerai.app.ui.cloud.CloudSettingsGroup() } // cloud: только когда облако настроено
         item(key = "about") {
             SettingsGroup(t("О программе", "About")) {
                 SettingsRow(Icons.Outlined.Info, t("Версия", "Version"), appVersionText(), chevron = false, tag = "settings.version")

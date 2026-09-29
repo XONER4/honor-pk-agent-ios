@@ -152,6 +152,7 @@ fun HonerRoot(activity: MainActivity) {
                     }
                 }
                 }
+                com.honerai.app.ui.cloud.BlockedOverlay() // cloud: «Доступ ограничен» поверх всего
             }
         }
     }

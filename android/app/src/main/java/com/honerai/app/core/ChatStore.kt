@@ -254,7 +254,7 @@ class ChatStore internal constructor(
         get() = !_isLoadingHistory.value && !_isGenerating.value &&
             (draft.value.isNotBlank() || _attachments.value.isNotEmpty() || _quotedFragment.value != null)
 
-    val hasApiKey: Boolean get() = configuration.apiKey.isNotBlank()
+    val hasApiKey: Boolean get() = configuration.apiKey.isNotBlank() || com.honerai.app.cloud.AiProxy.active // cloud: ключ на сервере
     val respondsInEnglish: Boolean get() = configuration.language == "en"
     private val answerLanguagePhrase: String get() = if (respondsInEnglish) "на английском языке (in English)" else "по-русски"
 

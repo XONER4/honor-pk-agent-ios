@@ -158,7 +158,7 @@ describe('group chat AI', () => {
     assert.equal(upstream.requests.length, n + 1);
     const req = upstream.requests.at(-1);
     assert.equal(req.headers.authorization, 'Bearer sk-test-key');
-    assert.equal(req.body.model, 'deepseek-chat');
+    assert.equal(req.body.model, 'deepseek-flash');
     assert.equal(req.body.messages[0].role, 'system');
     assert.match(req.body.messages[0].content, /Honer AI/);
     assert.match(req.body.messages[0].content, /Маша/);

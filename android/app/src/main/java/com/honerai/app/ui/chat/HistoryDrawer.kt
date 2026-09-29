@@ -237,6 +237,10 @@ fun HistoryDrawer(
                 Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(start = 7.dp, end = 7.dp, bottom = 10.dp),
             ) {
+                // cloud: закреплённый чат «Администратор Honer AI» (только когда облако настроено).
+                if (!selecting && search.isBlank()) item(key = "cloud.admin") {
+                    com.honerai.app.ui.cloud.AdminChatDrawerRow(english, onOpened = { focusManager.clearFocus(); onClose() })
+                }
                 if (groups.isEmpty()) {
                     item(key = "empty") {
                         Column(Modifier.fillMaxWidth().padding(top = 90.dp), horizontalAlignment = Alignment.CenterHorizontally) {

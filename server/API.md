@@ -62,7 +62,7 @@ Presence = `offline` when no socket for 40 s. `lastSeen` = last time the socket 
 - `POST /v1/ai/chat/completions` — body is the DeepSeek/OpenAI chat-completions body unchanged (incl. `stream:true`, tools).
   The server injects the key, forwards to `https://api.deepseek.com/chat/completions`, and pipes the response bytes back
   unchanged (SSE when streaming) with no buffering. Rate limit: 60 requests / 10 min / device (429 `rate_limited`).
-  Allowed models: `deepseek-chat`, `deepseek-reasoner`. Blocked devices get 403.
+  Allowed models: `deepseek-flash` (used by the apps), `deepseek-chat`, `deepseek-reasoner`. Blocked devices get 403.
 
 ## Admin endpoints
 

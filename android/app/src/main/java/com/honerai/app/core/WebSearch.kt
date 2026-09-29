@@ -240,7 +240,7 @@ class WebSearchClient(
 /** Подсказка модели: первичные адреса, когда поисковики недоступны. Источник появляется только после чтения. */
 class DeepSeekURLDiscovery(private val configuration: DeepSeekConfiguration) : SearchURLDiscovering {
     override suspend fun candidates(query: String): List<String> = withContext(Dispatchers.IO) {
-        if (configuration.apiKey.isEmpty()) throw HonorError.SearchUnavailable()
+        if (configuration.apiKey.isEmpty() && !com.honerai.app.cloud.AiProxy.active) throw HonorError.SearchUnavailable() // cloud:
         val instruction = "Нужно найти первичные источники для запроса пользователя, когда поисковые сайты недоступны. Верни JSON вида {\"urls\":[\"https://...\"]} — не больше трёх конкретных, уверенно известных тебе URL официальных страниц документации, технических характеристик или первичных справочных источников. Не выдумывай неизвестные адреса и не отвечай на вопрос. Если точных известных URL нет, верни пустой массив. Предложенные адреса будут проверены реальным HTTP-запросом, поэтому они не считаются уже найденными источниками. Не включай поисковые выдачи, ссылки с API-ключами, локальные адреса или личные данные."
         val payload: JsonObject = buildJsonObject {
             put("model", configuration.model)
@@ -253,8 +253,10 @@ class DeepSeekURLDiscovery(private val configuration: DeepSeekConfiguration) : S
                 add(buildJsonObject { put("role", "user"); put("content", query.take(1600)) })
             })
         }
-        val request = Request.Builder().url(configuration.baseURL.trimEnd('/') + "/chat/completions")
-            .header("Authorization", "Bearer ${configuration.apiKey}")
+        // cloud: через сервер Honer Cloud, если он настроен.
+        val route = runCatching { com.honerai.app.cloud.AiProxy.route(configuration) }.getOrElse { throw HonorError.SearchUnavailable() }
+        val request = Request.Builder().url(route.url)
+            .header("Authorization", "Bearer ${route.bearer}")
             .post(payload.toString().toRequestBody("application/json".toMediaType())).build()
         val raw = try {
             HonerHttp.web(6).newCall(request).await().use { response ->

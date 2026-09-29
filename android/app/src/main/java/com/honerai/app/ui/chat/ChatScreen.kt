@@ -747,6 +747,7 @@ fun ChatRoot(activity: MainActivity) {
                 GameScreen(kind = kind, onResult = { store.postGameResult(it) }, onClose = { activeGame = null })
             }
         }
+        com.honerai.app.ui.cloud.CloudLayers(activity) // cloud: чат с администратором, уведомления, плашка
     }
 
     // ---- Окна ----
@@ -932,6 +933,7 @@ private fun MainScreen(
                     contentAlignment = Alignment.Center,
                 ) { NewConversationSymbol(colors.foreground) }
             }
+            com.honerai.app.ui.cloud.CloudBellButton(english) // cloud: вкладка «Уведомления»
             if (hasChat) {
                 Box {
                     Box(

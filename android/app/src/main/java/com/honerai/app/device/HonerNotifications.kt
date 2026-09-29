@@ -65,6 +65,7 @@ object HonerNotifications {
         val app = context.applicationContext
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
+        runCatching { com.honerai.app.cloud.CloudManager.recordAnswer(app, chatId, chatTitle, trimmed) } // cloud: вкладка «Уведомления»
         if (!canNotify(app)) return
         if (!AppContainer.get(app).settings.notificationsEnabled.value) return
         if (isAppInForeground()) return

@@ -21,6 +21,6 @@ test('config requires DATABASE_URL unless DB_MODE=memory', () => {
   assert.equal(c.presenceOfflineMs, 40_000);
   assert.equal(c.aiQuestionDelayMs, 20_000);
   assert.equal(c.deepseekBaseUrl, 'https://api.deepseek.com');
-  assert.deepEqual(c.aiAllowedModels, ['deepseek-chat', 'deepseek-reasoner']);
+  assert.deepEqual(c.aiAllowedModels, ['deepseek-flash', 'deepseek-chat', 'deepseek-reasoner']);
   assert.equal(c.maxUploadBytes, 100 * 1024 * 1024);
 });

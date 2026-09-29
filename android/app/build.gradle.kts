@@ -10,6 +10,9 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// cloud: FCM (доставка сообщений администратора в фоне) — только если положен google-services.json.
+if (file("google-services.json").exists()) apply(plugin = "com.google.gms.google-services")
+
 // Ключ DeepSeek и данные подписи не хранятся в репозитории: они приходят из
 // переменных окружения (сборка на GitHub) или из local.properties (локальная сборка).
 val localProps = Properties().apply {
@@ -47,6 +50,8 @@ android {
         buildConfigField("String", "DEEPSEEK_KEY_A", "\"$maskedKey\"")
         buildConfigField("String", "DEEPSEEK_KEY_B", "\"$keyMask\"")
         buildConfigField("String", "UPDATE_REPOSITORY", "\"XONER4/honor-pk-agent-ios\"")
+        // cloud: адрес сервера Honer Cloud; пустой — облако выключено, приложение работает как раньше.
+        buildConfigField("String", "HONER_CLOUD_URL", "\"${secret("HONER_CLOUD_URL").trim().trimEnd('/')}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -140,6 +145,10 @@ dependencies {
     implementation("androidx.media3:media3-effect:1.5.1")
     implementation("androidx.media3:media3-common:1.5.1")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    // cloud: токен устройства в зашифрованном хранилище и push-доставка через FCM.
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")

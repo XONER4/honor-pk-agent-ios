@@ -14,5 +14,6 @@ class HonerApp : Application(), Configuration.Provider {
         val container = AppContainer.get(this)
         HonerNotifications.createChannels(this)
         UpdateScheduler.schedule(this, enabled = container.settings.autoUpdate.value)
+        com.honerai.app.cloud.CloudManager.start(this) // cloud: без HONER_CLOUD_URL ничего не делает
     }
 }

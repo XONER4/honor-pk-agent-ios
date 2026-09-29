@@ -40,8 +40,8 @@ export function loadConfig(env = process.env) {
 
     deepseekApiKey: env.DEEPSEEK_API_KEY || '',
     deepseekBaseUrl: (env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/+$/, ''),
-    aiAllowedModels: list(env.AI_ALLOWED_MODELS || 'deepseek-chat,deepseek-reasoner'),
-    aiGroupModel: env.AI_GROUP_MODEL || 'deepseek-chat',
+    aiAllowedModels: list(env.AI_ALLOWED_MODELS || 'deepseek-flash,deepseek-chat,deepseek-reasoner'),
+    aiGroupModel: env.AI_GROUP_MODEL || 'deepseek-flash',
     aiRateMax: int(env.AI_RATE_MAX, 60),
     aiRateWindowMs: int(env.AI_RATE_WINDOW_MS, 10 * 60 * 1000),
     aiQuestionDelayMs: int(env.AI_QUESTION_DELAY_MS, 20_000),

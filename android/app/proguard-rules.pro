@@ -21,3 +21,7 @@
 
 # WebView JavaScript bridge
 -keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }
+
+# cloud: Tink из security-crypto ссылается на аннотации, которых нет в рантайме.
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn javax.annotation.**
