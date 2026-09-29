@@ -499,33 +499,40 @@ class WeatherClient(private val fetcher: PageFetcher = { url, max, timeout -> fe
     private class Place(val name: String, val latitude: Double, val longitude: Double)
 
     suspend fun forecast(location: String): WebSource {
+        // При настроенном облаке и поиск города, и прогноз идут через наш сервер одним запросом
+        // (open-meteo у операторов вроде МТС заблокирован напрямую). Иначе — старый прямой путь.
+        val cloudBase = com.honerai.app.cloud.CloudConfig.baseUrl
+        if (cloudBase.isNotEmpty()) {
+            val url = com.honerai.app.cloud.CloudUrls.api(cloudBase, "/v1/weather").toHttpUrl().newBuilder()
+                .addQueryParameter("q", location).addQueryParameter("days", "7").build()
+            val data = fetcher(url.toString(), 500_000, 14)
+            currentCoroutineContext().ensureActive()
+            if (data == null || data.status != 200) throw HonorError.SearchUnavailable()
+            val json = parseJson(data.text)
+            val name = json["honer_place"].str ?: location
+            val forecast = WeatherForecast.parse(data.text) ?: throw HonorError.SearchUnavailable()
+            val text = forecast.russianDescription(name)
+            return WebSource(title = "Погода: $name · Open-Meteo", url = url.toString(), snippet = text.take(500),
+                content = text, fetchedAt = Instant.now())
+        }
         val place = if (location == "Клин") Place("Клин, Московская область, Россия", 56.3333, 36.7333) else {
             val geo = "https://geocoding-api.open-meteo.com/v1/search".toHttpUrl().newBuilder()
                 .addQueryParameter("name", location).addQueryParameter("count", "5")
                 .addQueryParameter("language", "ru").addQueryParameter("format", "json").build()
-            val data = fetcher(geo.toString(), 500_000, 10)
-            if (data == null || data.status != 200) throw HonorError.SearchUnavailable()
-            val result = parseJson(data.text)["results"].arr?.firstOrNull() ?: throw HonorError.SearchUnavailable()
+            val gdata = fetcher(geo.toString(), 500_000, 10)
+            if (gdata == null || gdata.status != 200) throw HonorError.SearchUnavailable()
+            val result = parseJson(gdata.text)["results"].arr?.firstOrNull() ?: throw HonorError.SearchUnavailable()
             val latitude = result["latitude"].dbl ?: throw HonorError.SearchUnavailable()
             val longitude = result["longitude"].dbl ?: throw HonorError.SearchUnavailable()
             val name = listOfNotNull(result["name"].str, result["admin1"].str, result["country"].str).joinToString(", ")
             Place(name, latitude, longitude)
         }
-        // api.open-meteo.com у части операторов (МТС) заблокирован, поэтому при настроенном облаке
-        // берём прогноз через наш сервер (/v1/weather), а напрямую — только если облака нет.
-        val cloudBase = com.honerai.app.cloud.CloudConfig.baseUrl
-        val api = if (cloudBase.isNotEmpty()) {
-            com.honerai.app.cloud.CloudUrls.api(cloudBase, "/v1/weather").toHttpUrl().newBuilder()
-                .addQueryParameter("lat", place.latitude.toString()).addQueryParameter("lon", place.longitude.toString())
-                .addQueryParameter("days", "7").build()
-        } else {
-            "https://api.open-meteo.com/v1/forecast".toHttpUrl().newBuilder()
-                .addQueryParameter("latitude", place.latitude.toString()).addQueryParameter("longitude", place.longitude.toString())
-                .addQueryParameter("current", "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m")
-                .addQueryParameter("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max")
-                .addQueryParameter("forecast_days", "7").addQueryParameter("timezone", "auto")
-                .addQueryParameter("wind_speed_unit", "ms").build()
-        }
+        val api = "https://api.open-meteo.com/v1/forecast".toHttpUrl().newBuilder()
+            .addQueryParameter("latitude", place.latitude.toString()).addQueryParameter("longitude", place.longitude.toString())
+            .addQueryParameter("current", "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m")
+            .addQueryParameter("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max")
+            .addQueryParameter("forecast_days", "7").addQueryParameter("timezone", "auto")
+            .addQueryParameter("wind_speed_unit", "ms").build()
         val data = fetcher(api.toString(), 500_000, 12)
         currentCoroutineContext().ensureActive()
         if (data == null || data.status != 200) throw HonorError.SearchUnavailable()

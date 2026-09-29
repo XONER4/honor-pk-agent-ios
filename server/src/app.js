@@ -134,24 +134,46 @@ export async function buildApp(config, overrides = {}) {
   // aiEnabled — ИИ сейчас разрешён администратором (общий выключатель и расписание).
   app.get('/health', async () => ({ ok: true, ai: Boolean(config.deepseekApiKey), aiEnabled: aiControl.isEnabled() }));
 
-  // Погода: часть операторов (МТС) блокирует api.open-meteo.com у пользователя,
-  // а сервер к нему ходит свободно. Приложение берёт погоду через этот эндпоинт.
+  // Погода: часть операторов (МТС) блокирует open-meteo у пользователя, а сервер ходит к нему
+  // свободно. Приложение берёт погоду через этот эндпоинт — по названию города (q) или по координатам.
+  const geocodeCity = async (name) => {
+    for (const lang of ['ru', 'en']) {
+      try {
+        const u = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=5&language=${lang}&format=json`;
+        const r = await fetch(u, { signal: AbortSignal.timeout(7000) });
+        if (!r.ok) continue;
+        const first = (await r.json())?.results?.[0];
+        if (first) {
+          const parts = [first.name, first.admin1, first.country].filter(Boolean);
+          return { name: parts.join(', '), lat: first.latitude, lon: first.longitude };
+        }
+      } catch { /* пробуем следующий язык */ }
+    }
+    return null;
+  };
   app.get('/v1/weather', async (request, reply) => {
     const q = request.query || {};
-    const lat = Number(q.lat), lon = Number(q.lon);
+    let lat = Number(q.lat), lon = Number(q.lon), place = '';
+    if (q.q) {
+      const found = await geocodeCity(String(q.q));
+      if (!found) return reply.code(404).send({ error: 'not_found', message: 'Город не найден.' });
+      lat = found.lat; lon = found.lon; place = found.name;
+    }
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-      return reply.code(400).send({ error: 'bad_request', message: 'Нужны параметры lat и lon.' });
+      return reply.code(400).send({ error: 'bad_request', message: 'Нужны параметры q (город) или lat и lon.' });
     }
     const url = 'https://api.open-meteo.com/v1/forecast'
       + `?latitude=${lat}&longitude=${lon}`
       + '&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m'
       + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max'
-      + `&timezone=auto&forecast_days=${Math.min(Math.max(Number(q.days) || 7, 1), 16)}`;
+      + `&timezone=auto&wind_speed_unit=ms&forecast_days=${Math.min(Math.max(Number(q.days) || 7, 1), 16)}`;
     try {
       const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
       if (!r.ok) return reply.code(502).send({ error: 'upstream_error', message: 'Погодный сервис не ответил.' });
+      const data = await r.json();
+      if (place) data.honer_place = place; // разрешённое название города для приложения
       reply.header('content-type', 'application/json; charset=utf-8');
-      return reply.send(await r.text());
+      return reply.send(data);
     } catch {
       return reply.code(502).send({ error: 'upstream_error', message: 'Погодный сервис не ответил.' });
     }
