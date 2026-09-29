@@ -107,7 +107,8 @@ export async function buildApp(config, overrides = {}) {
   app.setErrorHandler(errorHandler);
   app.setNotFoundHandler(notFoundHandler);
 
-  app.get('/health', async () => ({ ok: true }));
+  // ai — есть ли на сервере ключ нейросети: без него приложения ходят к ИИ напрямую (запасной путь).
+  app.get('/health', async () => ({ ok: true, ai: Boolean(config.deepseekApiKey) }));
 
   await app.register(wsRoutes);
   await app.register(deviceRoutes);

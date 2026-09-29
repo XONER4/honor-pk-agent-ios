@@ -17,9 +17,17 @@ object AiProxy {
 
     val active: Boolean get() = installed && CloudConfig.isConfigured
 
+    /**
+     * На сервере есть ключ нейросети ([CloudManager] проверяет /health). Пока его нет, а в сборке
+     * есть свой ключ — запросы идут напрямую в DeepSeek, чтобы ИИ работал без перерыва.
+     */
+    @Volatile var serverAiReady = false
+
     /** Адрес и ключ запроса. Облако без токена — регистрация (в фоне, не дольше 20 с). */
     fun route(configuration: DeepSeekConfiguration): AiRoute {
-        if (!active) return AiRoute.select("", null, configuration.baseURL, configuration.apiKey)!!
+        if (!active || (!serverAiReady && configuration.apiKey.isNotEmpty())) {
+            return AiRoute.select("", null, configuration.baseURL, configuration.apiKey)!!
+        }
         val token = CloudManager.tokenBlocking()
         return AiRoute.select(CloudConfig.baseUrl, token, configuration.baseURL, configuration.apiKey)
             ?: throw CloudAiError(

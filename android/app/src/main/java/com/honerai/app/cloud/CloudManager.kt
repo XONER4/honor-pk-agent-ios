@@ -166,6 +166,13 @@ object CloudManager {
                 override fun onStart(owner: LifecycleOwner) = onForeground()
                 override fun onStop(owner: LifecycleOwner) = onBackground()
             })
+            // Готов ли ИИ на сервере: проверка при запуске и раз в 10 минут.
+            launch(Dispatchers.IO) {
+                while (true) {
+                    api.serverAiReady()?.let { AiProxy.serverAiReady = it }
+                    delay(10 * 60_000L)
+                }
+            }
             // Регистрация — после знакомства (имя и дата рождения уже известны).
             launch {
                 settings.completedOnboarding.first { it }

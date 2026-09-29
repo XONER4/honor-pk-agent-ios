@@ -19,7 +19,8 @@ after(() => s.close());
 test('health', async () => {
   const r = await s.api('GET', '/health');
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body, { ok: true });
+  assert.equal(r.body.ok, true);
+  assert.equal(typeof r.body.ai, 'boolean'); // есть ли ключ нейросети на сервере
   assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
 });
 

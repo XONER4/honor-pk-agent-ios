@@ -58,6 +58,15 @@ class CloudApi(
     fun register(request: RegisterRequest): RegisterResponse =
         call("POST", "/v1/devices/register", CloudJson.encodeToString(RegisterRequest.serializer(), request), RegisterResponse.serializer(), auth = false)
 
+    /** Есть ли на сервере ключ нейросети (GET /health → ai). Ошибка связи — null. */
+    fun serverAiReady(): Boolean? = runCatching {
+        http.newCall(Request.Builder().url(CloudUrls.api(base, "/health")).get().build()).execute().use { response ->
+            if (!response.isSuccessful) return@use null
+            val body = response.body?.string().orEmpty()
+            Regex("\"ai\"\\s*:\\s*(true|false)").find(body)?.groupValues?.get(1)?.toBoolean() ?: false
+        }
+    }.getOrNull()
+
     fun patchMe(fields: JsonObject) { exec("PATCH", "/v1/devices/me", fields.toString()) }
 
     fun stats(stats: StatsRequest) { exec("POST", "/v1/devices/me/stats", CloudJson.encodeToString(StatsRequest.serializer(), stats)) }
