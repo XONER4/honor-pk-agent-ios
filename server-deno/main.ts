@@ -1,9 +1,9 @@
-// Точка входа: читает конфиг, поднимает Deno.serve, корректно завершается по SIGTERM/SIGINT.
-// Запуск: deno run -A --unstable-kv main.ts
-import { loadConfig } from "./config.ts";
+// Точка входа. На Deno Deploy сервер должен регистрироваться синхронно: Deno.serve вызывается
+// сразу, а тяжёлая инициализация (KV, конфиг) — лениво, при первом запросе. Локально слушаем порт.
+import { loadConfig, type Config } from "./config.ts";
 import { buildApp } from "./app.ts";
 
-let config;
+let config: Config;
 try {
   config = loadConfig();
 } catch (err) {
@@ -24,12 +24,29 @@ const verifyGoogleIdToken = config.googleClientIds.length
   }
   : undefined;
 
-const { handler, stop } = await buildApp(config, { verifyGoogleIdToken });
-
 if (!config.deepseekApiKey) console.warn("DEEPSEEK_API_KEY не задан: AI-прокси и групповой ИИ отключены");
 if (!config.adminKey && !config.googleClientIds.length) console.warn("Не задан ни ADMIN_KEY, ни GOOGLE_CLIENT_IDS: вход админа невозможен");
 
-const server = Deno.serve({ port: config.port, hostname: config.host }, handler);
+// Ленивая сборка: buildApp (открывает Deno KV) вызывается один раз при первом запросе, а не на этапе
+// сборки Deploy — иначе анализ билда падает, и ревизия не поднимается.
+type App = Awaited<ReturnType<typeof buildApp>>;
+let built: App | null = null;
+let building: Promise<App> | null = null;
+function app(): Promise<App> {
+  if (built) return Promise.resolve(built);
+  building ??= buildApp(config, { verifyGoogleIdToken }).then((a) => (built = a));
+  return building;
+}
+
+const serveHandler = async (req: Request, info: Deno.ServeHandlerInfo) => {
+  const { handler } = await app();
+  return handler(req, info);
+};
+
+const onDeploy = Boolean(Deno.env.get("DENO_DEPLOYMENT_ID"));
+const server = onDeploy
+  ? Deno.serve(serveHandler)
+  : Deno.serve({ port: config.port, hostname: config.host }, serveHandler);
 
 let shuttingDown = false;
 async function shutdown(signal: string) {
@@ -38,7 +55,7 @@ async function shutdown(signal: string) {
   console.log(`shutting down (${signal})`);
   try {
     await server.shutdown();
-    await stop();
+    if (built) await built.stop();
   } catch (err) {
     console.error("shutdown error", err);
   }
