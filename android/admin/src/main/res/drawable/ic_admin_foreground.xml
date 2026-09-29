@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Знак Honer (две ленты крест-накрест) и красный значок «A» — админка. Холст адаптивного значка 108×108. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M67.72,32.52 L57.46,32.52 L34.28,67.48 L44.54,67.48 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="50" android:startY="32.5" android:endX="50" android:endY="67.5"
+                android:startColor="#FFDBF0FF" android:endColor="#FF7A96F0" />
+        </aapt:attr>
+    </path>
+    <path android:pathData="M34.28,32.52 L44.54,32.52 L67.72,67.48 L57.46,67.48 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="34" android:startY="32.5" android:endX="68" android:endY="67.5"
+                android:startColor="#FF47B0FF" android:endColor="#FF386EFA" />
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M70,70 m-10.2,0 a10.2,10.2 0 1,0 20.4,0 a10.2,10.2 0 1,0 -20.4,0" />
+    <path android:fillColor="#FFE5283C"
+        android:pathData="M70,70 m-8.8,0 a8.8,8.8 0 1,0 17.6,0 a8.8,8.8 0 1,0 -17.6,0" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.9"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M65.9,74.6 L70,64.9 L74.1,74.6 M67.4,71.3 L72.6,71.3" />
+</vector>

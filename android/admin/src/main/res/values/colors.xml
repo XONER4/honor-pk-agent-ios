@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="honer_background">#101010</color>
+    <!-- Тёмно-красный фон значка: админку легко отличить от Honer AI на рабочем столе. -->
+    <color name="admin_icon_background">#3A0A10</color>
+    <color name="admin_icon_background_end">#12040A</color>
+    <color name="admin_accent">#FF4D5E</color>
+</resources>

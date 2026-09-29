@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "HonerAI"
 include(":app")
+include(":admin")
