@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -203,7 +204,7 @@ fun AdminChatDrawerRow(english: Boolean, onOpened: () -> Unit) {
         AdminAvatar(40.dp, withBadge = false)
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(t(english, "Администратор Honer AI", "Honer AI Administrator"), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                Text(t(english, "Администратор", "Administrator"), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                     color = colors.foreground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 VerifiedBadge(15.dp)
             }
@@ -360,7 +361,9 @@ fun BlockedOverlay() {
     val keyboard = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { keyboard?.hide() }
+    val focusManager = LocalFocusManager.current
+    // Поле ввода под экраном блокировки теряет фокус, иначе клавиатура остаётся поверх.
+    LaunchedEffect(Unit) { focusManager.clearFocus(force = true); keyboard?.hide() }
     // «Назад» не пускает в приложение — только сворачивает его.
     BackHandler { (context as? android.app.Activity)?.moveTaskToBack(true) }
     Box(
@@ -393,7 +396,9 @@ private fun BoxScope.BlockedContent(reason: String, english: Boolean, checking: 
         Text(t(english, "Доступ ограничен", "Access restricted"), fontSize = 24.sp, fontWeight = FontWeight.Bold,
             color = Color.White, textAlign = TextAlign.Center)
         Text(
-            reason.ifBlank { t(english, "Администратор ограничил доступ к Honer AI.", "The administrator has restricted access to Honer AI.") },
+            // Сервер без причины присылает код ошибки «blocked» — показываем человеческий текст.
+            reason.takeIf { it.isNotBlank() && !it.equals("blocked", ignoreCase = true) }
+                ?: t(english, "Администратор ограничил доступ к Honer AI.", "The administrator has restricted access to Honer AI."),
             fontSize = 16.sp, lineHeight = 22.sp, color = Color(0xFFE0E0E3), textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(4.dp))
