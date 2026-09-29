@@ -9,6 +9,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.Typography
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
 
 /** Цвета Honer AI — те же, что HonorTheme на iPhone (тёмная и светлая тема). */
 @Immutable
@@ -28,7 +31,7 @@ data class HonerColors(
 val DarkHonerColors = HonerColors(
     accent = Color(0xFF6E99FA), background = Color(0xFF101010), sidebar = Color(0xFF0C0C0C),
     surface = Color(0xFF191919), raised = Color(0xFF292929), bubble = Color(0xFF313131),
-    foreground = Color(0xFFF5F5F5), secondary = Color(0xFF919596), divider = Color(0xFF303030), isDark = true,
+    foreground = Color(0xFFEDEDEF), secondary = Color(0xFF919596), divider = Color(0xFF303030), isDark = true,
 )
 
 val LightHonerColors = HonerColors(
@@ -70,6 +73,21 @@ fun HonerAppTheme(appearance: String, content: @Composable () -> Unit) {
         )
     }
     CompositionLocalProvider(LocalHonerColors provides colors) {
-        MaterialTheme(colorScheme = scheme, content = content)
+        MaterialTheme(colorScheme = scheme, typography = HonerTypography, content = content)
     }
+}
+
+/**
+ * Типографика без разрядки Material (0.1–0.5 sp): как на iOS — текст плотнее и не выглядит «жирным»,
+ * а в узкие ячейки таблиц помещаются целые слова.
+ */
+private val HonerTypography: Typography = Typography().let { base ->
+    fun TextStyle.tight() = copy(letterSpacing = 0.sp)
+    base.copy(
+        displayLarge = base.displayLarge.tight(), displayMedium = base.displayMedium.tight(), displaySmall = base.displaySmall.tight(),
+        headlineLarge = base.headlineLarge.tight(), headlineMedium = base.headlineMedium.tight(), headlineSmall = base.headlineSmall.tight(),
+        titleLarge = base.titleLarge.tight(), titleMedium = base.titleMedium.tight(), titleSmall = base.titleSmall.tight(),
+        bodyLarge = base.bodyLarge.tight(), bodyMedium = base.bodyMedium.tight(), bodySmall = base.bodySmall.tight(),
+        labelLarge = base.labelLarge.tight(), labelMedium = base.labelMedium.tight(), labelSmall = base.labelSmall.tight(),
+    )
 }

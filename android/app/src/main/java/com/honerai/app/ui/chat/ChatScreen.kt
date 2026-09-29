@@ -1147,7 +1147,7 @@ private fun Welcome(english: Boolean, fontScale: Float, onTap: () -> Unit) {
             HonerMark(47.dp)
             Text(
                 if (english) "Hi! What would you like\nto talk about today?" else "Привет! О чём хотите\nпоговорить сегодня?",
-                fontSize = (22 * fontScale).sp, lineHeight = (30 * fontScale).sp, fontWeight = FontWeight.Bold, color = colors.foreground,
+                fontSize = (21 * fontScale).sp, lineHeight = (28 * fontScale).sp, fontWeight = FontWeight.SemiBold, color = colors.foreground,
                 textAlign = TextAlign.Center, modifier = Modifier.testTag("welcomeMessage"),
             )
             val version = DeviceInfo.appVersion

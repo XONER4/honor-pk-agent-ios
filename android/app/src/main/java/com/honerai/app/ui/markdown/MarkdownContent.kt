@@ -186,7 +186,7 @@ private fun MarkdownBlockView(
         is BlockKind.Heading -> InlineContent(
             text = block.text,
             fontSize = fontSize * headingScale(kind.level),
-            weight = if (kind.level <= 2) FontWeight.Bold else FontWeight.SemiBold,
+            weight = if (kind.level <= 2) FontWeight.SemiBold else FontWeight.Medium,
             context = context,
             fade = fade,
             modifier = Modifier.padding(top = if (kind.level <= 2) 8.dp else 4.dp).semantics { heading() },
@@ -263,10 +263,10 @@ private fun MarkdownBlockView(
 }
 
 private fun headingScale(level: Int): Float = when (level) {
-    1 -> 1.5f
-    2 -> 1.3f
-    3 -> 1.16f
-    4 -> 1.06f
+    1 -> 1.36f
+    2 -> 1.22f
+    3 -> 1.1f
+    4 -> 1.04f
     else -> 1f
 }
 

@@ -287,7 +287,7 @@ private fun UserMessage(message: ChatMessage, findQuery: String, english: Boolea
                     val highlight = remember(message.content, findQuery) {
                         highlighted(message.content, findQuery, Color(0x59FFD60A))
                     }
-                    Text(highlight, fontSize = (21 * fontScale).sp, lineHeight = (27 * fontScale).sp, color = colors.foreground)
+                    Text(highlight, fontSize = (18 * fontScale).sp, lineHeight = (24 * fontScale).sp, color = colors.foreground)
                 }
             }
         }

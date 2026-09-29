@@ -22,6 +22,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -43,6 +45,7 @@ import com.honerai.app.ui.theme.HonerTheme
 private val chatIdExtras = listOf("chatId", "honer.chatId", "chat_id", "conversationId")
 
 private const val UI_PREFS = "honer.chat.ui"
+private const val TEXT_SCALE = 0.93f
 private const val ASKED_NOTIFICATIONS = "askedNotifications"
 
 /** Системная настройка «Убрать анимацию» / масштаб анимации 0. */
@@ -121,8 +124,14 @@ fun HonerRoot(activity: MainActivity) {
         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
+    // Текст чуть компактнее системного: на узких Android-экранах (360 dp) iOS-размеры выглядят крупно.
+    // Системный масштаб шрифта пользователя сохраняется — умножаем, а не заменяем.
+    val baseDensity = LocalDensity.current
+    val density = remember(baseDensity) { Density(baseDensity.density, baseDensity.fontScale * TEXT_SCALE) }
+
     HonerAppTheme(appearance = appearance) {
         CompositionLocalProvider(
+            LocalDensity provides density,
             LocalReduceMotion provides reduce,
             LocalChatFontScale provides fontScale.toFloat(),
         ) {

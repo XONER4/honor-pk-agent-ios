@@ -44,7 +44,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -98,6 +100,36 @@ object TableColumnLayout {
         }
         return shares.toList()
     }
+
+    /**
+     * Ширины столбцов в ширину [available]: по долям [shares], но не уже [minimums]
+     * (самое длинное слово столбца не должно рваться посередине).
+     * null — столбцы не помещаются даже по минимуму, нужна широкая таблица с прокруткой.
+     */
+    fun fitWidths(shares: List<Double>, minimums: List<Float>, available: Float): List<Float>? {
+        val n = shares.size
+        if (n == 0 || minimums.size != n) return null
+        if (minimums.sum() > available) return null
+        val fixed = BooleanArray(n)
+        val widths = FloatArray(n)
+        repeat(n + 1) {
+            val freeSpace = available - (0 until n).filter { fixed[it] }.sumOf { minimums[it].toDouble() }.toFloat()
+            val freeShare = (0 until n).filter { !fixed[it] }.sumOf { shares[it] }
+            var changed = false
+            for (i in 0 until n) {
+                if (fixed[i]) { widths[i] = minimums[i]; continue }
+                widths[i] = if (freeShare > 0) (shares[i] / freeShare * freeSpace).toFloat() else freeSpace / n
+                if (widths[i] < minimums[i]) { fixed[i] = true; changed = true }
+            }
+            if (!changed) return widths.toList()
+        }
+        return (0 until n).map { if (fixed[it]) minimums[it] else widths[it] }
+    }
+
+    /** Самые длинные слова ячейки (кандидаты на минимальную ширину столбца). */
+    fun longestWords(text: String, limit: Int = 2): List<String> =
+        text.replace(Regex("[*_`~]"), "").split(Regex("[\\s\\u00A0]+"))
+            .filter { it.isNotEmpty() }.sortedByDescending { it.length }.take(limit)
 
     /** Строки после фильтра и сортировки (числа сравниваются как числа). */
     fun visibleRows(rows: List<List<String>>, filter: String, sortColumn: Int?, ascending: Boolean): List<List<String>> {
@@ -354,10 +386,36 @@ private fun FitTable(
 ) {
     val colors = HonerTheme.colors
     val shares = remember(headers, rows, columnCount) { TableColumnLayout.shares(headers, rows, columnCount) }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val baseStyle = androidx.compose.material3.LocalTextStyle.current
+    // Минимум столбца — самое длинное слово целиком (+ поля ячейки), чтобы «Меркурий» не рвался на «Меркури-й».
+    val minimums = remember(headers, rows, columnCount, fontSize, density, baseStyle) {
+        (0 until columnCount).map { column ->
+            val headerStyle = baseStyle.merge(TextStyle(fontSize = (fontSize * 0.9f).sp, fontWeight = FontWeight.SemiBold))
+            val cellStyle = baseStyle.merge(TextStyle(fontSize = (fontSize * 0.92f).sp))
+            var widest = 0
+            for (word in TableColumnLayout.longestWords(headers.getOrElse(column) { "" })) {
+                widest = maxOf(widest, measurer.measure(word, headerStyle, maxLines = 1, softWrap = false).size.width)
+            }
+            val cellWords = rows.flatMap { TableColumnLayout.longestWords(it.getOrElse(column) { "" }) }
+                .sortedByDescending { it.length }.take(3)
+            for (word in cellWords) {
+                widest = maxOf(widest, measurer.measure(word, cellStyle, maxLines = 1, softWrap = false).size.width)
+            }
+            with(density) { widest.toDp().value } + 14f
+        }
+    }
     val shape = RoundedCornerShape(10.dp)
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val available = maxWidth - 0.5.dp * maxOf(0, columnCount - 1) - 1.2.dp
-        val widthOf = { index: Int -> available * shares.getOrElse(index) { 0.0 }.toFloat() }
+        val fitted = remember(shares, minimums, available) { TableColumnLayout.fitWidths(shares, minimums, available.value) }
+        if (fitted == null) {
+            // Даже по минимуму не помещается — показываем широкой таблицей с прокруткой, без разрыва слов.
+            WideTable(headers, rows, columnCount, hasHeaderText, alignment, sortColumn, sortAscending, onSort, totals, fontSize, context)
+            return@BoxWithConstraints
+        }
+        val widthOf = { index: Int -> fitted.getOrElse(index) { 0f }.dp }
         Column(Modifier.clip(shape).background(colors.surface).border(0.6.dp, colors.divider, shape)) {
             if (hasHeaderText) {
                 Row(Modifier.background(colors.raised).height(IntrinsicSize.Min)) {

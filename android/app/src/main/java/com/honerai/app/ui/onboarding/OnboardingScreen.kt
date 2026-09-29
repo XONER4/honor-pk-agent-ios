@@ -204,10 +204,10 @@ fun OnboardingScreen() {
                         "Honer AI",
                         style = TextStyle(
                             brush = Brush.linearGradient(listOf(Color(0xFF5C9EFF), Color(0xFF9E73FF), Color(0xFF33D4F2))),
-                            fontSize = 40.sp, fontWeight = FontWeight.Black,
+                            fontSize = 36.sp, fontWeight = FontWeight.ExtraBold,
                         ),
                     )
-                    Text(t("Давайте познакомимся", "Let's get acquainted"), fontSize = 23.sp, fontWeight = FontWeight.SemiBold,
+                    Text(t("Давайте познакомимся", "Let's get acquainted"), fontSize = 21.sp, fontWeight = FontWeight.SemiBold,
                         color = colors.foreground, textAlign = TextAlign.Center)
                     Text(t("Как к вам обращаться? Подойдёт имя, ник или позывной.",
                         "What should I call you? Use your name, nickname or callsign."),
@@ -239,12 +239,12 @@ fun OnboardingScreen() {
                     ) {
                         Icon(Icons.Rounded.AccountCircle, null, tint = colors.accent, modifier = Modifier.size(26.dp))
                         Box(Modifier.weight(1f)) {
-                            if (name.isEmpty()) Text(t("Имя, ник или позывной", "Name, nickname or callsign"), fontSize = 20.sp, color = colors.secondary)
+                            if (name.isEmpty()) Text(t("Имя, ник или позывной", "Name, nickname or callsign"), fontSize = 17.sp, color = colors.secondary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             BasicTextField(
                                 value = name,
                                 onValueChange = { name = it.take(60) },
                                 singleLine = true,
-                                textStyle = TextStyle(color = colors.foreground, fontSize = 20.sp),
+                                textStyle = TextStyle(color = colors.foreground, fontSize = 18.sp),
                                 cursorBrush = SolidColor(colors.accent),
                                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
                                 keyboardActions = KeyboardActions(onDone = { complete() }),

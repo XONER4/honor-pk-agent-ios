@@ -452,8 +452,8 @@ object InlineMarkup {
                 if (close > afterOpen) {
                     val style = when (openLength) {
                         1 -> SpanStyle(fontStyle = FontStyle.Italic)
-                        2 -> SpanStyle(fontWeight = FontWeight.Bold)
-                        else -> SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+                        2 -> SpanStyle(fontWeight = FontWeight.SemiBold)
+                        else -> SpanStyle(fontWeight = FontWeight.SemiBold, fontStyle = FontStyle.Italic)
                     }
                     out.pushStyle(style)
                     parse(afterOpen, close)

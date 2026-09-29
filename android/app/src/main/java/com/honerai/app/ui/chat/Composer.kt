@@ -196,7 +196,7 @@ fun Composer(
                     field = it
                     if (store.draft.value != it.text) store.draft.value = it.text
                 },
-                textStyle = TextStyle(color = colors.foreground, fontSize = (21 * fontScale).sp, lineHeight = (27 * fontScale).sp),
+                textStyle = TextStyle(color = colors.foreground, fontSize = (19 * fontScale).sp, lineHeight = (25 * fontScale).sp),
                 cursorBrush = SolidColor(colors.accent),
                 maxLines = 6,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
@@ -213,7 +213,7 @@ fun Composer(
                     Box {
                         if (field.text.isEmpty()) {
                             Text(t("Напишите сообщение…", "Message Honer AI…"), color = colors.secondary,
-                                fontSize = (21 * fontScale).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                fontSize = (19 * fontScale).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         inner()
                     }
@@ -255,8 +255,9 @@ fun Composer(
                     }
                 }
             }
-            // Кнопка голосового ввода видна всегда: из голосового режима всегда есть выход.
-            IconBox(
+            // Микрофон уступает место «Отправить», когда есть текст (на узком экране иначе сплющивается);
+            // в голосовом режиме он виден всегда — из него всегда есть выход.
+            if (voice.mode || generating || !canSend) IconBox(
                 if (voice.holding) Icons.Rounded.StopCircle else Icons.Rounded.MicNone,
                 if (voice.holding) t("Остановить и отправить", "Stop and send") else t("Голосовой ввод", "Voice input"),
                 "chat.voice", if (voice.holding) colors.accent else colors.foreground, 28, onVoiceTap,
