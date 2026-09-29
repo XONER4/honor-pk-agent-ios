@@ -369,7 +369,7 @@ struct WebToolExecutor {
             let images = await client.imageResults(query, count: count)
             guard !images.isEmpty else { return reply("Изображения по запросу «\(query)» не найдены. Скажи об этом и предложи нарисовать картинку инструментом draw_image.") }
             let lines = images.map { "![\(Self.clean($0.title))](\($0.url.absoluteString))" }
-            return reply("Найдено изображений: \(images.count). Вставь подходящие в ответ строками ровно в таком виде, каждую с новой строки:\n" + lines.joined(separator: "\n"))
+            return reply("Найдено изображений: \(images.count). Вставь подходящие в ответ строками в таком виде, каждую с новой строки. " + Self.captionRule + "\n" + lines.joined(separator: "\n"))
 
         case .findVideos:
             let query = (ToolArgument.string(arguments["query"]) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -378,7 +378,7 @@ struct WebToolExecutor {
             let videos = await client.videoResults(query, count: count)
             guard !videos.isEmpty else { return reply("Видео по запросу «\(query)» найти не удалось. Скажи об этом пользователю.") }
             let lines = videos.map { "![\(Self.clean($0.title))](\($0.url.absoluteString))" }
-            return reply("Найдено видео: \(videos.count). Вставь их в ответ строками ровно в таком виде, каждую с новой строки — приложение покажет видео с кнопкой воспроизведения:\n" + lines.joined(separator: "\n"))
+            return reply("Найдено видео: \(videos.count). Вставь их в ответ строками в таком виде, каждую с новой строки — приложение покажет видео с кнопкой воспроизведения. " + Self.captionRule + "\n" + lines.joined(separator: "\n"))
 
         case .screenshotPage:
             let raw = (ToolArgument.string(arguments["url"]) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -409,6 +409,10 @@ struct WebToolExecutor {
         guard let url = URL(string: value), WebPageText.isPublicWebURL(url) else { return nil }
         return url
     }
+
+    /// Подписи из поисковиков часто на английском: модель переводит их на язык ответа,
+    /// а адрес оставляет как есть (иначе картинка не откроется).
+    static let captionRule = "Текст в квадратных скобках — подпись под картинкой: если он не на языке ответа, замени его короткой подписью на языке ответа (2–6 слов, без названия сайта). Адрес в круглых скобках не меняй ни на символ."
 
     private static func clean(_ title: String) -> String {
         String(title.replacingOccurrences(of: "[\\[\\]()\\n]", with: " ", options: .regularExpression)
