@@ -241,7 +241,7 @@ fun AttachmentTray(
             }
             TrayTile(Icons.Outlined.EmojiEmotions, t("Стикеры", "Stickers"), "attachment.stickers", true, Modifier.weight(1f), onStickers)
         }
-        Text(t("Фото · видео до 2 минут и 40 МБ · файлы", "Photos · video up to 2 min / 40 MB · files"),
+        Text(t("Фото · видео до 20 минут и 300 МБ · файлы", "Photos · video up to 20 min / 300 MB · files"),
             fontSize = 12.sp, color = colors.secondary)
     }
 }

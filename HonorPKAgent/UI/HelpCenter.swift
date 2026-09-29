@@ -437,11 +437,11 @@ extension HelpLibrary {
                 "Tap send."
             ],
             tipsRU: [
-                "Видео прикрепляются длиной до 2 минут и размером до 40 МБ.",
+                "Видео прикрепляются длиной до 20 минут и размером до 300 МБ.",
                 "Можно отправить только вложение без текста — Honer AI сам поймёт, что с ним сделать, или спросит."
             ],
             tipsEN: [
-                "Videos can be attached up to 2 minutes long and 40 MB in size.",
+                "Videos can be attached up to 20 minutes long and 300 MB in size.",
                 "You can send just an attachment with no text — Honer AI will work out what to do with it or ask."
             ],
             screenshot: "guide-welcome",
@@ -891,11 +891,11 @@ extension HelpLibrary {
             ],
             tipsRU: [
                 "Чтобы видеть недавние фото прямо в панели, разрешите доступ к «Фото» (**Настройки → Разрешения**).",
-                "Видео — до 2 минут и 40 МБ."
+                "Видео — до 20 минут и 300 МБ."
             ],
             tipsEN: [
                 "To see recent photos right in the panel, allow Photos access (**Settings → Permissions**).",
-                "Videos — up to 2 minutes and 40 MB."
+                "Videos — up to 20 minutes and 300 MB."
             ],
             screenshot: "guide-attachments",
             related: ["photos-vision", "video-audio", "documents", "photo-editor"]
@@ -2570,8 +2570,8 @@ extension HelpLibrary {
                     screenshot: "guide-attachments"),
             HelpFAQ(questionRU: "Какие файлы можно отправить?",
                     questionEN: "Which files can I send?",
-                    answerRU: "Фото, видео (до 2 минут и 40 МБ), голосовые и аудио, PDF, Word, Excel, CSV, PowerPoint, OpenDocument, RTF, HTML, EPUB, Jupyter и любые файлы с кодом.",
-                    answerEN: "Photos, videos (up to 2 minutes and 40 MB), voice notes and audio, PDF, Word, Excel, CSV, PowerPoint, OpenDocument, RTF, HTML, EPUB, Jupyter and any code files."),
+                    answerRU: "Фото, видео (до 20 минут и 300 МБ), голосовые и аудио, PDF, Word, Excel, CSV, PowerPoint, OpenDocument, RTF, HTML, EPUB, Jupyter и любые файлы с кодом.",
+                    answerEN: "Photos, videos (up to 20 minutes and 300 MB), voice notes and audio, PDF, Word, Excel, CSV, PowerPoint, OpenDocument, RTF, HTML, EPUB, Jupyter and any code files."),
             HelpFAQ(questionRU: "Нейросеть правда смотрит видео?",
                     questionEN: "Does the assistant really watch videos?",
                     answerRU: "Да: она просматривает ключевые кадры и слушает звуковую дорожку — речь распознаётся прямо на iPhone. Очень быстрые детали между кадрами могут быть пропущены.",

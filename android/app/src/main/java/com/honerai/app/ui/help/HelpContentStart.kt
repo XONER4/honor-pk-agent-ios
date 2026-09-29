@@ -129,11 +129,11 @@ private val articleComposer: HelpArticle get() {
             "Tap send."
         ),
         tipsRU = listOf(
-            "Видео прикрепляются длиной до 2 минут и размером до 40 МБ.",
+            "Видео прикрепляются длиной до 20 минут и размером до 300 МБ.",
             "Можно отправить только вложение без текста — Honer AI сам поймёт, что с ним сделать, или спросит."
         ),
         tipsEN = listOf(
-            "Videos can be attached up to 2 minutes long and 40 MB in size.",
+            "Videos can be attached up to 20 minutes long and 300 MB in size.",
             "You can send just an attachment with no text — Honer AI will work out what to do with it or ask."
         ),
         screenshot = "guide-welcome",
@@ -577,11 +577,11 @@ private val articleAttachments: HelpArticle get() {
         ),
         tipsRU = listOf(
             "Чтобы видеть недавние фото прямо в панели, разрешите доступ к «Фото» (**Настройки → Разрешения**).",
-            "Видео — до 2 минут и 40 МБ."
+            "Видео — до 20 минут и 300 МБ."
         ),
         tipsEN = listOf(
             "To see recent photos right in the panel, allow photo access (**Settings → Permissions**).",
-            "Videos — up to 2 minutes and 40 MB."
+            "Videos — up to 20 minutes and 300 MB."
         ),
         screenshot = "guide-attachments",
         related = listOf("photos-vision", "video-audio", "documents", "photo-editor")

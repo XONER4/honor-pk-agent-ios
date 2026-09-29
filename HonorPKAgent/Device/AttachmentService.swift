@@ -354,7 +354,7 @@ struct AttachmentTray: View {
             }
             .buttonStyle(.plain)
             .disabled(isLoading)
-            Text(settings.text("Фото · видео до 2 минут и 40 МБ · файлы", "Photos · video up to 2 min / 40 MB · files"))
+            Text(settings.text("Фото · видео до 20 минут и 300 МБ · файлы", "Photos · video up to 20 min / 300 MB · files"))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
