@@ -1,0 +1,150 @@
+// Идемпотентные миграции: выполняются при каждом старте. Новые изменения схемы добавлять в конец
+// (ALTER TABLE … ADD COLUMN IF NOT EXISTS …), существующие операторы не менять.
+// Временные метки пишутся из JS (миллисекундная точность — важно для курсоров `after=`).
+
+const STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS users (
+     id UUID PRIMARY KEY,
+     created_at TIMESTAMPTZ NOT NULL
+   )`,
+
+  `CREATE TABLE IF NOT EXISTS devices (
+     id UUID PRIMARY KEY,
+     user_id UUID NOT NULL,
+     install_id TEXT NOT NULL UNIQUE,
+     platform TEXT NOT NULL,
+     device_model TEXT,
+     device_name TEXT,
+     os_version TEXT,
+     app_version TEXT,
+     display_name TEXT,
+     birthday TEXT,
+     language TEXT,
+     license_accepted_at TIMESTAMPTZ,
+     push_token TEXT,
+     blocked BOOLEAN NOT NULL DEFAULT FALSE,
+     block_reason TEXT,
+     messages_sent BIGINT NOT NULL DEFAULT 0,
+     seconds_in_app BIGINT NOT NULL DEFAULT 0,
+     register_count INT NOT NULL DEFAULT 1,
+     installed_at TIMESTAMPTZ NOT NULL,
+     updated_at TIMESTAMPTZ NOT NULL,
+     last_seen_at TIMESTAMPTZ
+   )`,
+  `CREATE INDEX IF NOT EXISTS devices_user_idx ON devices (user_id)`,
+  `CREATE INDEX IF NOT EXISTS devices_push_idx ON devices (push_token)`,
+
+  `CREATE TABLE IF NOT EXISTS admins (
+     id UUID PRIMARY KEY,
+     email TEXT NOT NULL UNIQUE,
+     name TEXT,
+     created_at TIMESTAMPTZ NOT NULL,
+     last_login_at TIMESTAMPTZ,
+     last_seen_at TIMESTAMPTZ
+   )`,
+
+  // Храним только SHA-256 токена. kind: device | admin.
+  `CREATE TABLE IF NOT EXISTS tokens (
+     hash TEXT PRIMARY KEY,
+     kind TEXT NOT NULL,
+     subject_id UUID NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL,
+     expires_at TIMESTAMPTZ
+   )`,
+  `CREATE INDEX IF NOT EXISTS tokens_subject_idx ON tokens (subject_id)`,
+
+  // Один чат «пользователь ↔ админ» на устройство; *_read_seq / *_cleared_seq — указатели по сторонам.
+  `CREATE TABLE IF NOT EXISTS chats (
+     id UUID PRIMARY KEY,
+     device_id UUID NOT NULL UNIQUE,
+     kind TEXT NOT NULL DEFAULT 'admin',
+     ai_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+     pinned_message_id UUID,
+     user_read_seq BIGINT NOT NULL DEFAULT 0,
+     admin_read_seq BIGINT NOT NULL DEFAULT 0,
+     user_read_message_id UUID,
+     admin_read_message_id UUID,
+     user_cleared_seq BIGINT NOT NULL DEFAULT 0,
+     admin_cleared_seq BIGINT NOT NULL DEFAULT 0,
+     created_at TIMESTAMPTZ NOT NULL,
+     last_message_at TIMESTAMPTZ
+   )`,
+
+  `CREATE TABLE IF NOT EXISTS messages (
+     seq BIGSERIAL,
+     id UUID PRIMARY KEY,
+     chat_id UUID NOT NULL,
+     client_id TEXT NOT NULL,
+     sender TEXT NOT NULL,
+     text TEXT NOT NULL DEFAULT '',
+     attachments JSONB NOT NULL DEFAULT '[]'::jsonb,
+     reply_to UUID,
+     created_at TIMESTAMPTZ NOT NULL,
+     edited_at TIMESTAMPTZ,
+     deleted BOOLEAN NOT NULL DEFAULT FALSE,
+     UNIQUE (chat_id, client_id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS messages_chat_seq_idx ON messages (chat_id, seq)`,
+  `CREATE INDEX IF NOT EXISTS messages_created_idx ON messages (created_at)`,
+
+  // «Удалить у себя»: side = user | admin.
+  `CREATE TABLE IF NOT EXISTS message_hidden (
+     message_id UUID NOT NULL,
+     side TEXT NOT NULL,
+     chat_id UUID NOT NULL,
+     PRIMARY KEY (message_id, side)
+   )`,
+  `CREATE INDEX IF NOT EXISTS message_hidden_chat_idx ON message_hidden (chat_id)`,
+
+  // По одной реакции от каждой стороны (who = admin | user) на сообщение.
+  `CREATE TABLE IF NOT EXISTS reactions (
+     message_id UUID NOT NULL,
+     who TEXT NOT NULL,
+     emoji TEXT NOT NULL,
+     chat_id UUID NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL,
+     PRIMARY KEY (message_id, who)
+   )`,
+
+  `CREATE TABLE IF NOT EXISTS media (
+     id UUID PRIMARY KEY,
+     uploader_kind TEXT NOT NULL,
+     uploader_id UUID NOT NULL,
+     kind TEXT NOT NULL,
+     name TEXT NOT NULL,
+     mime TEXT NOT NULL,
+     size BIGINT NOT NULL,
+     duration_ms INT,
+     width INT,
+     height INT,
+     created_at TIMESTAMPTZ NOT NULL
+   )`,
+  // В каких чатах вложение использовано (для проверки доступа при скачивании).
+  `CREATE TABLE IF NOT EXISTS media_links (
+     media_id UUID NOT NULL,
+     chat_id UUID NOT NULL,
+     PRIMARY KEY (media_id, chat_id)
+   )`,
+
+  `CREATE TABLE IF NOT EXISTS notifications (
+     id UUID PRIMARY KEY,
+     device_id UUID NOT NULL,
+     title TEXT NOT NULL,
+     body TEXT NOT NULL,
+     kind TEXT NOT NULL,
+     chat_id UUID,
+     created_at TIMESTAMPTZ NOT NULL,
+     read_at TIMESTAMPTZ
+   )`,
+  `CREATE INDEX IF NOT EXISTS notifications_device_idx ON notifications (device_id, created_at)`,
+
+  // Глобальные счётчики статистики (installs и т.п.).
+  `CREATE TABLE IF NOT EXISTS counters (
+     name TEXT PRIMARY KEY,
+     value BIGINT NOT NULL DEFAULT 0
+   )`,
+];
+
+export async function migrate(db) {
+  for (const sql of STATEMENTS) await db.query(sql);
+}

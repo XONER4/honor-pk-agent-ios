@@ -1,0 +1,26 @@
+{
+  "name": "honer-cloud",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Honer Cloud — backend for the Honer AI apps",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "@fastify/multipart": "^10.1.2",
+    "@fastify/websocket": "^11.3.1",
+    "fastify": "^5.12.5",
+    "google-auth-library": "^10.9.1",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "pg-mem": "^3.0.14"
+  }
+}

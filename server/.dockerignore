@@ -1,0 +1,8 @@
+node_modules
+media
+test
+*.md
+.env
+.env.*
+!.env.example
+npm-debug.log
