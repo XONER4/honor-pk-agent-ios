@@ -122,9 +122,17 @@ class ToolsTest {
         fun names(list: List<JsonObject>) = list.map { it["function"]["name"].str!! }.toSet()
         val off = names(HonerTool.schemas(false))
         val on = names(HonerTool.schemas(true))
-        for (web in listOf("web_search", "open_page", "find_images", "find_videos", "screenshot_page", "get_weather", "github")) {
+        val parentalOff = names(HonerTool.schemas(false, onDemandAllowed = false))
+        // Поиск по сайтам — только с кнопкой «Поиск».
+        for (web in listOf("web_search", "read_many_pages")) {
             assertFalse(web, web in off)
             assertTrue(web, web in on)
+        }
+        // Прямые просьбы (фото, видео, музыка, погода, ссылка) — и без кнопки, но не при запрете родителя.
+        for (web in listOf("open_page", "find_images", "find_videos", "screenshot_page", "get_weather", "github", "send_media")) {
+            assertTrue(web, web in off)
+            assertTrue(web, web in on)
+            assertFalse(web, web in parentalOff)
         }
         for (always in listOf("draw_image", "get_app_settings", "list_chats", "read_chat", "set_app_setting", "save_memory", "create_table", "edit_image")) {
             assertTrue(always, always in off && always in on)

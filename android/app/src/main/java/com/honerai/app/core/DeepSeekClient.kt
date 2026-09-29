@@ -236,6 +236,9 @@ class DeepSeekClient(
         var estimated = instruction.toByteArray().size.toLong() + searchContext.toByteArray().size
         val limit = 47L * 1024 * 1024
         var lastUserPosition: Int? = null
+        // Вопрос без русских букв при русском языке приложения: модель склонна отвечать по-английски
+        // (особенно после английских источников) — к последнему вопросу добавляем скрытое напоминание.
+        val lastUser = messages.lastOrNull { it.role == MessageRole.USER }
         for (message in messages) {
             // Сообщение ассистента с вызовом инструмента часто без текста, но без него
             // результаты инструментов оказываются «ничьими» и сервис отклоняет запрос.
@@ -249,6 +252,9 @@ class DeepSeekClient(
             if (message.role == MessageRole.USER && !quote.isNullOrEmpty()) {
                 val question = if (text.isEmpty()) "(вопрос не написан — объясни этот фрагмент подробнее)" else text
                 text = "Пользователь выделил в переписке фрагмент и спрашивает о нём.\nФрагмент:\n«$quote»\n\nВопрос пользователя: $question"
+            }
+            if (!english && message === lastUser && RussianTextPolicy.needsRussianReminder(text)) {
+                text += "\n\n[Ответь по-русски: язык приложения — русский.]"
             }
             val reaction = message.reaction
             if (!reaction.isNullOrEmpty()) text += "\n[Реакция пользователя на это сообщение: $reaction]"

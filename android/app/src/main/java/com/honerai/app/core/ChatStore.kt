@@ -1048,7 +1048,7 @@ class ChatStore internal constructor(
         val executedSignatures = HashSet<String>()
         val resultsBySignature = HashMap<String, String>()
         var announcement = ""
-        val tools = if (ChatLogic.TOOLS_ENABLED) HonerTool.schemas(webToolsOn) { name -> allowsTool(name) } else null
+        val tools = if (ChatLogic.TOOLS_ENABLED) HonerTool.schemas(webToolsOn, ParentalGuard.canSearchWeb) { name -> allowsTool(name) } else null
         passLoop@ while (true) {
             val toolCalls = mutableListOf<ToolCallRequest>()
             run.passReasoning.setLength(0)
@@ -1417,22 +1417,24 @@ class ChatStore internal constructor(
         val tool = HonerTool.from(call.name)
         val progress: ToolProgress = { detail, sites -> scope.launch { updateStep(stepId, detail = detail, sites = sites) } }
         val offline = "Интернет выключен. Предложи пользователю включить кнопку «Поиск»."
+        // Фото, видео, музыка, погода, ссылки — по прямой просьбе и без кнопки «Поиск».
+        val online = webToolsOn || (tool?.isOnDemand == true && ParentalGuard.canSearchWeb)
         return when {
             tool == HonerTool.FIND_CONTACT -> ContactLookup.execute(context, call)
             // media: кнопка открытия приложения и медиа в чат.
             tool == HonerTool.OPEN_APP -> AppLauncher.execute(context, call)
-            tool == HonerTool.SEND_MEDIA -> if (webToolsOn) MediaSender(webClient, configuration.language).execute(call, progress)
+            tool == HonerTool.SEND_MEDIA -> if (online) MediaSender(webClient, configuration.language).execute(call, progress)
                 else ToolCallResult(call.id, call.name, offline)
             tool != null && tool.isExtra -> {
                 val executor = ExtraToolExecutor(webClient, toolContext)
                 when {
-                    tool.isWeb && !webToolsOn -> ToolCallResult(call.id, call.name, offline)
+                    tool.isWeb && !online -> ToolCallResult(call.id, call.name, offline)
                     tool.isAsync -> executor.execute(call, progress)
                     else -> executor.executeLocal(call)
                 }
             }
             tool != null && tool.isAsync ->
-                if (webToolsOn) WebToolExecutor(webClient, configuration.language /* media */).execute(call, progress) else ToolCallResult(call.id, call.name, offline)
+                if (online) WebToolExecutor(webClient, configuration.language /* media */).execute(call, progress) else ToolCallResult(call.id, call.name, offline)
             else -> ToolExecutor.executeExtended(call, toolContext)
         }
     }

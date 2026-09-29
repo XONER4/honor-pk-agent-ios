@@ -32,6 +32,16 @@ sealed class HonorError(message: String) : Exception(message) {
  * не обрывок ли это вместо ответа, годится ли перевод.
  */
 object RussianTextPolicy {
+    /**
+     * Нужно ли напомнить модели ответить по-русски: в вопросе есть буквы, но нет ни одной русской
+     * («Latest SpaceX news»). Короткие реплики из цифр/эмодзи не трогаем.
+     */
+    fun needsRussianReminder(text: String): Boolean {
+        val letters = text.count { it.isLetter() }
+        if (letters < 3) return false
+        return text.none { it in 'а'..'я' || it in 'А'..'Я' || it == 'ё' || it == 'Ё' }
+    }
+
     private val codeAndURLs = Regex("(?s)```.*?```|`[^`]*`|https?://\\S+")
     private val markdownLinks = Regex("\\[[^\\]]*\\]\\([^)]*\\)")
     private val brandNames = Regex("(?i)\\b(?:Honer\\s+AI|Honor\\s+AI|Hon[oe]r\\s+PK\\s+Agent|Honor\\s+PC\\s+Agent|DeepSeek|OpenAI)\\b")

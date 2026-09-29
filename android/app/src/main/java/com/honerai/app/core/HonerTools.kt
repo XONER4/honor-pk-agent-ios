@@ -79,6 +79,15 @@ enum class HonerTool(val rawValue: String) {
             READ_MANY_PAGES, YOUTUBE_SEARCH, YOUTUBE_VIDEO, GITHUB, MARKETPLACE_SEARCH, VK_PAGE, TELEGRAM_CHANNEL,
             SEND_MEDIA) // media: send_media ищет в интернете
 
+    /**
+     * Интернет по прямой просьбе пользователя (прислать фото, видео, музыку, погоду, открыть ссылку,
+     * YouTube, маркетплейсы) — работает и без кнопки «Поиск»; её выключает только родительский контроль.
+     * Кнопка «Поиск» управляет самим поиском по сайтам (web_search, read_many_pages).
+     */
+    val isOnDemand: Boolean
+        get() = this in setOf(FIND_IMAGES, FIND_VIDEOS, SEND_MEDIA, GET_WEATHER, SCREENSHOT_PAGE, OPEN_PAGE,
+            YOUTUBE_SEARCH, YOUTUBE_VIDEO, GITHUB, MARKETPLACE_SEARCH, VK_PAGE, TELEGRAM_CHANNEL)
+
     /** Новые инструменты (ExtraTools). */
     val isExtra: Boolean
         get() = this in setOf(CREATE_TABLE, UPDATE_TABLE, READ_TABLE, LIST_MEMORY, UPDATE_MEMORY, DELETE_MEMORY,
@@ -151,9 +160,12 @@ enum class HonerTool(val rawValue: String) {
 
         val apiSchemas: List<JsonObject> get() = entries.map { it.schema }
 
-        /** Инструменты для запроса: интернет — только с кнопкой «Поиск»; выключенные интеграции не передаются. */
-        fun schemas(searchEnabled: Boolean, allows: (String) -> Boolean = { true }): List<JsonObject> =
-            entries.filter { (searchEnabled || !it.isWeb) && allows(it.rawValue) }.map { it.schema }
+        /**
+         * Инструменты для запроса: поиск по сайтам — с кнопкой «Поиск», интернет по прямой просьбе — всегда,
+         * если его не запретил родительский контроль ([onDemandAllowed]); выключенные интеграции не передаются.
+         */
+        fun schemas(searchEnabled: Boolean, onDemandAllowed: Boolean = true, allows: (String) -> Boolean = { true }): List<JsonObject> =
+            entries.filter { (searchEnabled || !it.isWeb || (onDemandAllowed && it.isOnDemand)) && allows(it.rawValue) }.map { it.schema }
     }
 }
 

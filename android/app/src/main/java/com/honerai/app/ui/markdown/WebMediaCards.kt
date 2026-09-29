@@ -187,6 +187,8 @@ internal fun AudioCard(url: String, caption: String, fontSize: Float, english: B
     val colors = HonerTheme.colors
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var playing by remember { mutableStateOf(false) }
+    // Нажали «играть», но звук ещё грузится: показываем загрузку сразу, а не «мёртвую» кнопку.
+    var wantsToPlay by remember { mutableStateOf(false) }
     var buffering by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     var position by remember { mutableLongStateOf(0L) }
@@ -194,9 +196,9 @@ internal fun AudioCard(url: String, caption: String, fontSize: Float, english: B
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableFloatStateOf(0f) }
     DisposableEffect(url) { onDispose { player?.release(); player = null } }
-    LaunchedEffect(player, playing) {
+    LaunchedEffect(player, playing, wantsToPlay) {
         val active = player ?: return@LaunchedEffect
-        while (playing) {
+        while (playing || wantsToPlay) {
             if (!dragging) position = active.currentPosition
             duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: duration
             delay(250)
@@ -208,19 +210,21 @@ internal fun AudioCard(url: String, caption: String, fontSize: Float, english: B
             created.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             created.addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
+                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { wantsToPlay = playWhenReady }
                 override fun onPlaybackStateChanged(state: Int) {
                     buffering = state == Player.STATE_BUFFERING
                     if (state == Player.STATE_READY) duration = created.duration.takeIf { it > 0 } ?: duration
                     if (state == Player.STATE_ENDED) { created.seekTo(0); created.pause(); position = 0 }
                 }
-                override fun onPlayerError(error: androidx.media3.common.PlaybackException) { failed = true; playing = false; buffering = false }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) { failed = true; playing = false; wantsToPlay = false; buffering = false }
             })
             created.setMediaItem(MediaItem.fromUri(url))
             created.prepare()
             player = created
         }
-        failed = false
-        if (current.isPlaying) current.pause() else current.play()
+        if (failed) { failed = false; current.prepare() }
+        if (current.playWhenReady) current.pause() else current.play()
+        wantsToPlay = current.playWhenReady
     }
     val shape = RoundedCornerShape(12.dp)
     Column(
@@ -237,11 +241,11 @@ internal fun AudioCard(url: String, caption: String, fontSize: Float, english: B
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(
                 Modifier.size(40.dp).clip(CircleShape).background(colors.accent).clickable { toggle() }.testTag("audio.play")
-                    .semantics { contentDescription = if (playing) tr(english, "Пауза", "Pause") else tr(english, "Играть", "Play") },
+                    .semantics { contentDescription = if (wantsToPlay) tr(english, "Пауза", "Pause") else tr(english, "Играть", "Play") },
                 contentAlignment = Alignment.Center,
             ) {
-                if (buffering && playing) CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                else Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(24.dp))
+                if (wantsToPlay && !playing && !failed) CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                else Icon(if (wantsToPlay) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(24.dp))
             }
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {

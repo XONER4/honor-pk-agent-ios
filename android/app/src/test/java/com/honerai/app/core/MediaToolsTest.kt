@@ -220,7 +220,8 @@ class MediaToolsTest {
         assertFalse(HonerTool.OPEN_APP.isWeb)
         val offline = HonerTool.schemas(false).map { it["function"]["name"].str }
         assertTrue("open_app" in offline)
-        assertFalse("send_media" in offline)
+        assertTrue("send_media" in offline) // музыка/фото по просьбе — и без кнопки «Поиск»
+        assertFalse("send_media" in HonerTool.schemas(false, onDemandAllowed = false).map { it["function"]["name"].str })
         val sendMedia = HonerTool.SEND_MEDIA.schema["function"]["parameters"]["properties"]["caption"]["description"].str!!
         assertTrue(sendMedia.contains("подпись на русском"))
         assertTrue(HonerTool.WEB_SEARCH.schema["function"]["description"].str!!.contains("Яндекс, Google"))
