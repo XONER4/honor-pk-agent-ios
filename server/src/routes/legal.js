@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 // Юридические страницы для магазинов приложений (RuStore и др.) и для ссылок внутри приложения.
 // Отдаются как публичные HTML-страницы. Cloudflare-воркер проксирует эти пути на сервер,
 // поэтому они доступны по адресу воркера (валидный TLS, не блокируется у МТС) и напрямую с Railway.
@@ -150,6 +153,16 @@ const TERMS_HTML = page('Лицензионное соглашение', `
 <p class="muted">См. также: <a href="/legal/privacy">Политика конфиденциальности</a>.</p>
 `);
 
+// Материалы карточки магазина (скриншоты) — отдаются с CORS, чтобы страницу-загрузчик
+// можно было наполнить программно. Читаются из server/assets/store/<n>.jpg.
+const SHOT_DIR = fileURLToPath(new URL('../../assets/store/', import.meta.url));
+const SHOT_IDS = new Set(['1', '2', '3', '4', '5', '6']);
+const shotCache = {};
+function shotBytes(n) {
+  if (!shotCache[n]) shotCache[n] = readFileSync(SHOT_DIR + n + '.jpg');
+  return shotCache[n];
+}
+
 export default async function legalRoutes(app) {
   const html = (reply, body) => {
     reply.header('content-type', 'text/html; charset=utf-8');
@@ -160,4 +173,16 @@ export default async function legalRoutes(app) {
   app.get('/legal/terms', async (_req, reply) => html(reply, TERMS_HTML));
   // Короткие псевдонимы.
   app.get('/legal', async (_req, reply) => html(reply, PRIVACY_HTML));
+
+  app.get('/legal/shot/:n', async (req, reply) => {
+    const n = String(req.params.n || '').replace(/[^0-9]/g, '');
+    if (!SHOT_IDS.has(n)) return reply.code(404).send({ error: 'not_found' });
+    let bytes;
+    try { bytes = shotBytes(n); } catch { return reply.code(404).send({ error: 'not_found' }); }
+    reply.header('content-type', 'image/jpeg');
+    reply.header('access-control-allow-origin', '*');
+    reply.header('cross-origin-resource-policy', 'cross-origin');
+    reply.header('cache-control', 'public, max-age=3600');
+    return reply.send(bytes);
+  });
 }
