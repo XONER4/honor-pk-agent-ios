@@ -66,7 +66,7 @@ class CloudApi(
      * (старый сервер без aiEnabled — true). Ошибка связи — null.
      */
     fun serverHealth(): Pair<Boolean, Boolean>? = runCatching {
-        http.newCall(Request.Builder().url(CloudUrls.api(base, "/health")).get().build()).execute().use { response ->
+        http.newCall(Request.Builder().url(CloudUrls.api(CloudConfig.baseUrl, "/health")).get().build()).execute().use { response ->
             if (!response.isSuccessful) return@use null
             val body = response.body?.string().orEmpty()
             fun flag(name: String): Boolean? =
@@ -74,6 +74,12 @@ class CloudApi(
             (flag("ai") ?: false) to (flag("aiEnabled") ?: true)
         }
     }.getOrNull()
+
+    /** Быстрая проверка конкретного адреса (для выбора живого сервера при запуске/сбое). */
+    fun healthOf(candidate: String): Boolean = runCatching {
+        val client = http.newBuilder().callTimeout(6, TimeUnit.SECONDS).build()
+        client.newCall(Request.Builder().url(CloudUrls.api(candidate, "/health")).get().build()).execute().use { it.isSuccessful }
+    }.getOrDefault(false)
 
     /** PATCH /v1/devices/me; новый сервер отвечает publicId и ограничениями (старый — {"ok":true}). */
     fun patchMe(fields: JsonObject): MeResponse = call("PATCH", "/v1/devices/me", fields.toString(), MeResponse.serializer())
@@ -141,7 +147,7 @@ class CloudApi(
             local.height?.let { addFormDataPart("height", it.toString()) }
             addFormDataPart("file", local.name, part)
         }.build()
-        val request = authorized(Request.Builder().url(CloudUrls.api(base, "/v1/media"))).post(body).build()
+        val request = authorized(Request.Builder().url(CloudUrls.api(CloudConfig.baseUrl, "/v1/media"))).post(body).build()
         return mediaHttp.newCall(request).execute().use { response ->
             val raw = checked(response)
             CloudJson.decodeFromString(CloudAttachment.serializer(), raw)
@@ -150,7 +156,7 @@ class CloudApi(
 
     /** Скачать файл облака в [target] (через временный файл: оборванная загрузка не остаётся «готовой»). */
     fun download(url: String, target: File, progress: (Long, Long) -> Unit = { _, _ -> }) {
-        val request = authorized(Request.Builder().url(CloudUrls.media(base, url))).get().build()
+        val request = authorized(Request.Builder().url(CloudUrls.media(CloudConfig.baseUrl, url))).get().build()
         mediaHttp.newCall(request).execute().use { response ->
             if (!response.isSuccessful) checked(response)
             val body = response.body ?: throw IOException("empty body")
@@ -187,7 +193,7 @@ class CloudApi(
     }
 
     private fun <T> call(method: String, path: String, json: String?, serializer: KSerializer<T>?, auth: Boolean = true): T {
-        val builder = Request.Builder().url(CloudUrls.api(base, path)).header("Accept", "application/json")
+        val builder = Request.Builder().url(CloudUrls.api(CloudConfig.baseUrl, path)).header("Accept", "application/json")
         if (auth) authorized(builder)
         val body: RequestBody? = json?.toRequestBody(jsonType)
         when (method) {

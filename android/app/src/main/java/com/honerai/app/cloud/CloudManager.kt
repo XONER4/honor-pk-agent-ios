@@ -179,10 +179,16 @@ object CloudManager {
                 override fun onStart(owner: LifecycleOwner) = onForeground()
                 override fun onStop(owner: LifecycleOwner) = onBackground()
             })
-            // Готов ли ИИ на сервере: проверка при запуске и раз в 10 минут.
+            // Выбираем ЖИВОЙ адрес сервера (релей или Railway напрямую) до регистрации и первых запросов —
+            // если релей недоступен, приложение само переключится на рабочий адрес.
+            withContext(Dispatchers.IO) { resolveEndpoint() }
+            // Готов ли ИИ на сервере: проверка при запуске и раз в 10 минут. Заодно перевыбираем адрес,
+            // если текущий перестал отвечать.
             launch(Dispatchers.IO) {
                 while (true) {
-                    api.serverHealth()?.let { (ai, aiEnabled) ->
+                    val health = api.serverHealth()
+                    if (health == null) resolveEndpoint()
+                    health?.let { (ai, aiEnabled) ->
                         AiProxy.serverAiReady = ai
                         AiProxy.aiDisabledByAdmin = !aiEnabled
                     }
@@ -523,6 +529,20 @@ object CloudManager {
     }
 
     /** Пока приложение открыто и заблокировано — проверяем раз в 20 с: снятие блокировки видно сразу. */
+    /**
+     * Выбирает первый доступный адрес сервера из [CloudConfig.candidates] (релей → Railway).
+     * Если текущий адрес отвечает — оставляем его. HTTP-запросы читают адрес динамически, а WebSocket
+     * при следующем переподключении сам возьмёт новый адрес (его url вычисляется лениво).
+     */
+    private fun resolveEndpoint() {
+        val candidates = CloudConfig.candidates
+        if (candidates.size <= 1) return
+        if (api.healthOf(CloudConfig.baseUrl)) return
+        for (url in candidates) {
+            if (url != CloudConfig.baseUrl && api.healthOf(url)) { CloudConfig.useBaseUrl(url); return }
+        }
+    }
+
     private fun startBlockPoll() {
         if (blockPoll?.isActive == true) return
         blockPoll = scope.launch {

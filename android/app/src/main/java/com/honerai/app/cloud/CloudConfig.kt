@@ -8,8 +8,24 @@ import kotlin.random.Random
  * Пустой адрес — облака нет: ни сети, ни пунктов интерфейса, приложение работает как раньше.
  */
 object CloudConfig {
-    val baseUrl: String = CloudUrls.normalize(BuildConfig.HONER_CLOUD_URL)
-    val isConfigured: Boolean get() = baseUrl.isNotEmpty()
+    // Основной адрес — из сборки (релей, обходящий блокировку МТС). Плюс запасной — Railway напрямую.
+    // Приложение при запуске выбирает первый ЖИВОЙ адрес: падение релея больше не отрубает пользователей
+    // (у кого Railway доступен — VPN/прямой доступ — те продолжат работать сразу).
+    private val primary = CloudUrls.normalize(BuildConfig.HONER_CLOUD_URL)
+
+    val candidates: List<String> =
+        if (primary.isEmpty()) emptyList()
+        else listOf(primary, CloudUrls.normalize("honor-pk-agent-ios-production.up.railway.app")).distinct()
+
+    // Текущий рабочий адрес. Меняется резолвером в CloudManager по результату проверки /health.
+    @Volatile
+    var baseUrl: String = candidates.firstOrNull().orEmpty()
+        private set
+
+    /** Переключить активный адрес (после проверки доступности). */
+    fun useBaseUrl(url: String) { if (url.isNotEmpty() && url != baseUrl) baseUrl = url }
+
+    val isConfigured: Boolean get() = candidates.isNotEmpty()
 }
 
 /** Адреса сервера (чистые функции — проверяются тестами). */
