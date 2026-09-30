@@ -179,6 +179,29 @@ internal fun IntegrationsPage(onBack: () -> Unit, push: (SettingsPage) -> Unit =
         }
         // media: приложения на телефоне (Google, Яндекс, кошельки, установленные программы).
         item(key = "apps") { AppIntegrationsGroup() }
+        // cloud: вход в аккаунты через облачный браузер (нейросеть действует в облаке, вы — в чате).
+        if (com.honerai.app.cloud.CloudConfig.isConfigured) item(key = "cloudAccounts") { CloudAccountsGroup() }
+    }
+}
+
+/** Группа «Облачные аккаунты»: вход в сервис через облачный браузер на сервере. */
+@Composable
+internal fun CloudAccountsGroup() {
+    val settings = appSettings()
+    fun t(ru: String, en: String) = settings.text(ru, en)
+    SettingsGroup(
+        t("Облачные аккаунты", "Cloud accounts"),
+        footer = t(
+            "Войдите в аккаунт в облаке — пароль вводите вы сами. После входа нейросеть сможет искать и оформлять прямо там, а вы останетесь в чате. Работает даже там, где приложение сервиса заблокировано у оператора.",
+            "Log into an account in the cloud — you enter the password yourself. After that the AI can search and act there while you stay in the chat.",
+        ),
+    ) {
+        com.honerai.app.cloud.CloudServices.supported.entries.forEachIndexed { index, entry ->
+            if (index > 0) SettingsDivider()
+            SettingsRow(null, entry.value, value = t("Войти", "Log in"), tag = "cloud.${entry.key}") {
+                com.honerai.app.cloud.CloudManager.openCloudLogin(entry.key)
+            }
+        }
     }
 }
 

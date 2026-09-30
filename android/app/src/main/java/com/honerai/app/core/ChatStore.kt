@@ -1586,6 +1586,8 @@ class ChatStore internal constructor(
             tool == HonerTool.FIND_CONTACT -> ContactLookup.execute(context, call)
             // agent: действия в приложениях и подтверждение важных шагов.
             tool == HonerTool.RUN_DEVICE_TASK -> runDeviceTask(call)
+            // cloud: действие в облачном аккаунте (сервис на сервере, пользователь остаётся в чате).
+            tool == HonerTool.CLOUD_TASK -> runCloudTask(call)
             tool == HonerTool.CONFIRM_PENDING_ACTION -> {
                 val confirm = ToolArgument.bool(call.parsedArguments["confirm"]) ?: true
                 val had = _pendingAgentAction.value != null
@@ -1636,6 +1638,31 @@ class ChatStore internal constructor(
         }
         val confirm: suspend (String, String?) -> Boolean = { description, amount -> awaitAgentConfirmation(description, amount) }
         return com.honerai.app.core.agent.DeviceTaskTool.execute(call, controller, brain, availability, sink, confirm)
+    }
+
+    // cloud: действие в облачном аккаунте на сервере. Тот же цикл агента, но «глаза и руки» — облачный
+    // браузер (пользователь вошёл в сервис через «Облачные аккаунты» и остаётся в чате).
+    private suspend fun runCloudTask(call: ToolCallRequest): ToolCallResult {
+        val task = com.honerai.app.core.ToolArgument.string(call.parsedArguments["task"])?.trim().orEmpty()
+        if (task.isEmpty()) return ToolCallResult(call.id, call.name, "Не передано, что сделать в облачном аккаунте.")
+        val controller = com.honerai.app.cloud.CloudManager.cloudBrowser.controller()
+            ?: return ToolCallResult(call.id, call.name,
+                "Сначала войдите в облачный аккаунт: Настройки → Интеграции → Облачные аккаунты. После входа я всё сделаю прямо там.")
+        val brain = com.honerai.app.core.agent.ModelAgentBrain(makeClient())
+        var lastStepId: String? = null
+        val session = com.honerai.app.core.agent.AgentSession(
+            screen = controller, brain = brain, maxSteps = 25,
+            onProgress = { title, detail ->
+                lastStepId?.let { sid -> scope.launch { updateStep(sid, done = true) } }
+                val id = newId(); lastStepId = id
+                scope.launch { startStep(GenerationStep(id = id, kind = "settings", title = title, detail = detail)) }
+            },
+            onConfirm = { description, amount -> awaitAgentConfirmation(description, amount) },
+        )
+        val outcome = session.run(task)
+        lastStepId?.let { sid -> updateStep(sid, done = true) }
+        val steps = if (outcome.steps.isNotEmpty()) "\nШаги: " + outcome.steps.joinToString("; ") else ""
+        return ToolCallResult(call.id, call.name, outcome.summary + steps)
     }
 
     // integ: инструменты GitHub. Токен берётся из зашифрованного хранилища; запись файла и создание

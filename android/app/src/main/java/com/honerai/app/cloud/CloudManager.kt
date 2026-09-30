@@ -65,6 +65,11 @@ object CloudManager {
         private set
     lateinit var api: CloudApi
         private set
+    /** Единый облачный браузер (сеанс сервиса на сервере: вход + действия нейросети). */
+    val cloudBrowser: CloudBrowserStore by lazy { CloudBrowserStore(api) }
+    /** Запрос открыть окно облачного входа для сервиса (id) — показывается поверх всего. null — закрыто. */
+    val cloudLoginRequest = MutableStateFlow<String?>(null)
+    fun openCloudLogin(service: String) { cloudLoginRequest.value = service }
     lateinit var notifications: NotificationsStore
         private set
 
@@ -390,6 +395,9 @@ object CloudManager {
         foreground = true
         foregroundSince = System.currentTimeMillis()
         backgroundClose?.cancel(); backgroundClose = null
+        // При возврате в приложение перевыбираем рабочий адрес: если связь восстановилась
+        // (например, включили VPN), баннер «нет сервера» снимается сам.
+        scope.launch(Dispatchers.IO) { resolveEndpoint() }
         if (_blocked.value != null) { startBlockPoll(); return }
         if (credentials.token == null) {
             scope.launch { if (ensureRegistered()) onRegistered() }
@@ -535,13 +543,29 @@ object CloudManager {
      * при следующем переподключении сам возьмёт новый адрес (его url вычисляется лениво).
      */
     private fun resolveEndpoint() {
-        val candidates = CloudConfig.candidates
-        if (candidates.size <= 1) return
-        if (api.healthOf(CloudConfig.baseUrl)) return
-        for (url in candidates) {
-            if (url != CloudConfig.baseUrl && api.healthOf(url)) { CloudConfig.useBaseUrl(url); return }
+        app?.let { ctx ->
+            val n = ConnectionDoctor.net(ctx)
+            AiProxy.networkNote = if (n.cellular && !n.vpn)
+                "Сеть пользователя: мобильный интернет (возможно МТС) без VPN. Оператор может блокировать прямой доступ к серверу и часть приложений/сайтов. Если пользователь жалуется на связь или что-то не открывается — объясни это и предложи включить VPN или подключиться к Wi-Fi."
+            else ""
         }
+        val candidates = CloudConfig.candidates
+        if (candidates.isEmpty()) return
+        if (api.healthOf(CloudConfig.baseUrl)) { setConnOk(); return }
+        for (url in candidates) {
+            if (url != CloudConfig.baseUrl && api.healthOf(url)) { CloudConfig.useBaseUrl(url); setConnOk(); return }
+        }
+        // Ни один адрес не ответил — ставим диагноз (почему и что делать).
+        app?.let { connDiagnostic.value = ConnectionDoctor.diagnose(it) }
     }
+
+    private fun setConnOk() { if (connDiagnostic.value != null) connDiagnostic.value = null }
+
+    /** Повторить попытку связи (кнопка на баннере): перевыбрать адрес и обновить данные. */
+    fun retryConnection() { scope.launch(Dispatchers.IO) { resolveEndpoint(); if (connDiagnostic.value == null) refreshAll() } }
+
+    /** Причина недоступности сервера (для баннера и контекста нейросети). null — всё в порядке. */
+    val connDiagnostic = MutableStateFlow<ConnDiagnostic?>(null)
 
     private fun startBlockPoll() {
         if (blockPoll?.isActive == true) return

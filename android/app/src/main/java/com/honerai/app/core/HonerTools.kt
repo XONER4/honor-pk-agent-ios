@@ -75,6 +75,7 @@ enum class HonerTool(val rawValue: String) {
     // agent: действия в приложениях через службу специальных возможностей.
     RUN_DEVICE_TASK("run_device_task"),
     CONFIRM_PENDING_ACTION("confirm_pending_action"),
+    CLOUD_TASK("cloud_task"),
     // integ: GitHub через официальный API по токену пользователя.
     GITHUB_REPOS("github_repos"),
     GITHUB_READ_FILE("github_read_file"),

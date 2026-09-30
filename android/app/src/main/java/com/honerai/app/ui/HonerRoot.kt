@@ -34,6 +34,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.honerai.app.AppContainer
 import com.honerai.app.MainActivity
 import com.honerai.app.ui.chat.ChatRoot
+import com.honerai.app.ui.cloud.ConnectionBanner
 import com.honerai.app.ui.common.LocalChatFontScale
 import com.honerai.app.ui.common.LocalReduceMotion
 import com.honerai.app.ui.onboarding.OnboardingScreen
@@ -153,6 +154,8 @@ fun HonerRoot(activity: MainActivity) {
                 }
                 }
                 com.honerai.app.ui.cloud.BlockedOverlay() // cloud: «Доступ ограничен» поверх всего
+                com.honerai.app.ui.cloud.CloudBrowserOverlay() // cloud: окно облачного входа в аккаунты
+                ConnectionBanner() // cloud: баннер причины проблем со связью (МТС/сервер) + повтор
             }
         }
     }

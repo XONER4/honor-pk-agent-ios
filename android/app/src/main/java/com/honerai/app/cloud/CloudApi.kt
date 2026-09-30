@@ -183,6 +183,20 @@ class CloudApi(
     /** Заголовок авторизации для запросов к файлам облака (Coil, ExoPlayer). */
     fun authHeader(): String? = token()?.let { "Bearer $it" }
 
+    // ---- Облачный браузер: сеанс сервиса на сервере (обход блокировок), вход и действия ----
+    fun cloudOpen(service: String): CloudShot =
+        call("POST", "/v1/cloud/open", buildJsonObject { put("service", service) }.toString(), CloudShot.serializer())
+
+    /** Один шаг: тап/ввод/клавиша/скролл/назад/переход. Возвращает новый кадр (снимок). */
+    fun cloudInput(action: JsonObject): CloudShot =
+        call("POST", "/v1/cloud/input", action.toString(), CloudShot.serializer())
+
+    fun cloudRead(sessionId: String): CloudPage =
+        call("POST", "/v1/cloud/read", buildJsonObject { put("sessionId", sessionId) }.toString(), CloudPage.serializer())
+
+    fun cloudClose(sessionId: String) =
+        exec("POST", "/v1/cloud/close", buildJsonObject { put("sessionId", sessionId) }.toString())
+
     private fun authorized(builder: Request.Builder): Request.Builder {
         val value = token() ?: throw CloudHttpException(401, "no_token", "")
         return builder.header("Authorization", "Bearer $value")

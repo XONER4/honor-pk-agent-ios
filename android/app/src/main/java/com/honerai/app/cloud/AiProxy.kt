@@ -15,6 +15,10 @@ object AiProxy {
     /** Облако запущено ([CloudManager.start]). В модульных тестах — false: запросы идут напрямую. */
     @Volatile var installed = false
 
+    /** Короткая заметка о сети пользователя (например, МТС без VPN) — уходит в контекст нейросети,
+     *  чтобы она понимала возможные причины проблем со связью/сервисами и советовала решение. */
+    @Volatile var networkNote: String = ""
+
     val active: Boolean get() = installed && CloudConfig.isConfigured
 
     /**

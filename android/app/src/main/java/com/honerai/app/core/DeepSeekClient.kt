@@ -222,6 +222,8 @@ class DeepSeekClient(
             com.honerai.app.extras.device.DeviceToolSchemas.promptBlock(com.honerai.app.extras.device.DeviceAccess.enabled.value) +
             // agent: действия в приложениях через службу специальных возможностей.
             com.honerai.app.core.agent.AgentToolSchemas.promptBlock(com.honerai.app.core.agent.AgentAvailability.enabled)
+        // Заметка о сети пользователя (например, МТС без VPN) — чтобы объяснять причины проблем со связью.
+        com.honerai.app.cloud.AiProxy.networkNote.takeIf { it.isNotEmpty() }?.let { instruction += "\n\n## Связь у пользователя\n$it" }
         if (systemInstruction.isNotBlank()) {
             instruction += "\nПерсональные настройки пользователя. Применяй выбранные тон, обращение и длину ответа к каждому ответу, если текущий вопрос явно не просит иначе:\n$systemInstruction"
             if (PersonalizationPolicy.prefersBriefAnswers(systemInstruction)) {

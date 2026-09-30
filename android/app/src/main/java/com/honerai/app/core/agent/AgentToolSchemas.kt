@@ -11,7 +11,7 @@ import kotlinx.serialization.json.JsonObject
 object AgentToolSchemas {
     private val s = ToolSchema
 
-    val tools: Set<HonerTool> = setOf(HonerTool.RUN_DEVICE_TASK, HonerTool.CONFIRM_PENDING_ACTION)
+    val tools: Set<HonerTool> = setOf(HonerTool.RUN_DEVICE_TASK, HonerTool.CONFIRM_PENDING_ACTION, HonerTool.CLOUD_TASK)
 
     fun isAgentTool(tool: HonerTool): Boolean = tool in tools
 
@@ -25,6 +25,11 @@ object AgentToolSchemas {
         HonerTool.CONFIRM_PENDING_ACTION -> s.function(tool.rawValue,
             "Подтверждает или отменяет важное действие агента, которое ждёт решения пользователя (оплата, отправка, публикация, удаление). Вызывай, когда пользователь ответил согласием или отказом на запрос подтверждения.",
             mapOf("confirm" to s.boolean("true — пользователь подтвердил, продолжить; false — отменить")), listOf("confirm"))
+        HonerTool.CLOUD_TASK -> s.function(tool.rawValue,
+            "Выполняет задачу в ОБЛАЧНОМ браузере на сервере — в сервисе, в аккаунт которого пользователь уже вошёл через «Облачные аккаунты» (Wildberries, Ozon, Яндекс Маркет, ВК, почта). Пользователь при этом остаётся в чате: поиск товара и корзина, оформление, сообщение, навигация. НИКОГДА не вводит пароли/коды; ВСЕГДА спрашивает подтверждение перед оплатой, отправкой, публикацией, удалением. Вызывай, когда пользователь просит сделать что-то в облачном аккаунте.",
+            mapOf(
+                "task" to s.string("Что сделать простыми словами: «найди беспроводные наушники до 3000 ₽ и положи в корзину»"),
+            ), listOf("task"))
         else -> s.function(tool.rawValue, "", emptyMap(), emptyList())
     }
 
@@ -32,12 +37,15 @@ object AgentToolSchemas {
         HonerTool.RUN_DEVICE_TASK -> GenerationStep(kind = "settings", title = "Выполняю действие в приложении",
             detail = ToolArgument.string(call.parsedArguments["task"]).orEmpty().take(80))
         HonerTool.CONFIRM_PENDING_ACTION -> GenerationStep(kind = "settings", title = "Обрабатываю подтверждение")
+        HonerTool.CLOUD_TASK -> GenerationStep(kind = "settings", title = "Действую в облачном аккаунте",
+            detail = ToolArgument.string(call.parsedArguments["task"]).orEmpty().take(80))
         else -> null
     }
 
     fun status(names: Set<String>): String? = when {
         HonerTool.RUN_DEVICE_TASK.rawValue in names -> "Действую в приложении…"
         HonerTool.CONFIRM_PENDING_ACTION.rawValue in names -> "Подтверждаю…"
+        HonerTool.CLOUD_TASK.rawValue in names -> "Действую в облаке…"
         else -> null
     }
 
@@ -49,6 +57,7 @@ object AgentToolSchemas {
             "СТАТУС: функция сейчас ВЫКЛЮЧЕНА. Если пользователь просит действие в приложении — коротко предложи включить её (Настройки → Разрешения → «Действия в приложениях») и не вызывай run_device_task."
         return "\n\n## Действия в приложениях (агент)\n" +
             "• run_device_task выполняет задачу в приложении, куда пользователь УЖЕ вошёл сам (Wildberries, Ozon, Яндекс Go, ВКонтакте, Telegram, Gmail и др.): поиск товара и корзина, заказ такси, черновик письма, сообщение в чат, навигация по меню. Ты действуешь по шагам, видя экран.\n" +
+            "• cloud_task — то же, но в ОБЛАЧНОМ аккаунте на сервере (пользователь вошёл через «Облачные аккаунты» в настройках). Пользователь при этом остаётся в чате, приложение на телефоне не открывается. Если пользователь просит действие в аккаунте и вошёл в него в облаке — предпочитай cloud_task. Если cloud_task вернёт, что вход не выполнен, попроси пользователя войти в «Настройки → Интеграции → Облачные аккаунты».\n" +
             "• Никогда не вводи пароли, ПИН, номера карт, CVV и коды из СМС. Если нужен вход или код — остановись и попроси пользователя сделать это самому.\n" +
             "• Перед оплатой, покупкой, заказом, отправкой, публикацией и удалением всегда спрашивай подтверждение (для оплаты называй сумму). Пользователь подтверждает кнопкой «Подтвердить» или словом «да»; отменяет — «отмена»/«стоп».\n" +
             "• Капчу и проверки «я не робот» не проходи — останавливайся и проси пользователя.\n" +
