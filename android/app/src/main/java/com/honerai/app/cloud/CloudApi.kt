@@ -23,6 +23,9 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+/** Итог быстрой проверки адреса: живой / лимит запросов исчерпан / не отвечает. */
+enum class HealthStatus { OK, LIMITED, DOWN }
+
 /** Клиенты OkHttp облака — производные от общего клиента приложения (общий пул соединений). */
 object CloudHttp {
     /** Обычные запросы API. */
@@ -76,10 +79,27 @@ class CloudApi(
     }.getOrNull()
 
     /** Быстрая проверка конкретного адреса (для выбора живого сервера при запуске/сбое). */
-    fun healthOf(candidate: String): Boolean = runCatching {
+    fun healthOf(candidate: String): Boolean = probe(candidate) == HealthStatus.OK
+
+    /**
+     * Проба адреса: живой (OK), исчерпан суточный лимит запросов (LIMITED — бесплатный релей упёрся
+     * в лимит, как раньше Deno) или не отвечает (DOWN). Лимит распознаём по коду 429 или по маркерам
+     * в теле ответа (Cloudflare «1027 daily request limit», Deno «usage exceeded» и т.п.).
+     */
+    fun probe(candidate: String): HealthStatus = runCatching {
         val client = http.newBuilder().callTimeout(6, TimeUnit.SECONDS).build()
-        client.newCall(Request.Builder().url(CloudUrls.api(candidate, "/health")).get().build()).execute().use { it.isSuccessful }
-    }.getOrDefault(false)
+        client.newCall(Request.Builder().url(CloudUrls.api(candidate, "/health")).get().build()).execute().use { response ->
+            when {
+                response.isSuccessful -> HealthStatus.OK
+                response.code == 429 -> HealthStatus.LIMITED
+                response.code == 403 || response.code == 503 -> {
+                    val body = runCatching { response.body?.string().orEmpty() }.getOrDefault("").lowercase()
+                    if (LIMIT_MARKERS.any { it in body }) HealthStatus.LIMITED else HealthStatus.DOWN
+                }
+                else -> HealthStatus.DOWN
+            }
+        }
+    }.getOrDefault(HealthStatus.DOWN)
 
     /** PATCH /v1/devices/me; новый сервер отвечает publicId и ограничениями (старый — {"ok":true}). */
     fun patchMe(fields: JsonObject): MeResponse = call("PATCH", "/v1/devices/me", fields.toString(), MeResponse.serializer())
@@ -255,5 +275,7 @@ class CloudApi(
 
     companion object {
         const val PAGE = 50
+        /** Признаки «лимит исчерпан» в теле ответа релея (Cloudflare/Deno и подобные). */
+        private val LIMIT_MARKERS = listOf("1027", "daily request", "exceeded", "usage_exceeded", "quota", "over the limit", "rate limit")
     }
 }

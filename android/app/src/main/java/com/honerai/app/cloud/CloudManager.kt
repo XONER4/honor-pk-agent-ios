@@ -543,20 +543,35 @@ object CloudManager {
      * при следующем переподключении сам возьмёт новый адрес (его url вычисляется лениво).
      */
     private fun resolveEndpoint() {
-        app?.let { ctx ->
-            val n = ConnectionDoctor.net(ctx)
-            AiProxy.networkNote = if (n.cellular && !n.vpn)
-                "Сеть пользователя: мобильный интернет (возможно МТС) без VPN. Оператор может блокировать прямой доступ к серверу и часть приложений/сайтов. Если пользователь жалуется на связь или что-то не открывается — объясни это и предложи включить VPN или подключиться к Wi-Fi."
-            else ""
-        }
         val candidates = CloudConfig.candidates
         if (candidates.isEmpty()) return
-        if (api.healthOf(CloudConfig.baseUrl)) { setConnOk(); return }
-        for (url in candidates) {
-            if (url != CloudConfig.baseUrl && api.healthOf(url)) { CloudConfig.useBaseUrl(url); setConnOk(); return }
+        // Пробуем адреса и заодно замечаем, не исчерпан ли суточный лимит у релея (как раньше у Deno).
+        var relayLimited = false
+        var working: String? = null
+        fun consider(url: String): Boolean = when (api.probe(url)) {
+            HealthStatus.OK -> { working = url; true }
+            HealthStatus.LIMITED -> { if (CloudConfig.isRelay(url)) relayLimited = true; false }
+            HealthStatus.DOWN -> false
         }
+        if (!consider(CloudConfig.baseUrl)) {
+            for (url in candidates) { if (url != CloudConfig.baseUrl && consider(url)) break }
+        }
+        // Контекст для нейросети: сеть пользователя + (если заметили) исчерпанный лимит релея.
+        updateAiNetworkNote(relayLimited)
+        val found = working
+        if (found != null) { CloudConfig.useBaseUrl(found); setConnOk(); return }
         // Ни один адрес не ответил — ставим диагноз (почему и что делать).
-        app?.let { connDiagnostic.value = ConnectionDoctor.diagnose(it) }
+        app?.let { connDiagnostic.value = ConnectionDoctor.diagnose(it, relayLimited) }
+    }
+
+    /** Заметка о сети для системного контекста нейросети: мобильный без VPN и/или исчерпанный лимит релея. */
+    private fun updateAiNetworkNote(relayLimited: Boolean) {
+        val ctx = app ?: return
+        val n = ConnectionDoctor.net(ctx)
+        val parts = mutableListOf<String>()
+        if (n.cellular && !n.vpn) parts += "Сеть пользователя: мобильный интернет (возможно МТС) без VPN. Оператор может блокировать прямой доступ к серверу и часть приложений/сайтов. Если пользователь жалуется на связь или что-то не открывается — объясни это и предложи включить VPN или подключиться к Wi-Fi."
+        if (relayLimited) parts += "Внимание: у бесплатного запасного адреса (релея) исчерпан суточный лимит запросов. Пользователи без VPN сейчас не могут подключиться напрямую. Причина — дневной лимит бесплатного релея (сбрасывается в начале суток по UTC). Решения: включить VPN (работает прямой адрес), подождать сброса лимита, либо администратору — увеличить лимит/подключить платный план релея. Если пользователь жалуется на связь — объясни это простыми словами и предложи VPN."
+        AiProxy.networkNote = parts.joinToString("\n")
     }
 
     private fun setConnOk() { if (connDiagnostic.value != null) connDiagnostic.value = null }

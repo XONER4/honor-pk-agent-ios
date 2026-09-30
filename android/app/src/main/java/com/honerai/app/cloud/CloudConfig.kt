@@ -25,6 +25,12 @@ object CloudConfig {
     /** Переключить активный адрес (после проверки доступности). */
     fun useBaseUrl(url: String) { if (url.isNotEmpty() && url != baseUrl) baseUrl = url }
 
+    /** Основной адрес — это релей (обход блокировки). Пусто, если облако не настроено. */
+    val relayUrl: String get() = primary
+
+    /** Это релей? (Нужно, чтобы отличить «исчерпан лимит релея» от «недоступен Railway».) */
+    fun isRelay(url: String): Boolean = primary.isNotEmpty() && url == primary
+
     val isConfigured: Boolean get() = candidates.isNotEmpty()
 }
 

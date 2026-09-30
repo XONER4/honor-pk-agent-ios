@@ -1,0 +1,5 @@
+node_modules/
+.dev.vars
+.wrangler/
+# Токен Cloudflare сюда не коммитим — он передаётся через переменную окружения при деплое.
+*.token

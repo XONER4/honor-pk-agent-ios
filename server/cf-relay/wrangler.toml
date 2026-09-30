@@ -1,0 +1,12 @@
+name = "honer-relay"
+main = "src/worker.js"
+compatibility_date = "2024-11-01"
+
+# Куда релей пересылает запросы (сервер Honer AI на Railway). Меняется без правки кода:
+#   wrangler deploy --var UPSTREAM:https://<новый-адрес>
+[vars]
+UPSTREAM = "https://honor-pk-agent-ios-production.up.railway.app"
+
+# Бесплатный тариф Workers: 100 000 запросов в день. Лимит не роняет пользователей —
+# приложение распознаёт исчерпание лимита и (если у пользователя есть VPN) уходит на прямой адрес,
+# а без VPN показывает понятную причину и решение.
