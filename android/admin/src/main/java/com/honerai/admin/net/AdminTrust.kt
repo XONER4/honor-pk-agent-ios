@@ -27,12 +27,24 @@ CCqGSM49BAMCA0kAMEYCIQCURq4PwO/HUplmpFI1q1PGCc2bvK4r1Y3M68xgcgHJ
 mwIhAJ8Y2Uf12MJ3xCLmnChs926GpV+XHoEsKSDu3Fg46Sn2
 -----END CERTIFICATE-----"""
 
+    private val relayCert: X509Certificate by lazy {
+        CertificateFactory.getInstance("X.509")
+            .generateCertificate(ByteArrayInputStream(RELAY_CERT_PEM.toByteArray())) as X509Certificate
+    }
+
     val trustManager: X509TrustManager by lazy { build() }
 
     val sslSocketFactory: SSLSocketFactory by lazy {
         val ctx = SSLContext.getInstance("TLS")
         ctx.init(null, arrayOf(trustManager), null)
         ctx.socketFactory
+    }
+
+    /** Наш закреплённый серт релея принимаем при любом адресе (серт наш — безопасно); прочее — обычная проверка. */
+    val hostnameVerifier: javax.net.ssl.HostnameVerifier = javax.net.ssl.HostnameVerifier { hostname, session ->
+        val peer = runCatching { session.peerCertificates.firstOrNull() as? X509Certificate }.getOrNull()
+        if (peer != null && peer.encoded.contentEquals(relayCert.encoded)) true
+        else okhttp3.internal.tls.OkHostnameVerifier.verify(hostname, session)
     }
 
     private fun build(): X509TrustManager {

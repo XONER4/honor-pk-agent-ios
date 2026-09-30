@@ -56,6 +56,7 @@ object HonerHttp {
             .addInterceptor(GzipRequestInterceptor)
             // Доверяем нашему серверу-ретранслятору (свой TLS-сертификат) + всем обычным сайтам.
             .sslSocketFactory(CloudTrust.sslSocketFactory, CloudTrust.trustManager)
+            .hostnameVerifier(CloudTrust.hostnameVerifier)
             .build()
     }
 

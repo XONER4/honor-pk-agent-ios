@@ -91,6 +91,29 @@ export default {
     const upstream = (env.UPSTREAM || DEFAULT_UPSTREAM).replace(/\/+$/, '');
 
     if (url.pathname === '/relay-health') return Response.json({ ok: true, relay: true, cf: true });
+
+    // Обнаружение адреса ретранслятора: приложение спрашивает здесь текущий адрес RunPod-релея.
+    // Так смена адреса пода (перезапуск) не ломает приложение — оно всегда узнаёт актуальный адрес.
+    if (url.pathname === '/relay-endpoint' && request.method === 'GET') {
+      let relay = null;
+      try { relay = env.RELAY_KV ? await env.RELAY_KV.get('relay') : null; } catch { /* KV недоступен */ }
+      return Response.json({ url: relay || env.RELAY_FALLBACK || '' }, {
+        headers: { 'cache-control': 'no-store' },
+      });
+    }
+    // Ретранслятор публикует сюда свой адрес при старте (защищено общим секретом).
+    if (url.pathname === '/relay-register' && request.method === 'POST') {
+      if (!env.RELAY_SECRET || request.headers.get('x-relay-secret') !== env.RELAY_SECRET) {
+        return Response.json({ error: 'forbidden' }, { status: 403 });
+      }
+      let body = {};
+      try { body = await request.json(); } catch { /* пусто */ }
+      const u = String(body.url || '').trim();
+      if (!/^https:\/\/[\w.-]+:\d+$/.test(u)) return Response.json({ error: 'bad_url' }, { status: 400 });
+      try { await env.RELAY_KV.put('relay', u); } catch { return Response.json({ error: 'kv' }, { status: 500 }); }
+      return Response.json({ ok: true, url: u });
+    }
+
     if (url.pathname === '/v1/weather' && request.method === 'GET') return weather(url);
     if ((request.headers.get('Upgrade') || '').toLowerCase() === 'websocket') return proxyWebSocket(request, url, upstream);
 

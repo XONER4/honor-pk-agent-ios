@@ -46,6 +46,7 @@ class AdminContainer private constructor(context: Context) {
         .writeTimeout(60, TimeUnit.SECONDS)
         // Доверие к серверу-ретранслятору (RunPod, свой TLS-сертификат) + обычным сайтам.
         .sslSocketFactory(com.honerai.admin.net.AdminTrust.sslSocketFactory, com.honerai.admin.net.AdminTrust.trustManager)
+        .hostnameVerifier(com.honerai.admin.net.AdminTrust.hostnameVerifier)
         .addInterceptor { chain ->
             val request = chain.request()
             val token = session.session.value?.token
@@ -81,6 +82,25 @@ class AdminContainer private constructor(context: Context) {
     @Volatile var inForeground = false
         private set
     private var stopJob: Job? = null
+
+    init {
+        // Узнаём актуальный адрес ретранслятора у точки обнаружения (релей публикует его сам).
+        // Админка не ломается при смене адреса пода RunPod и при выключенном компьютере хозяина.
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val req = okhttp3.Request.Builder().url(DISCOVERY_URL).get().build()
+                http.newCall(req).execute().use { r -> if (r.isSuccessful) r.body?.string() else null }
+            }.getOrNull()?.let { body ->
+                Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.getOrNull(1)
+                    ?.takeIf { it.startsWith("http") && it != session.serverUrl.value }
+                    ?.let { session.setServerUrl(it) }
+            }
+        }
+    }
+
+    private companion object {
+        const val DISCOVERY_URL = "https://honer-relay.vladislavponomarev16.workers.dev/relay-endpoint"
+    }
 
     fun chat(chatId: String): ChatController = chats.getOrPut(chatId) {
         ChatController(chatId, app, api, realtime, repo, scope, settings)

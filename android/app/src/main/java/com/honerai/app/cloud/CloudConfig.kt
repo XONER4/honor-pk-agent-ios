@@ -12,10 +12,21 @@ object CloudConfig {
     // Приложение при запуске выбирает первый ЖИВОЙ адрес: падение релея больше не отрубает пользователей
     // (у кого Railway доступен — VPN/прямой доступ — те продолжат работать сразу).
     private val primary = CloudUrls.normalize(BuildConfig.HONER_CLOUD_URL)
+    private val railway = CloudUrls.normalize("honor-pk-agent-ios-production.up.railway.app")
 
-    val candidates: List<String> =
+    /**
+     * Точка обнаружения адреса ретранслятора (стабильный адрес Cloudflare, не меняется). Ретранслятор
+     * RunPod сам публикует туда свой текущий адрес; приложение спрашивает его здесь. Поэтому смена адреса
+     * пода (перезапуск) и выключенный компьютер хозяина НЕ ломают связь — приложение узнаёт новый адрес.
+     * Маленький запрос — проходит даже на МТС без VPN.
+     */
+    const val DISCOVERY_URL = "https://honer-relay.vladislavponomarev16.workers.dev/relay-endpoint"
+
+    @Volatile
+    var candidates: List<String> =
         if (primary.isEmpty()) emptyList()
-        else listOf(primary, CloudUrls.normalize("honor-pk-agent-ios-production.up.railway.app")).distinct()
+        else listOf(primary, railway).distinct()
+        private set
 
     // Текущий рабочий адрес. Меняется резолвером в CloudManager по результату проверки /health.
     @Volatile
@@ -24,6 +35,14 @@ object CloudConfig {
 
     /** Переключить активный адрес (после проверки доступности). */
     fun useBaseUrl(url: String) { if (url.isNotEmpty() && url != baseUrl) baseUrl = url }
+
+    /** Актуальный адрес релея, полученный из обнаружения — ставим первым кандидатом (и текущим). */
+    fun useDiscoveredRelay(url: String) {
+        val u = CloudUrls.normalize(url)
+        if (u.isEmpty() || primary.isEmpty()) return
+        candidates = (listOf(u) + candidates).distinct()
+        baseUrl = u
+    }
 
     /** Основной адрес — это релей (обход блокировки). Пусто, если облако не настроено. */
     val relayUrl: String get() = primary

@@ -98,4 +98,30 @@ server.on('upgrade', (req, socket, head) => {
 server.headersTimeout = 0;
 server.requestTimeout = 0;
 server.keepAliveTimeout = 75_000;
-server.listen(PORT, '0.0.0.0', () => console.log(`honer relay on :${PORT} (${tlsKey ? 'https' : 'http'}) -> ${UPSTREAM}`));
+
+// Само-публикация адреса: релей сообщает свой публичный адрес в discovery (Cloudflare KV) при старте и
+// каждые 5 минут. Приложение читает этот адрес — поэтому смена адреса пода (перезапуск RunPod) НЕ ломает
+// приложение и работает даже при выключенном компьютере хозяина.
+async function publishAddress() {
+  const ip = process.env.RUNPOD_PUBLIC_IP;
+  const port = process.env.RUNPOD_TCP_PORT_8080 || process.env.PUBLIC_PORT;
+  const disc = process.env.DISCOVERY_URL;
+  const secret = process.env.RELAY_SECRET;
+  if (!ip || !port || !disc || !secret) return; // не на RunPod / не настроено — просто пропускаем
+  const myUrl = `https://${ip}:${port}`;
+  try {
+    const r = await fetch(disc.replace(/\/+$/, '') + '/relay-register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-relay-secret': secret },
+      body: JSON.stringify({ url: myUrl }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    console.log('publish relay address', myUrl, r.status);
+  } catch (e) { console.log('publish failed:', e.message); }
+}
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`honer relay on :${PORT} (${tlsKey ? 'https' : 'http'}) -> ${UPSTREAM}`);
+  publishAddress();
+  setInterval(publishAddress, 5 * 60_000);
+});

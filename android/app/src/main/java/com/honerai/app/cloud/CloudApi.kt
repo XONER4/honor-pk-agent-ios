@@ -78,6 +78,16 @@ class CloudApi(
         }
     }.getOrNull()
 
+    /** Спросить актуальный адрес ретранслятора у точки обнаружения (Cloudflare). null — не удалось. */
+    fun fetchDiscoveredRelay(discoveryUrl: String): String? = runCatching {
+        val client = http.newBuilder().callTimeout(8, TimeUnit.SECONDS).build()
+        client.newCall(Request.Builder().url(discoveryUrl).get().build()).execute().use { response ->
+            if (!response.isSuccessful) return@use null
+            val body = response.body?.string().orEmpty()
+            Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.getOrNull(1)?.takeIf { it.startsWith("http") }
+        }
+    }.getOrNull()
+
     /** Быстрая проверка конкретного адреса (для выбора живого сервера при запуске/сбое). */
     fun healthOf(candidate: String): Boolean = probe(candidate) == HealthStatus.OK
 

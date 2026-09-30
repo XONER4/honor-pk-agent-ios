@@ -184,9 +184,14 @@ object CloudManager {
                 override fun onStart(owner: LifecycleOwner) = onForeground()
                 override fun onStop(owner: LifecycleOwner) = onBackground()
             })
-            // Выбираем ЖИВОЙ адрес сервера (релей или Railway напрямую) до регистрации и первых запросов —
-            // если релей недоступен, приложение само переключится на рабочий адрес.
-            withContext(Dispatchers.IO) { resolveEndpoint() }
+            // Сначала узнаём актуальный адрес ретранслятора у точки обнаружения (релей публикует его сам).
+            // Это делает связь устойчивой к смене адреса пода RunPod и к выключенному компьютеру хозяина.
+            // Затем выбираем ЖИВОЙ адрес (обнаруженный релей → зашитый → Railway) и переключаемся при сбое.
+            withContext(Dispatchers.IO) {
+                runCatching { api.fetchDiscoveredRelay(CloudConfig.DISCOVERY_URL) }.getOrNull()
+                    ?.let { CloudConfig.useDiscoveredRelay(it) }
+                resolveEndpoint()
+            }
             // Готов ли ИИ на сервере: проверка при запуске и раз в 10 минут. Заодно перевыбираем адрес,
             // если текущий перестал отвечать.
             launch(Dispatchers.IO) {
