@@ -44,6 +44,8 @@ class AdminContainer private constructor(context: Context) {
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
+        // Доверие к серверу-ретранслятору (RunPod, свой TLS-сертификат) + обычным сайтам.
+        .sslSocketFactory(com.honerai.admin.net.AdminTrust.sslSocketFactory, com.honerai.admin.net.AdminTrust.trustManager)
         .addInterceptor { chain ->
             val request = chain.request()
             val token = session.session.value?.token
