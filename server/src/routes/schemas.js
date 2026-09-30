@@ -44,6 +44,7 @@ export const deviceProfileProps = {
   language: { type: 'string', maxLength: 16, pattern: '^[A-Za-z]{2,3}([-_][A-Za-z0-9]{2,8})?$' },
   licenseAcceptedAt: { type: ['string', 'null'], format: 'date-time' },
   pushToken: { type: ['string', 'null'], maxLength: 4096 },
+  hardwareId: { type: ['string', 'null'], maxLength: 128 },
 };
 
 export const errorResponse = {

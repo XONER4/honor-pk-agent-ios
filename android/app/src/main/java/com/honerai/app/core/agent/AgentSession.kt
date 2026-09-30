@@ -58,8 +58,11 @@ class AgentSession(
             if (!opened.ok) return Outcome.Failed("Не удалось открыть «$app»: ${opened.message}")
         }
         var steps = 0
+        // Общий лимит времени на задачу агента: даже если модель зациклилась, чат не зависнет надолго.
+        val deadline = System.currentTimeMillis() + 4 * 60_000L
         while (steps < maxSteps) {
             if (aborted.get()) return Outcome.Cancelled("Остановлено пользователем.")
+            if (System.currentTimeMillis() > deadline) return Outcome.MaxSteps(steps)
             steps++
             val snapshot = screen.snapshot()
                 ?: return Outcome.NeedsUser("Не вижу экран. Откройте нужное приложение и повторите — либо включите службу в настройках.")

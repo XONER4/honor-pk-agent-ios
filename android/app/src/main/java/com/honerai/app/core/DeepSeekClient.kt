@@ -388,8 +388,12 @@ class DeepSeekClient(
                 val input = response.body?.byteStream() ?: throw HonorError.InvalidResponse()
                 val decoder = SSEDecoder()
                 var completed = false
+                var gotData = false // пришли ли уже данные (текст/рассуждение/вызов инструмента)
                 var bytesSinceEvent = 0
                 val buffer = ByteArray(8192)
+                fun note(delta: DeepSeekDelta) {
+                    if (delta.content.isNotEmpty() || delta.reasoning.isNotEmpty() || delta.toolCalls.isNotEmpty()) gotData = true
+                }
                 reading@ while (true) {
                     currentCoroutineContext().ensureActive()
                     val count = input.read(buffer)
@@ -401,6 +405,7 @@ class DeepSeekClient(
                         bytesSinceEvent = 0
                         if (event == "[DONE]") { completed = true; break@reading }
                         val delta = decodeEvent(event) ?: continue
+                        note(delta)
                         emit(delta)
                         // «tool_calls» не завершает поток: его нужно дочитать до конца.
                         if (delta.finishReason != null && delta.finishReason in TERMINAL) { completed = true; break@reading }
@@ -410,12 +415,16 @@ class DeepSeekClient(
                     decoder.finish()?.let { event ->
                         if (event == "[DONE]") completed = true
                         else decodeEvent(event)?.let { delta ->
+                            note(delta)
                             emit(delta)
                             if (delta.finishReason != null) completed = true
                         }
                     }
                 }
-                if (!completed) throw HonorError.UnfinishedResponse()
+                // Поток закрылся без [DONE]/finish_reason, но данные пришли (например, терминатор потерялся
+                // при проксировании через релей) — считаем ответ полученным, а не ошибкой. Ошибку бросаем
+                // только если не пришло вообще ничего.
+                if (!completed && !gotData) throw HonorError.UnfinishedResponse()
             }
         } finally {
             handle?.dispose()

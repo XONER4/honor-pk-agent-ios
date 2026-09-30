@@ -225,6 +225,11 @@ const STATEMENTS = [
      value TEXT NOT NULL,
      updated_at TIMESTAMPTZ NOT NULL
    )`,
+
+  // Стабильный идентификатор устройства (Android ID). Переустановка/сброс данных меняет install_id,
+  // но hardware_id остаётся — по нему регистрация переиспользует ту же строку (без дублей «пользователей»).
+  `ALTER TABLE devices ADD COLUMN IF NOT EXISTS hardware_id TEXT`,
+  `CREATE INDEX IF NOT EXISTS devices_hardware_idx ON devices (hardware_id)`,
 ];
 
 export async function migrate(db) {

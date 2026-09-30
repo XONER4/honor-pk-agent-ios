@@ -311,8 +311,15 @@ object CloudManager {
             language = if (s.language.value == "en") "en" else "ru",
             licenseAcceptedAt = licenseAcceptedAt(),
             pushToken = credentials.pushToken,
+            hardwareId = hardwareId(),
         )
     }
+
+    /** Стабильный ID устройства (Android ID): один на телефон+подпись приложения, переживает переустановку. */
+    private fun hardwareId(): String? = runCatching {
+        android.provider.Settings.Secure.getString(app.contentResolver, android.provider.Settings.Secure.ANDROID_ID)
+            ?.takeIf { it.isNotBlank() && it != "9774d56d682e549c" } // отфильтровываем известный «битый» ID старых устройств
+    }.getOrNull()
 
     private fun deviceName(): String {
         val name = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) runCatching {

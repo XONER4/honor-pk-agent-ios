@@ -161,7 +161,17 @@ export default async function adminRoutes(app) {
   app.get('/v1/admin/overview', { preHandler: auth.requireAdmin }, async () => {
     const startOfDay = new Date();
     startOfDay.setUTCHours(0, 0, 0, 0);
-    const users = await db.one('SELECT count(*)::int AS c FROM users');
+    // Реальные пользователи = различные физические устройства, активные за последние inactiveDays.
+    // Различаем по hardware_id (Android ID), а для старых строк без него — по «отпечатку» телефона
+    // (платформа+модель+имя). Так одна и та же трубка, переустановленная много раз, считается как одна.
+    const activeCutoff = new Date(Date.now() - config.inactiveDays * 24 * 3600 * 1000);
+    const users = await db.one(
+      `SELECT count(*)::int AS c FROM (
+         SELECT DISTINCT COALESCE(NULLIF(hardware_id, ''),
+                                  platform || '|' || COALESCE(device_model, '') || '|' || COALESCE(device_name, '')) AS k
+         FROM devices
+         WHERE COALESCE(last_seen_at, updated_at, installed_at) >= $1
+       ) t`, [activeCutoff]);
     const installs = await db.one(`SELECT value FROM counters WHERE name = 'installs'`);
     const blockedCount = await db.one(
       'SELECT count(*)::int AS c FROM devices WHERE blocked = TRUE AND (blocked_until IS NULL OR blocked_until > $1)', [new Date()]);

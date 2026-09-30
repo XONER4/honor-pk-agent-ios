@@ -104,6 +104,8 @@ data class RegisterRequest(
     val language: String,
     val licenseAcceptedAt: String? = null,
     val pushToken: String? = null,
+    /** Стабильный ID устройства (Android ID): переустановка не плодит новых «пользователей» в админке. */
+    val hardwareId: String? = null,
 )
 
 @Serializable

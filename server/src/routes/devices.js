@@ -19,6 +19,7 @@ const PROFILE_COLUMNS = {
   language: 'language',
   licenseAcceptedAt: 'license_accepted_at',
   pushToken: 'push_token',
+  hardwareId: 'hardware_id',
 };
 
 /** Персональные ограничения устройства (как хранятся в devices.overrides). */
@@ -67,6 +68,19 @@ export default async function deviceRoutes(app) {
     const b = req.body;
     let device = await db.one('SELECT * FROM devices WHERE install_id = $1', [b.installId]);
     let created = false;
+
+    // Дедуп по стабильному ID устройства: переустановка/сброс данных меняет installId, но hardwareId
+    // (Android ID) остаётся. Нашли ту же физическую железку — переиспользуем её строку (тот же user_id,
+    // чат и история), а не заводим нового «пользователя». Это и чинит завышенный счётчик в админке.
+    if (!device && b.hardwareId) {
+      const existing = await db.one(
+        'SELECT * FROM devices WHERE hardware_id = $1 ORDER BY updated_at DESC NULLS LAST LIMIT 1', [b.hardwareId]);
+      if (existing) {
+        await db.query('UPDATE devices SET install_id = $1, updated_at = $2 WHERE id = $3',
+          [b.installId, new Date(), existing.id]);
+        device = await db.one('SELECT * FROM devices WHERE id = $1', [existing.id]);
+      }
+    }
 
     if (!device) {
       const now = new Date();

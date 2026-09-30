@@ -1674,14 +1674,18 @@ class ChatStore internal constructor(
         return executor.execute(call)
     }
 
-    /** Ставит действие агента на подтверждение и ждёт ответа пользователя (кнопка или текст). */
+    /**
+     * Ставит действие агента на подтверждение и ждёт ответа пользователя (кнопка или текст).
+     * Ждём не дольше 3 минут: если пользователь не ответил (ушёл, свернул, потерял карточку) —
+     * считаем «не подтверждено» и не оставляем чат висеть навсегда на «Жду подтверждения…».
+     */
     private suspend fun awaitAgentConfirmation(description: String, amount: String?): Boolean {
         val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
         pendingAgentConfirm = deferred
         _pendingAgentAction.value = com.honerai.app.core.agent.AgentPendingAction(description, amount)
         _generationStatus.value = "Жду подтверждения…"
         return try {
-            deferred.await()
+            kotlinx.coroutines.withTimeoutOrNull(3 * 60_000L) { deferred.await() } ?: false
         } finally {
             _pendingAgentAction.value = null
             if (pendingAgentConfirm === deferred) pendingAgentConfirm = null

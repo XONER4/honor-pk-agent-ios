@@ -60,14 +60,15 @@ object HonerHttp {
     }
 
     /**
-     * Нейросеть: длинные ответы идут минутами. Ожидание следующего байта — 120 с,
-     * весь ответ целиком — до 30 минут (как timeoutIntervalForResource на iOS).
+     * Нейросеть: ждём следующий байт до 90 с (если поток замер — ошибка, а не вечное «Отвечаю…»),
+     * а весь ответ целиком — до 5 минут (с запасом даже для длинных ответов и рассуждений; раньше было
+     * 30 минут, из-за чего медленно «капающий» поток мог держать экран в ожидании очень долго).
      */
     val ai: OkHttpClient by lazy {
         base.newBuilder()
-            .readTimeout(120, TimeUnit.SECONDS)
+            .readTimeout(90, TimeUnit.SECONDS)
             .writeTimeout(120, TimeUnit.SECONDS)
-            .callTimeout(30, TimeUnit.MINUTES)
+            .callTimeout(5, TimeUnit.MINUTES)
             .build()
     }
 

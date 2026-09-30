@@ -50,6 +50,12 @@ export default async function aiProxyRoutes(app) {
     const abort = new AbortController();
     reply.raw.on('close', () => { if (!reply.raw.writableFinished) abort.abort(); });
 
+    // Таймаут на ПОЛУЧЕНИЕ ответа от DeepSeek (заголовков). Если апстрим не ответил за 60 с —
+    // прерываем, чтобы не держать запрос вечно. Сам поток ответа после этого не ограничиваем по времени
+    // (длинные ответы идут сколько нужно; зависший посреди поток обрывается по таймауту чтения у клиента).
+    let headerTimedOut = false;
+    const headerTimer = setTimeout(() => { headerTimedOut = true; abort.abort(); }, 60_000);
+
     let upstream;
     try {
       upstream = await fetch(`${config.deepseekBaseUrl}/chat/completions`, {
@@ -63,7 +69,7 @@ export default async function aiProxyRoutes(app) {
         signal: abort.signal,
       });
     } catch (err) {
-      if (abort.signal.aborted) {
+      if (abort.signal.aborted && !headerTimedOut) {
         // Клиент ушёл раньше, чем ответил апстрим — отвечать некому.
         finish({ error: false });
         reply.hijack();
@@ -71,8 +77,10 @@ export default async function aiProxyRoutes(app) {
         return;
       }
       finish({ error: true });
-      req.log.warn({ err: { message: err.message } }, 'deepseek unreachable');
-      throw new ApiError(502, 'upstream_error', 'Сервис ИИ недоступен');
+      req.log.warn({ err: { message: err.message } }, headerTimedOut ? 'deepseek header timeout' : 'deepseek unreachable');
+      throw new ApiError(504, 'upstream_timeout', 'Сервис ИИ не ответил вовремя. Повторите запрос.');
+    } finally {
+      clearTimeout(headerTimer);
     }
 
     // Дальше пишем в сырой ответ сами: никакой сериализации/сжатия Fastify.
