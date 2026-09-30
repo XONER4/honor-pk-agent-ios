@@ -71,7 +71,15 @@ async function weather(url, res) {
   }
 }
 
-const server = http.createServer((req, res) => {
+// HTTPS, если заданы ключ и сертификат (base64 в переменных окружения сервера — не в коде).
+// Приложение доверяет только этому сертификату (закреплён по ключу), поэтому свой сертификат безопасен.
+const tlsKey = process.env.TLS_KEY_B64 ? Buffer.from(process.env.TLS_KEY_B64, 'base64') : null;
+const tlsCert = process.env.TLS_CERT_B64 ? Buffer.from(process.env.TLS_CERT_B64, 'base64') : null;
+const createServer = (handler) => (tlsKey && tlsCert)
+  ? require('node:https').createServer({ key: tlsKey, cert: tlsCert }, handler)
+  : http.createServer(handler);
+
+const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/relay-health') {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
@@ -90,4 +98,4 @@ server.on('upgrade', (req, socket, head) => {
 server.headersTimeout = 0;
 server.requestTimeout = 0;
 server.keepAliveTimeout = 75_000;
-server.listen(PORT, '0.0.0.0', () => console.log(`honer relay on :${PORT} -> ${UPSTREAM}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`honer relay on :${PORT} (${tlsKey ? 'https' : 'http'}) -> ${UPSTREAM}`));
