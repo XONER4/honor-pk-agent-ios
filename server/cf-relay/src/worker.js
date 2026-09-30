@@ -95,7 +95,19 @@ export default {
     if ((request.headers.get('Upgrade') || '').toLowerCase() === 'websocket') return proxyWebSocket(request, url, upstream);
 
     const init = { method: request.method, headers: forwardHeaders(request.headers), redirect: 'manual' };
-    if (request.method !== 'GET' && request.method !== 'HEAD') init.body = request.body;
+    // Тело запроса буферизуем целиком. Приложение СЖИМАЕТ большие запросы (Content-Encoding: gzip),
+    // чтобы пролезть под лимит оператора на размер загрузки к Cloudflare. Здесь распаковываем и отдаём
+    // на Railway обычным телом (Railway ничего менять не нужно). Так большой запрос ИИ проходит без VPN.
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      const enc = (request.headers.get('content-encoding') || '').toLowerCase();
+      if (enc.includes('gzip') && request.body) {
+        init.body = await new Response(request.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+        init.headers.delete('content-encoding');
+        init.headers.delete('content-length');
+      } else {
+        init.body = await request.arrayBuffer();
+      }
+    }
     try {
       const r = await fetch(upstream + url.pathname + url.search, init);
       const headers = new Headers();

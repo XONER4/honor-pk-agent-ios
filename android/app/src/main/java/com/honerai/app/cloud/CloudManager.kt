@@ -168,6 +168,10 @@ object CloudManager {
             started = true
         }
         AiProxy.installed = true
+        // Запросы к нашему серверу (релей/Railway) идут сжатыми: оператор режет крупные загрузки к релею,
+        // а сжатый запрос нейросети в разы меньше и проходит без VPN. Релей распаковывает.
+        val cloudHosts = CloudConfig.candidates.mapNotNull { runCatching { java.net.URI(it).host }.getOrNull() }.toSet()
+        com.honerai.app.core.HonerHttp.gzipHostMatch = { url -> url.host in cloudHosts }
         CloudNotifier.ensureChannels(app)
         _registered.value = credentials.token != null
         _deviceId.value = credentials.deviceId

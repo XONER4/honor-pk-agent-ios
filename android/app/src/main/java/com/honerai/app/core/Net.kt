@@ -20,6 +20,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import okio.buffer
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
@@ -36,6 +37,14 @@ object HonerHttp {
     const val MOBILE_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36"
     const val DESKTOP_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 
+    /**
+     * Сжимать ли тело запроса (gzip) к этому адресу. Ставится из настроек облака: сжимаем запросы к
+     * серверу Honer, чтобы они пролезали под лимит оператора на размер загрузки к релею (Cloudflare
+     * режет крупные загрузки). Релей распаковывает и отдаёт на сервер обычным телом.
+     */
+    @Volatile
+    var gzipHostMatch: ((HttpUrl) -> Boolean)? = null
+
     val base: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
@@ -44,6 +53,7 @@ object HonerHttp {
             .followRedirects(true)
             .followSslRedirects(true)
             .retryOnConnectionFailure(true)
+            .addInterceptor(GzipRequestInterceptor)
             .build()
     }
 
@@ -67,6 +77,35 @@ object HonerHttp {
             .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .callTimeout(timeoutSeconds + 2, TimeUnit.SECONDS)
             .build()
+    }
+}
+
+/**
+ * Сжимает (gzip) JSON-тела запросов к серверу Honer. Оператор (МТС) режет крупные загрузки к релею,
+ * а запрос к нейросети (системный промпт + история + инструменты) — крупный. Сжатый он в разы меньше и
+ * пролезает; релей распаковывает. Медиа (фото/видео — уже сжаты) и запросы к другим сайтам не трогаем.
+ */
+object GzipRequestInterceptor : okhttp3.Interceptor {
+    override fun intercept(chain: okhttp3.Interceptor.Chain): Response {
+        val request = chain.request()
+        val body = request.body
+        val match = HonerHttp.gzipHostMatch
+        val isJson = body?.contentType()?.subtype?.contains("json", ignoreCase = true) == true
+        if (body == null || !isJson || request.header("Content-Encoding") != null || match == null || !match(request.url)) {
+            return chain.proceed(request)
+        }
+        val gzipped = object : okhttp3.RequestBody() {
+            override fun contentType() = body.contentType()
+            override fun contentLength() = -1L // длина после сжатия заранее неизвестна
+            override fun writeTo(sink: okio.BufferedSink) {
+                val gzip = okio.GzipSink(sink).buffer()
+                body.writeTo(gzip)
+                gzip.close()
+            }
+        }
+        return chain.proceed(
+            request.newBuilder().header("Content-Encoding", "gzip").method(request.method, gzipped).build(),
+        )
     }
 }
 
