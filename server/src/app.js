@@ -24,6 +24,7 @@ import notificationRoutes from './routes/notifications.js';
 import aiProxyRoutes from './routes/ai.js';
 import cloudRoutes from './routes/cloud.js';
 import adminRoutes from './routes/admin.js';
+import legalRoutes from './routes/legal.js';
 import adminInsightsRoutes, { createMetricsSnapshot } from './routes/admin-insights.js';
 import { LiveMetrics, createUsage } from './metrics.js';
 import { createAiControl } from './ai-control.js';
@@ -190,6 +191,7 @@ export async function buildApp(config, overrides = {}) {
   await app.register(cloudRoutes);
   await app.register(adminRoutes);
   await app.register(adminInsightsRoutes);
+  await app.register(legalRoutes);
 
   // Раз в METRICS_PUSH_MS — кадр {"t":"metrics"} подключённым админам (если они есть).
   let pushing = false;
