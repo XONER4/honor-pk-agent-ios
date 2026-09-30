@@ -54,6 +54,8 @@ object HonerHttp {
             .followSslRedirects(true)
             .retryOnConnectionFailure(true)
             .addInterceptor(GzipRequestInterceptor)
+            // Доверяем нашему серверу-ретранслятору (свой TLS-сертификат) + всем обычным сайтам.
+            .sslSocketFactory(CloudTrust.sslSocketFactory, CloudTrust.trustManager)
             .build()
     }
 
