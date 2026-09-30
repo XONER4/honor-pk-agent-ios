@@ -115,6 +115,10 @@
         <package android:name="ru.burgerking" />
         <package android:name="ru.vkusnoitochka.app" />
         <package android:name="com.mcdonalds.vkusnoitochka" />
+        <package android:name="com.apegroup.mcdonaldsrussia" />
+        <package android:name="ru.ozon.hire" />
+        <package android:name="ru.wildberries.team" />
+        <package android:name="com.yandex.searchapp" />
         <package android:name="ru.yandex.mail" />
         <package android:name="ru.yandex.rasp" />
         <package android:name="com.google.android.googlequicksearchbox" />

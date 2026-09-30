@@ -23,6 +23,8 @@ object ServiceCatalog {
         add("kfc", "кфс", "кэфси")
         add("burger_king", "burger king", "бургер кинг", "бургеркинг")
         add("vkusno", "вкусно и точка", "вкусно", "vkusno i tochka", "макдоналдс", "mcdonalds")
+        add("ozon_job", "ozon job", "озон работа", "озон job", "озон подработка", "ozon работа", "ozon hire")
+        add("wb_team", "wildberries работа", "вб работа", "wb работа", "wildberries team", "вб подработка")
         add("yandex_mail", "яндекс почта", "yandex mail", "почта яндекс", "яндекспочта")
         add("google_search", "гугл", "google", "поиск google", "гугл поиск", "google search")
         add("play_market", "play market", "play маркет", "плей маркет", "гугл плей", "google play", "play store", "плеймаркет", "плей стор")
@@ -66,8 +68,12 @@ object ServiceCatalog {
                 "Публичной прямой ссылки нет: открывается приложение. Оформление и оплату завершает пользователь.")
             "burger_king" -> pkg(id, "Burger King", AppIntegrations.APPS, listOf("com.burgerking", "ru.burgerking"), "https://burgerkingrus.ru/",
                 "Публичной прямой ссылки нет: открывается приложение. Оформление и оплату завершает пользователь.")
-            "vkusno" -> pkg(id, "Вкусно и точка", AppIntegrations.APPS, listOf("ru.vkusnoitochka.app", "com.mcdonalds.vkusnoitochka"), "https://vkusnoitochka.ru/",
+            "vkusno" -> pkg(id, "Вкусно и точка", AppIntegrations.APPS, listOf("com.apegroup.mcdonaldsrussia", "ru.vkusnoitochka.app", "com.mcdonalds.vkusnoitochka"), "https://vkusnoitochka.ru/",
                 "Публичной прямой ссылки нет: открывается приложение. Оформление и оплату завершает пользователь.")
+            "ozon_job" -> pkg(id, "Ozon Работа", AppIntegrations.APPS, listOf("ru.ozon.hire"), "https://job.ozon.ru/",
+                "Открывается приложение подработки Ozon. Отклик на заказ/смену подтверждает пользователь.")
+            "wb_team" -> pkg(id, "Wildberries Работа", AppIntegrations.APPS, listOf("ru.wildberries.team"), "https://team.wildberries.ru/",
+                "Открывается приложение подработки Wildberries. Отклик на смену/заказ подтверждает пользователь.")
             // ---- Почта ----
             "yandex_mail" -> {
                 val to = request.to.ifBlank { request.query.takeIf { it.contains('@') }.orEmpty() }
@@ -151,7 +157,8 @@ object ServiceCatalog {
     val knownPackages = listOf(
         "com.wildberries.ru", "ru.ozon.app.android", "ru.beru.android", "com.yandex.market",
         "com.delimobil", "com.yum.ru.kfc", "ru.kfc.kfc", "com.burgerking", "ru.burgerking",
-        "ru.vkusnoitochka.app", "com.mcdonalds.vkusnoitochka", "ru.yandex.mail",
+        "com.apegroup.mcdonaldsrussia", "ru.vkusnoitochka.app", "com.mcdonalds.vkusnoitochka",
+        "ru.ozon.hire", "ru.wildberries.team", "ru.yandex.mail",
         "com.google.android.googlequicksearchbox", "com.android.vending", "ru.yandex.rasp",
         "com.vkontakte.android", "org.telegram.messenger",
         "ru.mts.mymts", "ru.beeline.services", "ru.megafon.mlk", "ru.tele2.mytele2",
