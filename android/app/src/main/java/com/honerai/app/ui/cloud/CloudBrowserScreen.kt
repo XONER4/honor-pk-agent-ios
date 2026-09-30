@@ -175,10 +175,12 @@ fun androidx.compose.foundation.layout.BoxScope.ConnectionBanner() {
             .background(androidx.compose.ui.graphics.Color(0xFF2A1B1B))
             .padding(14.dp),
     ) {
+        // Баннер всегда на тёмной подложке (0xFF2A1B1B) — текст задаём светлым явно, чтобы он читался
+        // и в светлой теме приложения (иначе тёмный текст темы сливался бы с тёмной подложкой).
         Text(d.title, color = androidx.compose.ui.graphics.Color(0xFFFF9F0A), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-        Text(d.detail, color = colors.foreground, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        Text(d.detail, color = androidx.compose.ui.graphics.Color(0xFFECECEF), fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
         d.fixes.forEach { fix ->
-            Text("• $fix", color = colors.secondary, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp))
+            Text("• $fix", color = androidx.compose.ui.graphics.Color(0xFFB9B9C0), fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp))
         }
         Text(
             "Повторить",

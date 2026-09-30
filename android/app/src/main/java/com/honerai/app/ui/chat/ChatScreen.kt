@@ -21,6 +21,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -854,7 +856,8 @@ fun ChatRoot(activity: MainActivity) {
             onDismissRequest = { forwardFavoritesMessage = null },
             title = { Text(t("Переслать в Избранное", "Forward to Saved")) },
             text = {
-                Column {
+                // Много папок — список прокручивается, чтобы кнопка «Отмена» и папки не уезжали за экран.
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
                     folders.forEach { folder ->
                         Row(
                             Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(10.dp))
@@ -1255,7 +1258,7 @@ private fun UpdateBanner(english: Boolean) {
                     Text(t("Обновить", "Update"), color = colors.accent, fontWeight = FontWeight.SemiBold)
                 }
                 Icon(Icons.Rounded.Close, t("Скрыть", "Hide"), tint = colors.secondary,
-                    modifier = Modifier.size(28.dp).clip(CircleShape).clickable { dismissed = info.versionName }.padding(5.dp))
+                    modifier = Modifier.size(44.dp).clip(CircleShape).clickable { dismissed = info.versionName }.padding(13.dp))
             }
         }
         progress?.let { value ->

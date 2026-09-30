@@ -98,9 +98,6 @@ class AdminContainer private constructor(context: Context) {
         }
     }
 
-    private companion object {
-        const val DISCOVERY_URL = "https://honer-relay.vladislavponomarev16.workers.dev/relay-endpoint"
-    }
 
     fun chat(chatId: String): ChatController = chats.getOrPut(chatId) {
         ChatController(chatId, app, api, realtime, repo, scope, settings)
@@ -200,6 +197,7 @@ class AdminContainer private constructor(context: Context) {
     }
 
     companion object {
+        const val DISCOVERY_URL = "https://honer-relay.vladislavponomarev16.workers.dev/relay-endpoint"
         @Volatile private var instance: AdminContainer? = null
 
         fun get(context: Context): AdminContainer = instance ?: synchronized(this) {

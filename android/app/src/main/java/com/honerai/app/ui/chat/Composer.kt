@@ -155,7 +155,7 @@ fun Composer(
                 Icon(Icons.Rounded.ErrorOutline, null, tint = Color(0xFFFF9F0A), modifier = Modifier.size(18.dp))
                 Text(errorText, fontSize = 12.sp, color = colors.secondary, modifier = Modifier.weight(1f))
                 Icon(Icons.Rounded.Close, t("Закрыть ошибку", "Dismiss error"), tint = colors.secondary,
-                    modifier = Modifier.size(28.dp).clip(CircleShape).clickable { store.clearError() }.padding(5.dp)
+                    modifier = Modifier.size(44.dp).clip(CircleShape).clickable { store.clearError() }.padding(13.dp)
                         .testTag("chat.error.dismiss"))
             }
         }
