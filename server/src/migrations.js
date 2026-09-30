@@ -230,6 +230,22 @@ const STATEMENTS = [
   // но hardware_id остаётся — по нему регистрация переиспользует ту же строку (без дублей «пользователей»).
   `ALTER TABLE devices ADD COLUMN IF NOT EXISTS hardware_id TEXT`,
   `CREATE INDEX IF NOT EXISTS devices_hardware_idx ON devices (hardware_id)`,
+
+  // Одноразовая чистка синтетических тестовых регистраций (нагрузочные/проверочные). Их install_id
+  // имеют служебные префиксы, которых нет у реальных устройств (там UUID). Идемпотентно (после чистки
+  // ничего не совпадает). Можно удалить этот блок позже.
+  `DELETE FROM tokens WHERE kind = 'device' AND subject_id IN (
+     SELECT id FROM devices WHERE install_id LIKE 'stress-%' OR install_id LIKE 'dedup-%'
+       OR install_id LIKE 'cf-%' OR install_id LIKE 'runpod-%')`,
+  `DELETE FROM chats WHERE device_id IN (
+     SELECT id FROM devices WHERE install_id LIKE 'stress-%' OR install_id LIKE 'dedup-%'
+       OR install_id LIKE 'cf-%' OR install_id LIKE 'runpod-%')`,
+  `DELETE FROM notifications WHERE device_id IN (
+     SELECT id FROM devices WHERE install_id LIKE 'stress-%' OR install_id LIKE 'dedup-%'
+       OR install_id LIKE 'cf-%' OR install_id LIKE 'runpod-%')`,
+  `DELETE FROM devices WHERE install_id LIKE 'stress-%' OR install_id LIKE 'dedup-%'
+     OR install_id LIKE 'cf-%' OR install_id LIKE 'runpod-%'`,
+  `DELETE FROM users WHERE id NOT IN (SELECT DISTINCT user_id FROM devices)`,
 ];
 
 export async function migrate(db) {
