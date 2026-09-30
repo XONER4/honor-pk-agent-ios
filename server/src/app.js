@@ -133,7 +133,7 @@ export async function buildApp(config, overrides = {}) {
 
   // ai — есть ли на сервере ключ нейросети: без него приложения ходят к ИИ напрямую (запасной путь).
   // aiEnabled — ИИ сейчас разрешён администратором (общий выключатель и расписание).
-  app.get('/health', async () => ({ ok: true, ai: Boolean(config.deepseekApiKey), aiEnabled: aiControl.isEnabled(), rev: 'r4-clean' }));
+  app.get('/health', async () => ({ ok: true, ai: Boolean(config.deepseekApiKey), aiEnabled: aiControl.isEnabled(), rev: 'r5-vision' }));
 
   // Погода: часть операторов (МТС) блокирует open-meteo у пользователя, а сервер ходит к нему
   // свободно. Приложение берёт погоду через этот эндпоинт — по названию города (q) или по координатам.
