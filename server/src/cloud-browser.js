@@ -125,7 +125,12 @@ export async function openSession({ deviceId, service }) {
   touch(entry);
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(2500);
+    // Ждём, пока пройдёт анти-бот-проверка и появится реальный контент (не «Проверяем браузер»).
+    for (let i = 0; i < 8; i++) {
+      await page.waitForTimeout(1500);
+      const body = (await page.innerText('body').catch(() => '')).replace(/\s+/g, ' ').trim();
+      if (!/проверяем браузер|подозрительн|captcha|капч|доступ ограничен/i.test(body) && body.length > 200) break;
+    }
   } catch { /* отдадим снимок как есть */ }
   return snapshot(entry);
 }
