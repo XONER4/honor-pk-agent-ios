@@ -131,8 +131,9 @@ class WebSearchClient(
             return fetched
         }
         progress?.invoke(SearchProgress.Found(ranked.size, outcome.responded.map { it.id }))
-        progress?.invoke(SearchProgress.Reading(ranked.take(5).mapNotNull { it.host }))
-        val fetched = readPages(ranked.take(12), 5)
+        progress?.invoke(SearchProgress.Reading(ranked.take(8).mapNotNull { it.host }))
+        // Читаем 8 страниц ОДНОВРЕМЕННО (параллельно, awaitAll) — больше источников за то же время.
+        val fetched = readPages(ranked.take(12), 8)
         currentCoroutineContext().ensureActive()
         val read = fetched.filter { it.content != null }
         progress?.invoke(SearchProgress.Read(read.size, read.mapNotNull { it.host }))
