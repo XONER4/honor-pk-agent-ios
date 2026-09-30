@@ -30,8 +30,8 @@ fun maskSecret(value: String): Pair<String, String> {
     return encoder.encodeToString(masked) to encoder.encodeToString(mask)
 }
 
-val appVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 104400
-val appVersionName = (project.findProperty("versionName") as String?) ?: "10.44.0"
+val appVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 104500
+val appVersionName = (project.findProperty("versionName") as String?) ?: "10.45.0"
 
 android {
     namespace = "com.honerai.app"

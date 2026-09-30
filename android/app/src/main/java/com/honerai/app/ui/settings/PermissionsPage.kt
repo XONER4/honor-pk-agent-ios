@@ -161,6 +161,7 @@ internal fun PermissionsPage(onBack: () -> Unit) {
             }
         }
         item(key = "extras.device") { com.honerai.app.extras.device.DeviceAccessSettingsGroup() } // extras
+        item(key = "system") { SystemAccessSettingsGroup() } // фон, батарея, автозапуск, обновления
         item(key = "agent") { com.honerai.app.ui.agent.AgentSettingsGroup() } // agent
         item(key = "open") {
             SettingsGroup {
