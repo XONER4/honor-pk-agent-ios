@@ -2,6 +2,7 @@ package com.honerai.admin.ui.user
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Refresh
@@ -38,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -53,6 +56,7 @@ import com.honerai.admin.data.AdminNote
 import com.honerai.admin.data.ClientReport
 import com.honerai.admin.data.DeviceDetail
 import com.honerai.admin.data.DeviceEvent
+import com.honerai.admin.data.ProfileView
 import com.honerai.admin.data.idLabel
 import kotlinx.serialization.json.JsonObject
 import java.time.Instant
@@ -106,6 +110,9 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
     var notes by remember { mutableStateOf<List<AdminNote>>(emptyList()) }
     var actions by remember { mutableStateOf<List<AdminAction>>(emptyList()) }
     var reports by remember { mutableStateOf<List<ClientReport>>(emptyList()) }
+    var profileViews by remember { mutableStateOf<List<ProfileView>>(emptyList()) }
+    var renameDialog by remember { mutableStateOf(false) }
+    var clearEventsDialog by remember { mutableStateOf(false) }
     var extraBusy by remember { mutableStateOf(false) }
     val now = rememberNow()
     val zone = remember { ZoneId.systemDefault() }
@@ -129,6 +136,7 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
         runCatching { container.api.notes(deviceId) }.onSuccess { notes = it }
         runCatching { container.api.actions(deviceId, limit = 30) }.onSuccess { actions = it }
         runCatching { container.api.reports(deviceId = deviceId, limit = 10) }.onSuccess { reports = it }
+        runCatching { container.api.profileViews(deviceId, limit = 50) }.onSuccess { profileViews = it }
     }
 
     /** Действие с карточкой (заметки, ограничения): тост с ошибкой, потом перечитываем журнал. */
@@ -152,6 +160,22 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
         val updated = container.api.setOverrides(deviceId, patch)
         detail = detail?.copy(overrides = updated)
         toast.show(if (english) "Restrictions saved" else "Ограничения сохранены")
+    }
+
+    fun rename(newName: String) = act {
+        val updated = container.api.editProfile(deviceId, newName.trim().ifBlank { null })
+        if (updated != null) {
+            detail = updated
+            container.repo.putDetail(updated)
+        }
+        reload++
+        toast.show(if (english) "Name updated" else "Имя обновлено")
+    }
+
+    fun clearEvents() = act {
+        container.api.clearEvents(deviceId)
+        events = emptyList()
+        toast.show(if (english) "History cleared" else "История очищена")
     }
 
     // Живые поля (присутствие, «печатает») берём из списка — он обновляется кадрами WebSocket.
@@ -208,7 +232,14 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
                         Spacer(Modifier.height(20.dp))
                         Avatar(name, deviceId, if (blocked) null else presence, size = 88.dp, blocked = blocked)
                         Spacer(Modifier.height(12.dp))
-                        Text(name, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = colors.foreground, textAlign = TextAlign.Center)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(name, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = colors.foreground, textAlign = TextAlign.Center)
+                            Icon(
+                                Icons.Rounded.Edit, tr("Переименовать", "Rename"), tint = colors.secondary,
+                                modifier = Modifier.size(34.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                                    .clickable(enabled = !extraBusy) { renameDialog = true }.padding(7.dp),
+                            )
+                        }
                         (summary ?: d?.summary())?.idLabel()?.takeIf { it.isNotEmpty() }?.let {
                             Text("ID $it", fontSize = 14.sp, color = colors.secondary)
                         }
@@ -266,7 +297,9 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
                         }
                         CardLabel(tr("Ошибки и падения", "Errors and crashes"))
                         UserReportsCard(reports, now)
-                        CardLabel(tr("История версий", "Version history"))
+                        CardLabelWithAction(tr("История версий", "Version history"),
+                            action = if (events.isNotEmpty()) tr("Очистить", "Clear") else null,
+                            onAction = { clearEventsDialog = true })
                         EventsCard(events, zone)
                         CardLabel(tr("Заметки", "Notes"))
                         NotesCard(
@@ -275,6 +308,8 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
                             onEdit = { note, text -> act { val n = container.api.editNote(note.id, text); notes = notes.map { if (it.id == n.id) n else it } } },
                             onDelete = { note -> act { container.api.deleteNote(note.id); notes = notes.filter { it.id != note.id } } },
                         )
+                        CardLabel(tr("Кто смотрел карточку", "Who viewed the card"))
+                        ProfileViewsCard(profileViews, now, zone)
                         CardLabel(tr("Действия администраторов", "Admin actions"))
                         ActionsCard(actions, now, zone)
                     }
@@ -301,6 +336,30 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
                     }
                 }
             },
+        )
+    }
+
+    if (renameDialog) {
+        var value by remember { mutableStateOf(name) }
+        ConfirmDialog(
+            title = tr("Имя пользователя", "User name"),
+            text = tr("Это имя видят только администраторы. Пусто — вернуть имя из приложения.",
+                "Only admins see this name. Empty — restore the app's name."),
+            confirm = tr("Сохранить", "Save"),
+            onDismiss = { renameDialog = false },
+            onConfirm = { renameDialog = false; rename(value) },
+            content = { HonerField(value, { value = it.take(60) }, tr("Имя", "Name")) },
+        )
+    }
+
+    if (clearEventsDialog) {
+        ConfirmDialog(
+            title = tr("Очистить историю версий?", "Clear version history?"),
+            text = tr("Записи об установке и обновлениях будут удалены. Действие необратимо.",
+                "Install and update records will be removed. This cannot be undone."),
+            confirm = tr("Очистить", "Clear"), destructive = true,
+            onDismiss = { clearEventsDialog = false },
+            onConfirm = { clearEventsDialog = false; clearEvents() },
         )
     }
 }
@@ -335,6 +394,7 @@ private fun InfoCard(
             null, "" -> none
             else -> d.language
         })
+        add(tr("Страна", "Country") to (d?.country?.takeIf { it.isNotBlank() }?.let { countryLabel(it) } ?: none))
         add(tr("Лицензия принята", "License accepted") to PresenceText.dateTime(Times.parse(d?.licenseAcceptedAt), zone))
         add(tr("Установок (загрузок)", "Installs (downloads)") to (d?.installs?.toString() ?: none))
         add(tr("ID пользователя", "User ID") to (d?.publicId?.let { "#$it" } ?: none))
@@ -355,6 +415,14 @@ private fun InfoCard(
             if (index < rows.lastIndex) Box(Modifier.fillMaxWidth().padding(start = 16.dp).height(0.6.dp).background(colors.divider))
         }
     }
+}
+
+/** Код страны ISO (RU) → «🇷🇺 RU». Флаг собирается из региональных индикаторов. */
+private fun countryLabel(code: String): String {
+    val cc = code.trim().uppercase()
+    if (cc.length != 2 || !cc.all { it in 'A'..'Z' }) return code
+    val flag = buildString { cc.forEach { appendCodePoint(0x1F1E6 + (it - 'A')) } }
+    return "$flag $cc"
 }
 
 /** «2008-05-01» → «01.05.2008 (17 лет)». */

@@ -139,6 +139,10 @@ object HistoryText {
         "overrides" -> if (english) "Restrictions changed" else "Изменены ограничения"
         "ai_settings" -> if (english) "AI settings changed" else "Изменены настройки ИИ"
         "admin_setup" -> if (english) "Admin account created" else "Создан аккаунт администратора"
+        "edit_profile" -> if (english) "Name changed" else "Изменено имя"
+        "clear_events" -> if (english) "History cleared" else "Очищена история версий"
+        "change_password" -> if (english) "Password changed" else "Изменён пароль"
+        "set_role" -> if (english) "Role changed" else "Изменена роль"
         else -> action
     }
 

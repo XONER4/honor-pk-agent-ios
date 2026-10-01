@@ -70,6 +70,44 @@ fun CardLabel(text: String) {
     Text(text, fontSize = 14.sp, color = HonerTheme.colors.secondary, modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 18.dp, bottom = 8.dp))
 }
 
+/** Заголовок раздела с действием справа (например «Очистить»). */
+@Composable
+fun CardLabelWithAction(text: String, action: String?, onAction: () -> Unit) {
+    val colors = HonerTheme.colors
+    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, fontSize = 14.sp, color = colors.secondary, modifier = Modifier.weight(1f))
+        if (action != null) {
+            Text(action, fontSize = 14.sp, color = colors.danger, fontWeight = FontWeight.Medium,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onAction).padding(horizontal = 8.dp, vertical = 2.dp))
+        }
+    }
+}
+
+/** Кто и когда открывал карточку пользователя. */
+@Composable
+fun ProfileViewsCard(views: List<com.honerai.admin.data.ProfileView>, now: Instant, zone: ZoneId) {
+    val english = LocalEnglish.current
+    val colors = HonerTheme.colors
+    SectionCard {
+        if (views.isEmpty()) {
+            Text(tr("Карточку ещё не открывали", "No one has opened the card yet"), fontSize = 15.sp, color = colors.secondary, modifier = Modifier.padding(16.dp))
+        }
+        views.take(50).forEachIndexed { i, v ->
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(v.adminName?.takeIf { it.isNotBlank() } ?: tr("Администратор", "Admin"), fontSize = 15.sp, color = colors.foreground)
+                    if (v.adminRole == "developer") {
+                        Spacer(Modifier.width(6.dp))
+                        Text(tr("разработчик", "developer"), fontSize = 11.sp, color = Color(0xFF8B5CF6), fontWeight = FontWeight.Medium)
+                    }
+                }
+                Text(Times.parse(v.at)?.let { PresenceText.ago(it, now, zone, english) }.orEmpty(), fontSize = 12.sp, color = colors.secondary)
+            }
+            if (i < minOf(views.size, 50) - 1) Divider()
+        }
+    }
+}
+
 @Composable
 private fun Divider() {
     Box(Modifier.fillMaxWidth().padding(start = 16.dp).height(0.6.dp).background(HonerTheme.colors.divider))
@@ -127,16 +165,26 @@ fun OverridesCard(overrides: Overrides, busy: Boolean, onChange: (JsonObject) ->
             }
         }
         Divider()
-        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(tr("Запретить поиск в интернете", "Disable web search"), fontSize = 15.sp, color = colors.foreground)
-            }
-            Switch(
-                checked = overrides.disableSearch == true, enabled = !busy,
-                onCheckedChange = { onChange(JsonObject(mapOf("disableSearch" to if (it) JsonPrimitive(true) else kotlinx.serialization.json.JsonNull))) },
-                colors = SwitchDefaults.colors(checkedTrackColor = colors.danger, checkedThumbColor = Color.White),
-            )
-        }
+        ToggleRow(
+            title = tr("Запретить поиск в интернете", "Disable web search"),
+            subtitle = null,
+            checked = overrides.disableSearch == true, busy = busy,
+            onChange = { onChange(JsonObject(mapOf("disableSearch" to if (it) JsonPrimitive(true) else kotlinx.serialization.json.JsonNull))) },
+        )
+        Divider()
+        ToggleRow(
+            title = tr("Отключить ИИ", "Disable AI"),
+            subtitle = tr("Сервер не пустит запросы к нейросети.", "The server blocks all AI requests."),
+            checked = overrides.muteAi == true, busy = busy,
+            onChange = { onChange(JsonObject(mapOf("muteAi" to if (it) JsonPrimitive(true) else kotlinx.serialization.json.JsonNull))) },
+        )
+        Divider()
+        ToggleRow(
+            title = tr("Запретить писать в поддержку", "Disable support chat"),
+            subtitle = tr("Сервер отклонит сообщения пользователя в поддержку.", "The server rejects the user's messages to support."),
+            checked = overrides.blockSupport == true, busy = busy,
+            onChange = { onChange(JsonObject(mapOf("blockSupport" to if (it) JsonPrimitive(true) else kotlinx.serialization.json.JsonNull))) },
+        )
         Divider()
         Row(
             Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(enabled = !busy) { limitDialog = true }.padding(horizontal = 16.dp),
@@ -149,8 +197,8 @@ fun OverridesCard(overrides: Overrides, busy: Boolean, onChange: (JsonObject) ->
             Icon(Icons.Rounded.Edit, null, tint = colors.secondary, modifier = Modifier.size(18.dp))
         }
     }
-    Text(tr("Ограничения применяет приложение пользователя при следующем подключении.",
-        "The user's app applies restrictions on its next connection."),
+    Text(tr("«Отключить ИИ» и «поддержку» действуют сразу на сервере; язык, поиск и лимит — при следующем подключении приложения.",
+        "“Disable AI” and support take effect immediately on the server; language, search and the daily limit apply on the app's next connection."),
         fontSize = 12.sp, color = colors.secondary, modifier = Modifier.padding(start = 6.dp, top = 6.dp))
 
     if (limitDialog) {
@@ -171,6 +219,22 @@ fun OverridesCard(overrides: Overrides, busy: Boolean, onChange: (JsonObject) ->
                 HonerField(value, { value = it.filter(Char::isDigit).take(6) }, tr("Число (1–100000)", "Number (1–100000)"),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             },
+        )
+    }
+}
+
+/** Строка-переключатель в карточке ограничений: заголовок, пояснение и Switch (включённое — красным). */
+@Composable
+private fun ToggleRow(title: String, subtitle: String?, checked: Boolean, busy: Boolean, onChange: (Boolean) -> Unit) {
+    val colors = HonerTheme.colors
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, fontSize = 15.sp, color = colors.foreground)
+            if (subtitle != null) Text(subtitle, fontSize = 12.sp, color = colors.secondary)
+        }
+        Switch(
+            checked = checked, enabled = !busy, onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(checkedTrackColor = colors.danger, checkedThumbColor = Color.White),
         )
     }
 }

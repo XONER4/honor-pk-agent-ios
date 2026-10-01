@@ -62,6 +62,8 @@ sealed interface Route {
     data object Settings : Route { override val key = "settings" }
     data object Ai : Route { override val key = "ai" }
     data object Reports : Route { override val key = "reports" }
+    data object Logins : Route { override val key = "logins" }
+    data object Activity : Route { override val key = "activity" }
 }
 
 /** Простой стек экранов; «Назад» снимает верхний. */
@@ -175,6 +177,8 @@ private fun RouteContent(route: Route, container: AdminContainer, navigator: Nav
             Route.Settings -> SettingsScreen(container, navigator)
             Route.Ai -> AiSettingsScreen(container, navigator)
             Route.Reports -> ReportsScreen(container, navigator)
+            Route.Logins -> com.honerai.admin.ui.insights.LoginsScreen(container, navigator)
+            Route.Activity -> com.honerai.admin.ui.insights.ActivityScreen(container, navigator)
         }
     }
 }
