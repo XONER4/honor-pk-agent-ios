@@ -20,6 +20,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 
 COPY src ./src
+# Статические материалы (скриншоты карточки магазина и пр.), которые отдаёт сервер.
+COPY assets ./assets
 
 # Том Railway монтируется в MEDIA_DIR и принадлежит root, поэтому процесс запускается от root
 # (иначе запись файлов в том невозможна). Каталоги создаются и для запуска без тома.
