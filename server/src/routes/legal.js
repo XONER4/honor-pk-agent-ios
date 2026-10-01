@@ -185,4 +185,26 @@ export default async function legalRoutes(app) {
     reply.header('cache-control', 'public, max-age=3600');
     return reply.send(bytes);
   });
+
+  // Иконка приложения (для карточек магазинов и программной загрузки через canvas).
+  app.get('/legal/icon', async (_req, reply) => {
+    let bytes;
+    try { bytes = readFileSync(SHOT_DIR + 'icon.png'); } catch { return reply.code(404).send({ error: 'not_found' }); }
+    reply.header('content-type', 'image/png');
+    reply.header('access-control-allow-origin', '*');
+    reply.header('cross-origin-resource-policy', 'cross-origin');
+    reply.header('cache-control', 'public, max-age=3600');
+    return reply.send(bytes);
+  });
+
+  // APK-файл приложения (для магазинов, которым нужна ссылка на скачивание).
+  const APK_PATH = fileURLToPath(new URL('../../assets/app/honer-ai-10.57.0.apk', import.meta.url));
+  app.get('/legal/app', async (_req, reply) => {
+    let bytes;
+    try { bytes = readFileSync(APK_PATH); } catch { return reply.code(404).send({ error: 'not_found' }); }
+    reply.header('content-type', 'application/vnd.android.package-archive');
+    reply.header('content-disposition', 'attachment; filename="Honer-AI-10.57.0.apk"');
+    reply.header('cache-control', 'public, max-age=3600');
+    return reply.send(bytes);
+  });
 }
