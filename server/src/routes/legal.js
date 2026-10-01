@@ -156,7 +156,7 @@ const TERMS_HTML = page('Лицензионное соглашение', `
 // Материалы карточки магазина (скриншоты) — отдаются с CORS, чтобы страницу-загрузчик
 // можно было наполнить программно. Читаются из server/assets/store/<n>.jpg.
 const SHOT_DIR = fileURLToPath(new URL('../../assets/store/', import.meta.url));
-const SHOT_IDS = new Set(['1', '2', '3', '4', '5', '6']);
+const SHOT_IDS = new Set(['1', '2', '3', '4', '5', '6', '7', '8']);
 const shotCache = {};
 function shotBytes(n) {
   if (!shotCache[n]) shotCache[n] = readFileSync(SHOT_DIR + n + '.jpg');
