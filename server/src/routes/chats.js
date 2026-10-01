@@ -1,8 +1,9 @@
 // Маршруты чатов. Один и тот же набор регистрируется дважды:
 //   /v1/chats/...        — для устройства (side = 'user', доступ только к своему чату)
 //   /v1/admin/chats/...  — для админа     (side = 'admin', доступ к любому чату)
-import { notFound } from '../errors.js';
+import { forbidden, notFound } from '../errors.js';
 import { attachmentRef, chatParams, messageParams, scopeQuery, uuid } from './schemas.js';
+import { deviceOverrides } from './devices.js';
 
 export function chatRoutes({ prefix, side }) {
   return async function register(app) {
@@ -63,6 +64,10 @@ export function chatRoutes({ prefix, side }) {
       },
     }, async (req) => {
       const chat = await loadChat(req);
+      // Запрет писать в поддержку (ограничение админа). Админская сторона не ограничивается.
+      if (side === 'user' && deviceOverrides(req.device).blockSupport) {
+        throw forbidden('Отправка сообщений в поддержку ограничена администратором');
+      }
       const { clientId, text, attachments, replyTo } = req.body;
       const { message } = await chats.sendMessage(chat, { sender: side, clientId, text, attachments, replyTo: replyTo || null, uploader: uploader(req) });
       return message;

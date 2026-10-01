@@ -149,6 +149,14 @@ export default async function adminInsightsRoutes(app) {
     return rows.map(toDeviceEvent);
   });
 
+  // Очистить историю установок/обновлений устройства (#12).
+  app.delete('/v1/admin/devices/:deviceId/events', { preHandler: auth.requireAdmin, schema: { params: deviceParams } }, async (req) => {
+    await requireDevice(req.params.deviceId);
+    const r = await db.query('DELETE FROM device_events WHERE device_id = $1', [req.params.deviceId]);
+    await logAdminAction(db, { adminId: req.admin.id, deviceId: req.params.deviceId, action: 'clear_events', detail: { removed: r.rowCount } }, req.log);
+    return { ok: true, removed: r.rowCount };
+  });
+
   // ---------- персональные ограничения ----------
 
   app.patch('/v1/admin/devices/:deviceId/overrides', {
@@ -162,6 +170,10 @@ export default async function adminInsightsRoutes(app) {
           forceLanguage: { type: ['string', 'null'], enum: ['ru', 'en', null] },
           disableSearch: { type: ['boolean', 'null'] },
           maxMessagesPerDay: { type: ['integer', 'null'], minimum: 1, maximum: 100_000 },
+          // Мут: доступ к нейросети приостановлен (поддержка/избранное доступны). Соблюдается сервером.
+          muteAi: { type: ['boolean', 'null'] },
+          // Запрет писать в поддержку. Соблюдается сервером.
+          blockSupport: { type: ['boolean', 'null'] },
         },
       },
     },

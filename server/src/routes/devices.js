@@ -22,6 +22,12 @@ const PROFILE_COLUMNS = {
   hardwareId: 'hardware_id',
 };
 
+/** Код страны из заголовка Cloudflare (CF-IPCountry). 'XX'/'T1' — неизвестно/Tor → null. */
+export function countryFromReq(req) {
+  const c = String(req.headers['cf-ipcountry'] || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2);
+  return c && c !== 'XX' && c !== 'T1' ? c : null;
+}
+
 /** Персональные ограничения устройства (как хранятся в devices.overrides). */
 export const deviceOverrides = (device) => {
   const o = json(device?.overrides, null);
@@ -106,6 +112,8 @@ export default async function deviceRoutes(app) {
     if (device.blocked) throw blocked(device.block_reason, device.blocked_until);
 
     await updateProfile(db, device.id, b, ['register_count = register_count + 1']);
+    const country = countryFromReq(req);
+    if (country) await db.query('UPDATE devices SET country = $2 WHERE id = $1', [device.id, country]);
     if (created) await recordDeviceEvent(db, device.id, 'install', { to: b.appVersion });
     const chat = (await chats.getDeviceChat(device.id)) || (await chats.createChatForDevice(device.id));
     const token = await auth.issueDeviceToken(device.id);

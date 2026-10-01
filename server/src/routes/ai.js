@@ -7,9 +7,13 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { ApiError, rateLimited } from '../errors.js';
 import { NO_DEVICE, UsageSniffer } from '../metrics.js';
+import { deviceOverrides } from './devices.js';
 
 export const aiDisabledError = () =>
   new ApiError(503, 'ai_disabled', 'ИИ временно отключён администратором.', { code: 'ai_disabled' });
+
+export const aiMutedError = () =>
+  new ApiError(403, 'ai_muted', 'Доступ к нейросети приостановлен администратором. Напишите в поддержку.', { code: 'ai_muted' });
 
 export default async function aiProxyRoutes(app) {
   const { auth, config, limits, metrics, usage, aiControl } = app.ctx;
@@ -28,6 +32,8 @@ export default async function aiProxyRoutes(app) {
     },
   }, async (req, reply) => {
     if (!aiControl.isEnabled()) throw aiDisabledError();
+    // Мут: администратор приостановил пользователю доступ к ИИ (поддержка и избранное остаются).
+    if (req.principal.kind === 'device' && deviceOverrides(req.device).muteAi) throw aiMutedError();
     if (!config.deepseekApiKey) throw new ApiError(503, 'ai_unavailable', 'ИИ временно недоступен');
     if (!allowed.has(req.body.model)) throw new ApiError(400, 'model_not_allowed', `Модель не разрешена: ${[...allowed].join(', ')}`);
     const key = req.principal.kind === 'device' ? `d:${req.device.id}` : `a:${req.admin.id}`;

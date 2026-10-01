@@ -246,6 +246,66 @@ const STATEMENTS = [
   `DELETE FROM devices WHERE install_id LIKE 'stress-%' OR install_id LIKE 'dedup-%'
      OR install_id LIKE 'cf-%' OR install_id LIKE 'runpod-%'`,
   `DELETE FROM users WHERE id NOT IN (SELECT DISTINCT user_id FROM devices)`,
+
+  // ---------- админ-панель v2: роли, страна, логи входов, просмотры профилей, общий чат админов ----------
+
+  // Роль администратора: 'admin' (красный) | 'developer' (фиолетовый). Старые строки — 'admin'.
+  `ALTER TABLE admins ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin'`,
+  // Аватар администратора (ссылка на media) — для чата админов и подписи.
+  `ALTER TABLE admins ADD COLUMN IF NOT EXISTS avatar_media_id UUID`,
+
+  // Страна устройства (ISO-код, напр. "RU"), определяется по заголовку CF-IPCountry при регистрации/активности.
+  `ALTER TABLE devices ADD COLUMN IF NOT EXISTS country TEXT`,
+  // Аватар пользователя, назначенный админом (media id). Пользователь увидит его после обновления приложения.
+  `ALTER TABLE devices ADD COLUMN IF NOT EXISTS avatar_media_id UUID`,
+
+  // Журнал входов/попыток входа в админ-панель (кто пытался, кто вошёл).
+  `CREATE TABLE IF NOT EXISTS admin_logins (
+     id UUID PRIMARY KEY,
+     admin_id UUID,
+     login_tried TEXT,
+     success BOOLEAN NOT NULL,
+     method TEXT,
+     ip TEXT,
+     user_agent TEXT,
+     at TIMESTAMPTZ NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS admin_logins_at_idx ON admin_logins (at)`,
+  `CREATE INDEX IF NOT EXISTS admin_logins_admin_idx ON admin_logins (admin_id, at)`,
+
+  // История просмотров карточек пользователей администраторами (кто смотрел, когда).
+  `CREATE TABLE IF NOT EXISTS profile_views (
+     id UUID PRIMARY KEY,
+     admin_id UUID NOT NULL,
+     device_id UUID NOT NULL,
+     at TIMESTAMPTZ NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS profile_views_device_idx ON profile_views (device_id, at)`,
+  `CREATE INDEX IF NOT EXISTS profile_views_admin_idx ON profile_views (admin_id, at)`,
+
+  // Общий чат администраторов и разработчиков (канал "staff"). Сообщения с медиа и отметками прочтения.
+  `CREATE TABLE IF NOT EXISTS staff_messages (
+     seq BIGSERIAL,
+     id UUID PRIMARY KEY,
+     admin_id UUID NOT NULL,
+     text TEXT NOT NULL DEFAULT '',
+     attachments JSONB NOT NULL DEFAULT '[]'::jsonb,
+     created_at TIMESTAMPTZ NOT NULL,
+     deleted BOOLEAN NOT NULL DEFAULT FALSE
+   )`,
+  `CREATE INDEX IF NOT EXISTS staff_messages_seq_idx ON staff_messages (seq)`,
+  // Отметки прочтения общего чата: по каждому админу — до какого seq прочитано.
+  `CREATE TABLE IF NOT EXISTS staff_reads (
+     admin_id UUID PRIMARY KEY,
+     read_seq BIGINT NOT NULL DEFAULT 0,
+     at TIMESTAMPTZ NOT NULL
+   )`,
+
+  // Первый созданный аккаунт (вход по логину/паролю) делаем разработчиком-владельцем, если роли ещё не назначены.
+  `UPDATE admins SET role = 'developer'
+     WHERE password_hash IS NOT NULL
+       AND id = (SELECT id FROM admins WHERE password_hash IS NOT NULL ORDER BY created_at ASC LIMIT 1)
+       AND NOT EXISTS (SELECT 1 FROM admins WHERE role = 'developer')`,
 ];
 
 export async function migrate(db) {
