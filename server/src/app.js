@@ -114,7 +114,7 @@ export async function buildApp(config, overrides = {}) {
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Referrer-Policy', 'no-referrer');
     // Скриншоты/иконка карточки магазина должны грузиться с других origin (страница-загрузчик).
-    if (String(req.url).startsWith('/legal/shot') || String(req.url).startsWith('/legal/icon')) {
+    if (String(req.url).startsWith('/legal/shot') || String(req.url).startsWith('/legal/icon') || String(req.url).startsWith('/legal/banner')) {
       reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
       reply.header('Access-Control-Allow-Origin', '*');
       reply.removeHeader('X-Powered-By');

@@ -197,6 +197,17 @@ export default async function legalRoutes(app) {
     return reply.send(bytes);
   });
 
+  // Баннер/картинка для описания (feature graphic, 1024x500) для карточек магазинов.
+  app.get('/legal/banner', async (_req, reply) => {
+    let bytes;
+    try { bytes = readFileSync(SHOT_DIR + 'banner.jpg'); } catch { return reply.code(404).send({ error: 'not_found' }); }
+    reply.header('content-type', 'image/jpeg');
+    reply.header('access-control-allow-origin', '*');
+    reply.header('cross-origin-resource-policy', 'cross-origin');
+    reply.header('cache-control', 'public, max-age=3600');
+    return reply.send(bytes);
+  });
+
   // APK-файл приложения (для магазинов, которым нужна ссылка на скачивание).
   const APK_PATH = fileURLToPath(new URL('../../assets/app/honer-ai-10.57.0.apk', import.meta.url));
   app.get('/legal/app', async (_req, reply) => {
