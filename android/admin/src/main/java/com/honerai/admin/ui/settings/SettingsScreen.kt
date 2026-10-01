@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -73,8 +74,11 @@ fun SettingsScreen(container: AdminContainer, navigator: Navigator) {
     var account by remember { mutableStateOf<com.honerai.admin.data.AdminAccount?>(null) }
     LaunchedEffect(Unit) { runCatching { container.api.account() }.onSuccess { account = it } }
     val role = account?.role ?: session?.role ?: "admin"
+    val msgPasswordChanged = tr("Пароль изменён", "Password changed")
+    val msgCheckFields = tr("Проверьте поля", "Check the fields")
 
-    Column(Modifier.fillMaxSize().background(colors.background)) {
+    Box(Modifier.fillMaxSize().background(colors.background)) {
+    Column(Modifier.fillMaxSize()) {
         TopBar(tr("Настройки", "Settings"), onBack = { navigator.pop() })
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.navigationBars).padding(16.dp),
@@ -174,12 +178,12 @@ fun SettingsScreen(container: AdminContainer, navigator: Navigator) {
             confirm = tr("Сохранить", "Save"),
             onDismiss = { passwordDialog = false },
             onConfirm = {
-                if (!valid) { fieldError = tr("Проверьте поля", "Check the fields"); return@ConfirmDialog }
+                if (!valid) { fieldError = msgCheckFields; return@ConfirmDialog }
                 scope.launch {
                     try {
                         container.api.changePassword(current.takeIf { needsCurrent }, next)
                         passwordDialog = false
-                        toast.show(tr("Пароль изменён", "Password changed"))
+                        toast.show(msgPasswordChanged)
                         runCatching { container.api.account() }.onSuccess { account = it }
                     } catch (e: Exception) {
                         fieldError = friendlyError(e, english)
@@ -204,6 +208,7 @@ fun SettingsScreen(container: AdminContainer, navigator: Navigator) {
     }
 
     ToastHost(toast, bottom = 40.dp)
+    }
 }
 
 /** Цветной значок роли: администратор — красный, разработчик — фиолетовый. */
@@ -224,7 +229,7 @@ private fun SettingsRow(text: String, onClick: () -> Unit) {
     val colors = HonerTheme.colors
     Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = onClick).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(text, fontSize = 15.sp, color = colors.foreground, modifier = Modifier.weight(1f))
-        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = colors.secondary)
+        androidx.compose.material3.Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = colors.secondary)
     }
 }
 
