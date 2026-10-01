@@ -117,6 +117,7 @@ data class DeviceSummary(
     val deviceModel: String = "",
     val deviceName: String = "",
     val platform: String = "android",
+    val country: String? = null,
     val appVersion: String = "",
     val installedAt: String? = null,
     val lastSeen: String? = null,
@@ -142,6 +143,7 @@ data class DeviceDetail(
     val deviceModel: String = "",
     val deviceName: String = "",
     val platform: String = "android",
+    val country: String? = null,
     val appVersion: String = "",
     val installedAt: String? = null,
     val lastSeen: String? = null,
@@ -166,14 +168,26 @@ data class DeviceDetail(
 ) {
     fun summary(): DeviceSummary = DeviceSummary(
         deviceId = deviceId, userId = userId, publicId = publicId, displayName = displayName, deviceModel = deviceModel,
-        deviceName = deviceName, platform = platform, appVersion = appVersion, installedAt = installedAt, lastSeen = lastSeen,
+        deviceName = deviceName, platform = platform, country = country, appVersion = appVersion, installedAt = installedAt, lastSeen = lastSeen,
         presence = presence, typingIn = typingIn, blocked = blocked, messagesSent = messagesSent, secondsInApp = secondsInApp,
         unreadForAdmin = unreadForAdmin, adminChatId = adminChatId, blockedUntil = blockedUntil, aiTokens = aiTokens, reports = reports,
     )
 }
 
 @Serializable
-data class LoginResponse(val token: String, val email: String = "", val name: String = "", val login: String? = null)
+data class LoginResponse(
+    val token: String,
+    val email: String = "",
+    val name: String = "",
+    val login: String? = null,
+    val role: String = Roles.ADMIN,
+    val adminId: String? = null,
+)
+
+object Roles {
+    const val ADMIN = "admin"
+    const val DEVELOPER = "developer"
+}
 
 @Serializable
 data class BroadcastResult(val ok: Boolean = true, val count: Int? = null)

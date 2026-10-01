@@ -1,9 +1,13 @@
 package com.honerai.admin.net
 
 import com.honerai.admin.core.SessionStore
+import com.honerai.admin.data.AdminAccount
 import com.honerai.admin.data.AdminAction
 import com.honerai.admin.data.AdminJson
+import com.honerai.admin.data.AdminLogin
 import com.honerai.admin.data.AdminNote
+import com.honerai.admin.data.ActivityItem
+import com.honerai.admin.data.ProfileView
 import com.honerai.admin.data.AiSettings
 import com.honerai.admin.data.AiWindow
 import com.honerai.admin.data.ClientReport
@@ -236,6 +240,54 @@ class ApiClient(
     suspend fun setOverrides(deviceId: String, patch: JsonObject): Overrides {
         val text = send("PATCH", "/v1/admin/devices/$deviceId/overrides", patch)
         return AdminJson.decodeFromString(OverridesResponse.serializer(), text).overrides
+    }
+
+    // --- Админка v2: аккаунт, роли, входы, просмотры, лента, профиль ----------------------------------------
+
+    /** Текущий аккаунт администратора (роль, есть ли пароль). */
+    suspend fun account(): AdminAccount = get("/v1/admin/account", AdminAccount.serializer())
+
+    /** Смена собственного пароля. [current] нужен, если пароль уже задан. */
+    suspend fun changePassword(current: String?, newPassword: String) {
+        send("POST", "/v1/admin/account/password", buildJsonObject {
+            if (!current.isNullOrEmpty()) put("currentPassword", current)
+            put("newPassword", newPassword)
+        })
+    }
+
+    /** Журнал входов/попыток входа в админку. */
+    suspend fun logins(limit: Int = 50, before: String? = null, success: Boolean? = null): List<AdminLogin> =
+        get("/v1/admin/logins", ListSerializer(AdminLogin.serializer()),
+            mapOf("limit" to limit.toString(), "before" to before, "success" to success?.toString()))
+
+    /** Список администраторов и их ролей. */
+    suspend fun admins(): List<AdminAccount> = get("/v1/admin/admins", ListSerializer(AdminAccount.serializer()))
+
+    /** Назначить роль администратору (только разработчик). */
+    suspend fun setAdminRole(adminId: String, role: String): AdminAccount =
+        AdminJson.decodeFromString(AdminAccount.serializer(),
+            send("PATCH", "/v1/admin/admins/$adminId/role", buildJsonObject { put("role", role) }))
+
+    /** Общая лента действий (админы + пользователи). */
+    suspend fun activity(limit: Int = 80): List<ActivityItem> =
+        get("/v1/admin/activity", ListSerializer(ActivityItem.serializer()), mapOf("limit" to limit.toString()))
+
+    /** Кто смотрел карточку этого пользователя. */
+    suspend fun profileViews(deviceId: String, limit: Int = 50): List<ProfileView> =
+        get("/v1/admin/devices/$deviceId/profile-views", ListSerializer(ProfileView.serializer()),
+            mapOf("limit" to limit.toString()))
+
+    /** Очистить историю установок/обновлений устройства. */
+    suspend fun clearEvents(deviceId: String) {
+        execute(request(url("/v1/admin/devices/$deviceId/events")).delete().build())
+    }
+
+    /** Изменить имя пользователя (админом). */
+    suspend fun editProfile(deviceId: String, displayName: String?): DeviceDetail? {
+        val text = send("PATCH", "/v1/admin/devices/$deviceId/profile", buildJsonObject {
+            put("displayName", displayName?.let { JsonPrimitive(it) } ?: JsonNull)
+        })
+        return decodeOrNull(DeviceDetail.serializer(), text)
     }
 
     /** Возвращает, сколько устройств получили уведомление ({"ok":true,"count":n}), если сервер сообщил. */

@@ -368,6 +368,29 @@ export default async function adminRoutes(app) {
     return deviceDetail(d.id);
   });
 
+  // Изменение профиля пользователя администратором (имя). Страна определяется автоматически и не меняется.
+  app.patch('/v1/admin/devices/:deviceId/profile', {
+    preHandler: auth.requireAdmin,
+    schema: {
+      params: deviceParams,
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { displayName: { type: ['string', 'null'], maxLength: 200 } },
+      },
+    },
+  }, async (req) => {
+    const d = await db.one('SELECT id FROM devices WHERE id = $1', [req.params.deviceId]);
+    if (!d) throw notFound('Устройство не найдено');
+    if (req.body.displayName !== undefined) {
+      const name = req.body.displayName ? String(req.body.displayName).trim() : null;
+      await db.query('UPDATE devices SET display_name = $2, updated_at = $3 WHERE id = $1', [d.id, name, new Date()]);
+      hub.sendToDevice(d.id, { t: 'profile', displayName: name });
+    }
+    await logAdminAction(db, { adminId: req.admin.id, deviceId: d.id, action: 'edit_profile', detail: req.body }, req.log);
+    return deviceDetail(d.id);
+  });
+
   // ---------- уведомления ----------
 
   app.post('/v1/admin/notifications', {

@@ -121,13 +121,67 @@ data class AdminAction(
     val at: String = "",
 )
 
-/** Персональные ограничения пользователя (приложение применяет их само). */
+/** Персональные ограничения пользователя (приложение применяет их само, мут/поддержку — сервер). */
 @Serializable
 data class Overrides(
     val forceLanguage: String? = null,
     val disableSearch: Boolean? = null,
     val maxMessagesPerDay: Int? = null,
+    val muteAi: Boolean? = null,
+    val blockSupport: Boolean? = null,
 )
 
 @Serializable
 data class OverridesResponse(val overrides: Overrides = Overrides())
+
+/** Аккаунт администратора (GET /v1/admin/account, /v1/admin/admins). */
+@Serializable
+data class AdminAccount(
+    val adminId: String = "",
+    val email: String = "",
+    val name: String = "",
+    val login: String? = null,
+    val role: String = "admin",
+    val hasPassword: Boolean = false,
+    val lastLoginAt: String? = null,
+    val createdAt: String? = null,
+    val presence: String? = null,
+)
+
+/** Запись журнала входов в админку (GET /v1/admin/logins). */
+@Serializable
+data class AdminLogin(
+    val id: String,
+    val adminId: String? = null,
+    val adminName: String? = null,
+    val loginTried: String? = null,
+    val success: Boolean = false,
+    val method: String? = null,
+    val ip: String? = null,
+    val userAgent: String? = null,
+    val at: String = "",
+)
+
+/** Кто смотрел карточку пользователя (GET /v1/admin/devices/:id/profile-views). */
+@Serializable
+data class ProfileView(
+    val id: String,
+    val adminId: String = "",
+    val adminName: String? = null,
+    val adminRole: String? = null,
+    val deviceId: String = "",
+    val at: String = "",
+)
+
+/** Строка общей ленты действий (GET /v1/admin/activity). kind: admin | device | login. */
+@Serializable
+data class ActivityItem(
+    val kind: String = "",
+    val at: String = "",
+    val action: String = "",
+    val who: String = "",
+    val deviceId: String? = null,
+    val publicId: String? = null,
+    val target: String? = null,
+    val detail: JsonElement? = null,
+)

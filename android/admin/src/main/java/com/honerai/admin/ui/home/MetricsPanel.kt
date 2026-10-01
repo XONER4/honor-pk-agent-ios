@@ -18,6 +18,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import com.honerai.admin.ui.common.ConfirmDialog
+import com.honerai.admin.ui.common.HonerField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -143,6 +147,9 @@ fun MetricsGrid(state: MetricsState, onRetry: () -> Unit) {
 
 private data class MetricData(val label: String, val value: String, val hint: String?, val series: List<Double>, val accent: Color)
 
+/** Пароль на выключение нейросети (защита от случайного/чужого выключения). */
+private const val AI_OFF_PASSWORD = "1639"
+
 /** Большой переключатель «ИИ включён/выключен» и краткое расписание; нажатие на карточку — экран расписания. */
 @Composable
 fun AiSwitchCard(state: AiState, onToggle: suspend (Boolean) -> String?, onOpen: () -> Unit, onError: (String) -> Unit) {
@@ -151,6 +158,18 @@ fun AiSwitchCard(state: AiState, onToggle: suspend (Boolean) -> String?, onOpen:
     val scope = rememberCoroutineScope()
     val s = state.settings
     var pending by remember { mutableStateOf<Boolean?>(null) }
+    var askPassword by remember { mutableStateOf(false) }
+    var pass by remember { mutableStateOf("") }
+    var passError by remember { mutableStateOf(false) }
+
+    fun applyToggle(value: Boolean) {
+        pending = value
+        scope.launch {
+            val error = onToggle(value)
+            pending = null
+            if (error != null) onError(error)
+        }
+    }
     val switchedOn = pending ?: s?.enabled ?: true
     val working = s != null && s.effective && s.configured
     Row(
@@ -188,14 +207,35 @@ fun AiSwitchCard(state: AiState, onToggle: suspend (Boolean) -> String?, onOpen:
             checked = switchedOn,
             enabled = s != null && !state.busy && pending == null,
             onCheckedChange = { value ->
-                pending = value
-                scope.launch {
-                    val error = onToggle(value)
-                    pending = null
-                    if (error != null) onError(error)
-                }
+                // Выключение ИИ защищено паролем; включение — сразу.
+                if (!value) { pass = ""; passError = false; askPassword = true } else applyToggle(true)
             },
             colors = SwitchDefaults.colors(checkedTrackColor = colors.online, checkedThumbColor = Color.White),
+        )
+    }
+
+    if (askPassword) {
+        ConfirmDialog(
+            title = tr("Выключить ИИ", "Turn off the AI"),
+            text = tr("Введите пароль, чтобы выключить нейросеть для всех пользователей.",
+                "Enter the password to turn the AI off for everyone."),
+            confirm = tr("Выключить", "Turn off"),
+            onDismiss = { askPassword = false },
+            onConfirm = {
+                if (pass.trim() == AI_OFF_PASSWORD) { askPassword = false; applyToggle(false) } else passError = true
+            },
+            content = {
+                Column {
+                    HonerField(
+                        pass, { pass = it; passError = false }, tr("Пароль", "Password"),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    )
+                    if (passError) {
+                        Text(tr("Неверный пароль", "Wrong password"), color = colors.danger, fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 6.dp))
+                    }
+                }
+            },
         )
     }
 }

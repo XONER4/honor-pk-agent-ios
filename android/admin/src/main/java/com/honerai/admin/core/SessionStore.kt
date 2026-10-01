@@ -10,8 +10,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
-/** Вошедший администратор. */
-data class AdminSession(val token: String, val email: String, val name: String)
+/** Вошедший администратор. role: admin | developer. */
+data class AdminSession(val token: String, val email: String, val name: String, val role: String = "admin") {
+    val isDeveloper: Boolean get() = role == "developer"
+}
 
 /**
  * Токен администратора и адрес сервера. Токен — в EncryptedSharedPreferences (ключ в Android Keystore).
@@ -53,7 +55,7 @@ class SessionStore(context: Context) {
         val prefs = secure
         if (prefs != null) {
             prefs.edit().putString(KEY_TOKEN, session.token).putString(KEY_EMAIL, session.email)
-                .putString(KEY_NAME, session.name).apply()
+                .putString(KEY_NAME, session.name).putString(KEY_ROLE, session.role).apply()
         } else {
             memoryToken = session
         }
@@ -71,7 +73,8 @@ class SessionStore(context: Context) {
     private fun readSession(): AdminSession? {
         val prefs = secure ?: return memoryToken
         val token = prefs.getString(KEY_TOKEN, null) ?: return null
-        return AdminSession(token, prefs.getString(KEY_EMAIL, "").orEmpty(), prefs.getString(KEY_NAME, "").orEmpty())
+        return AdminSession(token, prefs.getString(KEY_EMAIL, "").orEmpty(), prefs.getString(KEY_NAME, "").orEmpty(),
+            prefs.getString(KEY_ROLE, "admin").orEmpty().ifEmpty { "admin" })
     }
 
     private fun openSecure(): SharedPreferences? {
@@ -101,6 +104,7 @@ class SessionStore(context: Context) {
         private const val KEY_TOKEN = "token"
         private const val KEY_EMAIL = "email"
         private const val KEY_NAME = "name"
+        private const val KEY_ROLE = "role"
         private const val KEY_URL = "serverUrl"
 
         /**

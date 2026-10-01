@@ -125,7 +125,7 @@ fun LoginScreen(container: AdminContainer) {
     }
 
     fun finish(response: LoginResponse) {
-        container.session.save(AdminSession(response.token, response.email.ifBlank { response.login.orEmpty() }, response.name))
+        container.session.save(AdminSession(response.token, response.email.ifBlank { response.login.orEmpty() }, response.name, response.role))
     }
 
     /** Текст ошибки входа: 401/400/409 — сообщение сервера («Неверный логин или пароль»), иначе общий. */
