@@ -62,7 +62,7 @@ class ServiceCatalogTest {
             Triple("Delimobil", "com.delimobil", "https://delimobil.ru/"),
             Triple("KFC", "com.yum.ru.kfc", "https://www.kfc.ru/"),
             Triple("Burger King", "com.burgerking", "https://burgerkingrus.ru/"),
-            Triple("Вкусно и точка", "ru.vkusnoitochka.app", "https://vkusnoitochka.ru/"),
+            Triple("Вкусно и точка", "com.apegroup.mcdonaldsrussia", "https://vkusnoitochka.ru/"),
             Triple("Яндекс Электрички", "ru.yandex.rasp", "https://rasp.yandex.ru/"),
             Triple("МТС", "ru.mts.mymts", "https://mts.ru/"),
             Triple("Билайн", "ru.beeline.services", "https://beeline.ru/"),
