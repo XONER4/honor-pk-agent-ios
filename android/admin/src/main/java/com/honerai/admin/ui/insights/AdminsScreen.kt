@@ -80,6 +80,7 @@ fun AdminsScreen(container: AdminContainer, navigator: Navigator) {
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     var roleDialog by remember { mutableStateOf<AdminAccount?>(null) }
+    val roleChangedMsg = tr("Роль изменена", "Role changed")
 
     LaunchedEffect(reload) {
         loading = true; error = null
@@ -134,7 +135,7 @@ fun AdminsScreen(container: AdminContainer, navigator: Navigator) {
                 scope.launch {
                     try {
                         container.api.setAdminRole(a.adminId, if (makeDeveloper) Roles.DEVELOPER else Roles.ADMIN)
-                        toast.show(tr("Роль изменена", "Role changed"))
+                        toast.show(roleChangedMsg)
                         reload++
                     } catch (e: Exception) {
                         toast.show(friendlyError(e, english))
