@@ -314,6 +314,7 @@ object CloudManager {
             displayName = s.displayName.value,
             birthday = s.birthday.value.takeIf { it.isNotBlank() },
             language = if (s.language.value == "en") "en" else "ru",
+            timezone = runCatching { java.util.TimeZone.getDefault().id }.getOrNull(),
             licenseAcceptedAt = licenseAcceptedAt(),
             pushToken = credentials.pushToken,
             hardwareId = hardwareId(),

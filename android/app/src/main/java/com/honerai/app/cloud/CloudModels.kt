@@ -102,6 +102,8 @@ data class RegisterRequest(
     val displayName: String,
     val birthday: String? = null,
     val language: String,
+    /** Часовой пояс устройства (IANA, напр. Europe/Moscow) — сервер и ИИ учитывают его. */
+    val timezone: String? = null,
     val licenseAcceptedAt: String? = null,
     val pushToken: String? = null,
     /** Стабильный ID устройства (Android ID): переустановка не плодит новых «пользователей» в админке. */
