@@ -306,6 +306,9 @@ const STATEMENTS = [
      WHERE password_hash IS NOT NULL
        AND id = (SELECT id FROM admins WHERE password_hash IS NOT NULL ORDER BY created_at ASC LIMIT 1)
        AND NOT EXISTS (SELECT 1 FROM admins WHERE role = 'developer')`,
+
+  // Часовой пояс устройства (IANA, напр. Europe/Moscow) — приложение шлёт его начиная с новой версии.
+  `ALTER TABLE devices ADD COLUMN IF NOT EXISTS timezone TEXT`,
 ];
 
 export async function migrate(db) {

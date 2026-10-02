@@ -42,6 +42,7 @@ export const deviceProfileProps = {
   displayName: { type: 'string', maxLength: 100 },
   birthday: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
   language: { type: 'string', maxLength: 16, pattern: '^[A-Za-z]{2,3}([-_][A-Za-z0-9]{2,8})?$' },
+  timezone: { type: ['string', 'null'], maxLength: 64 },
   licenseAcceptedAt: { type: ['string', 'null'], format: 'date-time' },
   pushToken: { type: ['string', 'null'], maxLength: 4096 },
   hardwareId: { type: ['string', 'null'], maxLength: 128 },

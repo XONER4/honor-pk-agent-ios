@@ -321,6 +321,7 @@ export default async function adminRoutes(app) {
       ...s,
       birthday: d.birthday || null,
       language: d.language || null,
+      timezone: d.timezone || null,
       osVersion: d.os_version || null,
       licenseAcceptedAt: iso(d.license_accepted_at),
       blockReason: s.blocked ? d.block_reason || null : null,

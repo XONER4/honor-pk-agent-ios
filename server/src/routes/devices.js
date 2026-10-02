@@ -17,6 +17,7 @@ const PROFILE_COLUMNS = {
   displayName: 'display_name',
   birthday: 'birthday',
   language: 'language',
+  timezone: 'timezone',
   licenseAcceptedAt: 'license_accepted_at',
   pushToken: 'push_token',
   hardwareId: 'hardware_id',
