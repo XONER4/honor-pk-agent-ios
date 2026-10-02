@@ -105,6 +105,10 @@ fun SettingsScreen(container: AdminContainer, navigator: Navigator) {
                         SettingsRow(tr("Журнал входов", "Login history")) { navigator.push(com.honerai.admin.ui.Route.Logins) }
                         Box(Modifier.fillMaxWidth().padding(start = 16.dp).height(0.6.dp).background(colors.divider))
                         SettingsRow(tr("Лента действий", "Activity feed")) { navigator.push(com.honerai.admin.ui.Route.Activity) }
+                        if (role == "developer") {
+                            Box(Modifier.fillMaxWidth().padding(start = 16.dp).height(0.6.dp).background(colors.divider))
+                            SettingsRow(tr("Администраторы", "Administrators")) { navigator.push(com.honerai.admin.ui.Route.Admins) }
+                        }
                     }
                 }
                 Label(tr("Язык интерфейса", "Language"))
