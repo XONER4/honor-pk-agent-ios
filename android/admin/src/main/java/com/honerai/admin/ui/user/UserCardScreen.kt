@@ -395,6 +395,7 @@ private fun InfoCard(
             else -> d.language
         })
         add(tr("Страна", "Country") to (d?.country?.takeIf { it.isNotBlank() }?.let { countryLabel(it) } ?: none))
+        add(tr("Часовой пояс", "Time zone") to (d?.timezone?.takeIf { it.isNotBlank() } ?: none))
         add(tr("Лицензия принята", "License accepted") to PresenceText.dateTime(Times.parse(d?.licenseAcceptedAt), zone))
         add(tr("Установок (загрузок)", "Installs (downloads)") to (d?.installs?.toString() ?: none))
         add(tr("ID пользователя", "User ID") to (d?.publicId?.let { "#$it" } ?: none))

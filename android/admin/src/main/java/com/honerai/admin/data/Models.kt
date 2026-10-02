@@ -157,6 +157,7 @@ data class DeviceDetail(
     val adminChatId: String = "",
     val birthday: String? = null,
     val language: String? = null,
+    val timezone: String? = null,
     val osVersion: String? = null,
     val licenseAcceptedAt: String? = null,
     val blockReason: String? = null,
