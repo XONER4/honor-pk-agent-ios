@@ -2,6 +2,11 @@ package com.honerai.admin.data
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * Модели «аналитики и управления» (server/API.md → Admin: metrics, AI switch, reports, history, notes, overrides).
@@ -127,9 +132,31 @@ data class Overrides(
     val forceLanguage: String? = null,
     val disableSearch: Boolean? = null,
     val maxMessagesPerDay: Int? = null,
-    val muteAi: Boolean? = null,
-    val blockSupport: Boolean? = null,
-)
+    // muteAi/blockSupport могут прийти как boolean (true=навсегда) или объект {until, reason}.
+    val muteAi: JsonElement? = null,
+    val blockSupport: JsonElement? = null,
+) {
+    val mute: Restriction get() = Restriction.of(muteAi)
+    val support: Restriction get() = Restriction.of(blockSupport)
+}
+
+/** Состояние ограничения (мут/запрет поддержки): активно ли, до когда, причина. */
+data class Restriction(val active: Boolean, val until: String? = null, val reason: String? = null) {
+    companion object {
+        fun of(value: JsonElement?): Restriction {
+            if (value == null || value is JsonNull) return Restriction(false)
+            (value as? JsonPrimitive)?.let { p ->
+                return if (p.booleanOrNull == true || (p.isString && p.content.isNotBlank())) Restriction(true) else Restriction(false)
+            }
+            (value as? JsonObject)?.let { o ->
+                val until = (o["until"] as? JsonPrimitive)?.contentOrNull
+                val reason = (o["reason"] as? JsonPrimitive)?.contentOrNull
+                return Restriction(true, until, reason)
+            }
+            return Restriction(false)
+        }
+    }
+}
 
 @Serializable
 data class OverridesResponse(val overrides: Overrides = Overrides())

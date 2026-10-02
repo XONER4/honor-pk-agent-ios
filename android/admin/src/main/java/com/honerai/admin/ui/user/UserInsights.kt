@@ -153,7 +153,19 @@ fun UsageCard(usage: DeviceUsage?, reports: Int) {
 @Composable
 fun OverridesCard(overrides: Overrides, busy: Boolean, onChange: (JsonObject) -> Unit) {
     val colors = HonerTheme.colors
+    val zone = remember { ZoneId.systemDefault() }
     var limitDialog by remember { mutableStateOf(false) }
+    // Какое ограничение настраиваем: "muteAi" | "blockSupport" | null.
+    var restrictKey by remember { mutableStateOf<String?>(null) }
+
+    fun restrictionSubtitle(r: com.honerai.admin.data.Restriction, base: String): String {
+        if (!r.active) return base
+        val parts = buildList {
+            r.reason?.takeIf { it.isNotBlank() }?.let { add(tr("причина: ", "reason: ") + it) }
+            Times.parse(r.until)?.let { add(tr("до ", "until ") + PresenceText.dateTime(it, zone)) } ?: add(tr("навсегда", "permanently"))
+        }
+        return parts.joinToString(" · ")
+    }
     SectionCard {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(tr("Язык интерфейса", "Interface language"), fontSize = 15.sp, color = colors.foreground)
@@ -174,16 +186,16 @@ fun OverridesCard(overrides: Overrides, busy: Boolean, onChange: (JsonObject) ->
         Divider()
         ToggleRow(
             title = tr("Отключить ИИ", "Disable AI"),
-            subtitle = tr("Сервер не пустит запросы к нейросети.", "The server blocks all AI requests."),
-            checked = overrides.muteAi == true, busy = busy,
-            onChange = { onChange(JsonObject(mapOf("muteAi" to if (it) JsonPrimitive(true) else kotlinx.serialization.json.JsonNull))) },
+            subtitle = restrictionSubtitle(overrides.mute, tr("Сервер не пустит запросы к нейросети.", "The server blocks all AI requests.")),
+            checked = overrides.mute.active, busy = busy,
+            onChange = { if (it) restrictKey = "muteAi" else onChange(JsonObject(mapOf("muteAi" to kotlinx.serialization.json.JsonNull))) },
         )
         Divider()
         ToggleRow(
             title = tr("Запретить писать в поддержку", "Disable support chat"),
-            subtitle = tr("Сервер отклонит сообщения пользователя в поддержку.", "The server rejects the user's messages to support."),
-            checked = overrides.blockSupport == true, busy = busy,
-            onChange = { onChange(JsonObject(mapOf("blockSupport" to if (it) JsonPrimitive(true) else kotlinx.serialization.json.JsonNull))) },
+            subtitle = restrictionSubtitle(overrides.support, tr("Сервер отклонит сообщения пользователя в поддержку.", "The server rejects the user's messages to support.")),
+            checked = overrides.support.active, busy = busy,
+            onChange = { if (it) restrictKey = "blockSupport" else onChange(JsonObject(mapOf("blockSupport" to kotlinx.serialization.json.JsonNull))) },
         )
         Divider()
         Row(
@@ -218,6 +230,34 @@ fun OverridesCard(overrides: Overrides, busy: Boolean, onChange: (JsonObject) ->
             content = {
                 HonerField(value, { value = it.filter(Char::isDigit).take(6) }, tr("Число (1–100000)", "Number (1–100000)"),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            },
+        )
+    }
+
+    restrictKey?.let { key ->
+        val isMute = key == "muteAi"
+        val current = if (isMute) overrides.mute else overrides.support
+        var reason by remember(key) { mutableStateOf(current.reason.orEmpty()) }
+        var term by remember(key) { mutableStateOf(BlockTerm.FOREVER) }
+        ConfirmDialog(
+            title = if (isMute) tr("Отключить ИИ пользователю", "Disable AI for user") else tr("Запретить писать в поддержку", "Disable support chat"),
+            text = tr("Укажите причину и срок. Пользователь увидит причину.", "Set a reason and duration. The user will see the reason."),
+            confirm = tr("Применить", "Apply"), destructive = true,
+            onDismiss = { restrictKey = null },
+            onConfirm = {
+                val until = term.until(Instant.now())
+                val payload = JsonObject(mapOf(
+                    "until" to (until?.let { JsonPrimitive(it.toString()) } ?: kotlinx.serialization.json.JsonNull),
+                    "reason" to (reason.trim().takeIf { it.isNotBlank() }?.let { JsonPrimitive(it) } ?: kotlinx.serialization.json.JsonNull),
+                ))
+                onChange(JsonObject(mapOf(key to payload)))
+                restrictKey = null
+            },
+            content = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HonerField(reason, { reason = it }, tr("Причина (необязательно)", "Reason (optional)"), singleLine = false, minLines = 2)
+                    BlockTermPicker(term) { term = it }
+                }
             },
         )
     }
