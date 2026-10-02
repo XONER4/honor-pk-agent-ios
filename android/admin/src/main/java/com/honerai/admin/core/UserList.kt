@@ -4,8 +4,8 @@ import com.honerai.admin.data.DeviceSummary
 import com.honerai.admin.data.Overview
 import com.honerai.admin.data.Presence
 
-/** Фильтры списка пользователей: Все / В сети / В фоне / Заблокированы. */
-enum class UserFilter { ALL, ONLINE, BACKGROUND, BLOCKED }
+/** Фильтры списка пользователей: Все / В сети / В фоне / Заблокированы / Удалившие. */
+enum class UserFilter { ALL, ONLINE, BACKGROUND, BLOCKED, DELETED }
 
 /** Порядок списка: по активности (как раньше) или по расходу токенов ИИ. */
 enum class UserSort { ACTIVITY, TOKENS }
@@ -23,10 +23,12 @@ object UserList {
         return devices.asSequence()
             .filter {
                 when (filter) {
-                    UserFilter.ALL -> true
-                    UserFilter.ONLINE -> it.presence == Presence.FOREGROUND && !it.blocked
-                    UserFilter.BACKGROUND -> it.presence == Presence.BACKGROUND && !it.blocked
+                    // Удалившие приложение отделены от активных пользователей (у которых оно установлено).
+                    UserFilter.ALL -> !it.deleted
+                    UserFilter.ONLINE -> it.presence == Presence.FOREGROUND && !it.blocked && !it.deleted
+                    UserFilter.BACKGROUND -> it.presence == Presence.BACKGROUND && !it.blocked && !it.deleted
                     UserFilter.BLOCKED -> it.blocked
+                    UserFilter.DELETED -> it.deleted
                 }
             }
             .filter {

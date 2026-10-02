@@ -153,16 +153,19 @@ fun UsageCard(usage: DeviceUsage?, reports: Int) {
 @Composable
 fun OverridesCard(overrides: Overrides, busy: Boolean, onChange: (JsonObject) -> Unit) {
     val colors = HonerTheme.colors
+    val english = LocalEnglish.current
     val zone = remember { ZoneId.systemDefault() }
     var limitDialog by remember { mutableStateOf(false) }
     // Какое ограничение настраиваем: "muteAi" | "blockSupport" | null.
     var restrictKey by remember { mutableStateOf<String?>(null) }
 
+    // Не @Composable: использует обычный english, а не tr().
     fun restrictionSubtitle(r: com.honerai.admin.data.Restriction, base: String): String {
         if (!r.active) return base
         val parts = buildList {
-            r.reason?.takeIf { it.isNotBlank() }?.let { add(tr("причина: ", "reason: ") + it) }
-            Times.parse(r.until)?.let { add(tr("до ", "until ") + PresenceText.dateTime(it, zone)) } ?: add(tr("навсегда", "permanently"))
+            r.reason?.takeIf { it.isNotBlank() }?.let { add((if (english) "reason: " else "причина: ") + it) }
+            Times.parse(r.until)?.let { add((if (english) "until " else "до ") + PresenceText.dateTime(it, zone)) }
+                ?: add(if (english) "permanently" else "навсегда")
         }
         return parts.joinToString(" · ")
     }

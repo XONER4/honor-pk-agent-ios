@@ -131,6 +131,7 @@ data class DeviceSummary(
     val blockedUntil: String? = null,
     val aiTokens: Long = 0,
     val reports: Int = 0,
+    val deleted: Boolean = false,
 )
 
 /** Карточка пользователя (GET /v1/admin/devices/:id) — DeviceSummary + подробности. */

@@ -145,14 +145,15 @@ fun HomeScreen(container: AdminContainer, navigator: Navigator) {
     val visible by produceState(emptyList<DeviceSummary>(), users.devices, filter, query, sort) {
         value = withContext(Dispatchers.Default) { UserList.visible(users.devices.values, filter, query, sort) }
     }
-    val counts by produceState(IntArray(4), users.devices) {
+    val counts by produceState(IntArray(5), users.devices) {
         value = withContext(Dispatchers.Default) {
             val all = users.devices.values
             intArrayOf(
-                all.size,
-                all.count { it.presence == Presence.FOREGROUND && !it.blocked },
-                all.count { it.presence == Presence.BACKGROUND && !it.blocked },
+                all.count { !it.deleted },
+                all.count { it.presence == Presence.FOREGROUND && !it.blocked && !it.deleted },
+                all.count { it.presence == Presence.BACKGROUND && !it.blocked && !it.deleted },
                 all.count { it.blocked },
+                all.count { it.deleted },
             )
         }
     }
@@ -209,6 +210,7 @@ fun HomeScreen(container: AdminContainer, navigator: Navigator) {
                             HonerPill(tr("В сети", "Online"), filter == UserFilter.ONLINE, { filter = UserFilter.ONLINE }, count = counts[1])
                             HonerPill(tr("В фоне", "Background"), filter == UserFilter.BACKGROUND, { filter = UserFilter.BACKGROUND }, count = counts[2])
                             HonerPill(tr("Заблокированы", "Blocked"), filter == UserFilter.BLOCKED, { filter = UserFilter.BLOCKED }, count = counts[3])
+                            HonerPill(tr("Удалившие", "Uninstalled"), filter == UserFilter.DELETED, { filter = UserFilter.DELETED }, count = counts[4])
                             HonerPill(tr("По токенам", "By tokens"), sort == UserSort.TOKENS,
                                 { sort = if (sort == UserSort.TOKENS) UserSort.ACTIVITY else UserSort.TOKENS })
                         }

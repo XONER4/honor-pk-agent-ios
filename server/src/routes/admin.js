@@ -222,10 +222,21 @@ export default async function adminRoutes(app) {
     return new Map(rows.map((r) => [r.device_id, Number(r.c)]));
   }
 
-  /** Доп. сведения для строк списка: непрочитанные, токены, число отчётов. */
+  /** Устройства, у которых последнее событие — удаление (FCM-токен стал невалидным и приложение не вернулось). */
+  async function deletedDevices() {
+    const rows = await db.many(
+      `SELECT device_id FROM (
+         SELECT DISTINCT ON (device_id) device_id, kind
+           FROM device_events ORDER BY device_id, at DESC
+       ) t WHERE kind = 'uninstall'`);
+    return new Set(rows.map((r) => r.device_id));
+  }
+
+  /** Доп. сведения для строк списка: непрочитанные, токены, число отчётов, удалённые. */
   async function listExtras() {
-    const [unread, tokens, reports] = await Promise.all([unreadByDevice(), usage.totalsByDevice(), reportsByDevice()]);
-    return { unread, tokens, reports };
+    const [unread, tokens, reports, deleted] = await Promise.all([
+      unreadByDevice(), usage.totalsByDevice(), reportsByDevice(), deletedDevices()]);
+    return { unread, tokens, reports, deleted };
   }
 
   function summary(d, extras) {
@@ -254,6 +265,7 @@ export default async function adminRoutes(app) {
       adminChatId: d.chat_id || null,
       aiTokens: extras.tokens.get(d.id) || 0,
       reports: extras.reports.get(d.id) || 0,
+      deleted: extras.deleted?.has(d.id) || false,
     };
   }
 
@@ -267,7 +279,7 @@ export default async function adminRoutes(app) {
         type: 'object',
         properties: {
           query: { type: 'string', maxLength: 200 },
-          status: { type: 'string', enum: ['all', 'online', 'blocked'], default: 'all' },
+          status: { type: 'string', enum: ['all', 'online', 'blocked', 'deleted'], default: 'all' },
           sort: { type: 'string', enum: ['activity', 'tokens'], default: 'activity' },
         },
       },
@@ -284,8 +296,9 @@ export default async function adminRoutes(app) {
         || [s.displayName, s.deviceModel, s.deviceName, s.deviceId, s.userId, s.appVersion]
           .some((v) => v && String(v).toLowerCase().includes(q)));
     }
-    if (req.query.status === 'online') list = list.filter((s) => s.presence !== 'offline');
+    if (req.query.status === 'online') list = list.filter((s) => s.presence !== 'offline' && !s.deleted);
     if (req.query.status === 'blocked') list = list.filter((s) => s.blocked);
+    if (req.query.status === 'deleted') list = list.filter((s) => s.deleted);
     if (req.query.sort === 'tokens') {
       list.sort((a, b) => (b.aiTokens - a.aiTokens) || (PRESENCE_ORDER[a.presence] - PRESENCE_ORDER[b.presence]));
     } else {
