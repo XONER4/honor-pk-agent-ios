@@ -47,7 +47,44 @@ const pageQuery = {
 };
 
 export default async function adminInsightsRoutes(app) {
-  const { db, auth, hub, aiControl, metricsSnapshot } = app.ctx;
+  const { db, auth, hub, aiControl, metricsSnapshot, config } = app.ctx;
+
+  // Перевод сообщения пользователя на русский для поддержки (план админка п.1). Текст, уже в основном
+  // на кириллице, не переводится. Перевод через DeepSeek; расход токенов учитывается отдельно.
+  app.post('/v1/admin/translate', {
+    preHandler: auth.requireAdmin,
+    schema: { body: { type: 'object', required: ['text'],
+      properties: { text: { type: 'string', maxLength: 8000 } } } },
+  }, async (req) => {
+    const text = (req.body.text || '').trim();
+    if (!text) return { text: '', translated: false };
+    const cyr = (text.match(/[а-яё]/gi) || []).length;
+    const letters = (text.match(/\p{L}/gu) || []).length;
+    if (letters === 0 || cyr / letters > 0.5) return { text, translated: false };
+    if (!config.deepseekApiKey) return { text, translated: false };
+    try {
+      const r = await fetch(`${config.deepseekBaseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${config.deepseekApiKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: config.aiAllowedModels?.[0] || 'deepseek-chat',
+          messages: [
+            { role: 'system', content: 'Ты переводчик. Переведи сообщение пользователя на русский язык. Выдай только перевод — без пояснений, без кавычек, без исходного текста.' },
+            { role: 'user', content: text },
+          ],
+          stream: false, temperature: 0.2,
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!r.ok) return { text, translated: false };
+      const data = await r.json();
+      const out = data?.choices?.[0]?.message?.content?.trim();
+      return out ? { text: out, translated: true } : { text, translated: false };
+    } catch (err) {
+      req.log.warn({ err: { message: err.message } }, 'translate failed');
+      return { text, translated: false };
+    }
+  });
 
   async function requireDevice(deviceId) {
     const d = await db.one('SELECT * FROM devices WHERE id = $1', [deviceId]);
