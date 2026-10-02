@@ -141,9 +141,10 @@ fun HomeScreen(container: AdminContainer, navigator: Navigator) {
         }
     }
 
+    val pinned by container.settings.pinned.collectAsStateWithLifecycle()
     // Фильтр и сортировка — вне композиции.
-    val visible by produceState(emptyList<DeviceSummary>(), users.devices, filter, query, sort) {
-        value = withContext(Dispatchers.Default) { UserList.visible(users.devices.values, filter, query, sort) }
+    val visible by produceState(emptyList<DeviceSummary>(), users.devices, filter, query, sort, pinned) {
+        value = withContext(Dispatchers.Default) { UserList.visible(users.devices.values, filter, query, sort, pinned) }
     }
     val counts by produceState(IntArray(5), users.devices) {
         value = withContext(Dispatchers.Default) {

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -98,6 +99,8 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
     val scope = rememberCoroutineScope()
     val toast = rememberToastState()
     val users by container.repo.users.collectAsStateWithLifecycle()
+    val pinnedSet by container.settings.pinned.collectAsStateWithLifecycle()
+    val isPinned = deviceId in pinnedSet
     val summary = users.devices[deviceId]
     var detail by remember { mutableStateOf<DeviceDetail?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -218,7 +221,15 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
             TopBar(
                 title = name.ifEmpty { tr("Пользователь", "User") },
                 onBack = { navigator.pop() },
-                actions = { IconCircle(Icons.Rounded.Refresh, tr("Обновить", "Refresh"), { reload++ }) },
+                actions = {
+                    IconCircle(
+                        Icons.Rounded.PushPin,
+                        if (isPinned) tr("Открепить", "Unpin") else tr("Закрепить", "Pin"),
+                        { container.settings.togglePinned(deviceId) },
+                        tint = if (isPinned) colors.accent else colors.secondary,
+                    )
+                    IconCircle(Icons.Rounded.Refresh, tr("Обновить", "Refresh"), { reload++ })
+                },
             )
             when {
                 d == null && error != null -> ErrorPanel(error.orEmpty(), { reload++ }, Modifier.padding(top = 40.dp))

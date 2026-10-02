@@ -148,4 +148,17 @@ class AdminSettings(context: Context) {
     }
 
     fun text(ru: String, en: String): String = if (_english.value) en else ru
+
+    /** Закреплённые карточки пользователей (deviceId) — показываются вверху списка. Хранится локально. */
+    private val _pinned = MutableStateFlow(prefs.getStringSet(KEY_PINNED, emptySet()).orEmpty().toSet())
+    val pinned: StateFlow<Set<String>> get() = _pinned
+
+    fun togglePinned(deviceId: String) {
+        val next = _pinned.value.toMutableSet()
+        if (!next.add(deviceId)) next.remove(deviceId)
+        prefs.edit().putStringSet(KEY_PINNED, next).apply()
+        _pinned.value = next
+    }
+
+    companion object { private const val KEY_PINNED = "pinnedDevices" }
 }

@@ -17,7 +17,10 @@ object UserList {
      * Фильтр, поиск по имени/модели/ID («0427» или «#0427») и порядок: непрочитанные, в сети, в фоне,
      * затем по времени визита; [sort] = TOKENS — сначала те, кто потратил больше токенов.
      */
-    fun visible(devices: Collection<DeviceSummary>, filter: UserFilter, query: String, sort: UserSort = UserSort.ACTIVITY): List<DeviceSummary> {
+    fun visible(
+        devices: Collection<DeviceSummary>, filter: UserFilter, query: String,
+        sort: UserSort = UserSort.ACTIVITY, pinned: Set<String> = emptySet(),
+    ): List<DeviceSummary> {
         val needle = query.trim().lowercase()
         val idNeedle = needle.removePrefix("#").takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
         return devices.asSequence()
@@ -37,14 +40,17 @@ object UserList {
                     (idNeedle != null && it.publicId?.contains(idNeedle) == true)
             }
             .sortedWith(
-                if (sort == UserSort.TOKENS) {
-                    compareByDescending<DeviceSummary> { it.aiTokens }
-                        .thenBy { presenceRank(it.presence) }
-                } else {
-                    compareByDescending<DeviceSummary> { it.unreadForAdmin > 0 }
-                        .thenBy { presenceRank(it.presence) }
-                        .thenByDescending { Times.parse(it.lastSeen)?.toEpochMilli() ?: 0L }
-                },
+                // Закреплённые — всегда вверху; дальше обычный порядок.
+                compareByDescending<DeviceSummary> { it.deviceId in pinned }.then(
+                    if (sort == UserSort.TOKENS) {
+                        compareByDescending<DeviceSummary> { it.aiTokens }
+                            .thenBy { presenceRank(it.presence) }
+                    } else {
+                        compareByDescending<DeviceSummary> { it.unreadForAdmin > 0 }
+                            .thenBy { presenceRank(it.presence) }
+                            .thenByDescending { Times.parse(it.lastSeen)?.toEpochMilli() ?: 0L }
+                    },
+                ),
             )
             .toList()
     }
