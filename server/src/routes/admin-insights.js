@@ -171,9 +171,22 @@ export default async function adminInsightsRoutes(app) {
           disableSearch: { type: ['boolean', 'null'] },
           maxMessagesPerDay: { type: ['integer', 'null'], minimum: 1, maximum: 100_000 },
           // Мут: доступ к нейросети приостановлен (поддержка/избранное доступны). Соблюдается сервером.
-          muteAi: { type: ['boolean', 'null'] },
-          // Запрет писать в поддержку. Соблюдается сервером.
-          blockSupport: { type: ['boolean', 'null'] },
+          // Либо boolean (true = навсегда), либо {until, reason} (срок + причина).
+          muteAi: {
+            anyOf: [
+              { type: ['boolean', 'null'] },
+              { type: 'object', additionalProperties: false, properties: {
+                until: { type: ['string', 'null'] }, reason: { type: ['string', 'null'], maxLength: 300 } } },
+            ],
+          },
+          // Запрет писать в поддержку. Соблюдается сервером. Тот же формат.
+          blockSupport: {
+            anyOf: [
+              { type: ['boolean', 'null'] },
+              { type: 'object', additionalProperties: false, properties: {
+                until: { type: ['string', 'null'] }, reason: { type: ['string', 'null'], maxLength: 300 } } },
+            ],
+          },
         },
       },
     },

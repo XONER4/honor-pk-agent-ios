@@ -34,6 +34,25 @@ export const deviceOverrides = (device) => {
   return o && typeof o === 'object' && !Array.isArray(o) ? o : {};
 };
 
+/**
+ * Состояние ограничения (muteAi / blockSupport) с причиной и сроком. Обратная совместимость:
+ *  - falsy        → не активно;
+ *  - true         → активно навсегда (старый формат);
+ *  - { until, reason } → активно до `until` (ISO) с причиной; если срок истёк — не активно.
+ */
+export const restrictionState = (value) => {
+  if (!value) return { active: false, until: null, reason: null };
+  if (value === true) return { active: true, until: null, reason: null };
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const until = value.until ? new Date(value.until) : null;
+    if (until && !Number.isNaN(until.getTime()) && until.getTime() <= Date.now()) {
+      return { active: false, until: null, reason: null };
+    }
+    return { active: true, until: until ? until.toISOString() : null, reason: value.reason || null };
+  }
+  return { active: false, until: null, reason: null };
+};
+
 /** Обновляет присланные поля профиля устройства; смена appVersion пишет событие update (from → to). */
 async function updateProfile(db, deviceId, body, extraSets = []) {
   const before = body.appVersion !== undefined
