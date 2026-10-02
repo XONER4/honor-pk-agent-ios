@@ -49,6 +49,37 @@ const pageQuery = {
 export default async function adminInsightsRoutes(app) {
   const { db, auth, hub, aiControl, metricsSnapshot, config } = app.ctx;
 
+  // Статус поддержки: в сети ли (любой админ онлайн) и среднее время ответа админов (план админка п.20).
+  app.get('/v1/admin/support-stats', { preHandler: auth.requireAdmin }, async () => {
+    const presence = hub.adminPresence();
+    let avgResponseSeconds = null;
+    let samples = 0;
+    try {
+      const rows = await db.many(`
+        WITH ordered AS (
+          SELECT chat_id, sender, created_at,
+                 LAG(created_at) OVER (PARTITION BY chat_id ORDER BY seq) AS prev_at,
+                 LAG(sender)     OVER (PARTITION BY chat_id ORDER BY seq) AS prev_sender
+            FROM messages WHERE deleted = FALSE
+        )
+        SELECT EXTRACT(EPOCH FROM (created_at - prev_at)) AS secs
+          FROM ordered
+         WHERE sender = 'admin' AND prev_sender = 'user'
+           AND created_at > now() - interval '30 days'
+           AND created_at - prev_at < interval '1 day'
+         ORDER BY created_at DESC LIMIT 200`);
+      const secs = rows.map((r) => Number(r.secs)).filter((n) => Number.isFinite(n) && n >= 0);
+      samples = secs.length;
+      if (secs.length) avgResponseSeconds = Math.round(secs.reduce((a, b) => a + b, 0) / secs.length);
+    } catch { /* window-функции недоступны в memory-режиме — вернём только присутствие */ }
+    return {
+      online: presence.online,
+      lastOnlineAt: presence.lastSeen ? iso(presence.lastSeen) : null,
+      avgResponseSeconds,
+      samples,
+    };
+  });
+
   // Перевод сообщения пользователя на русский для поддержки (план админка п.1). Текст, уже в основном
   // на кириллице, не переводится. Перевод через DeepSeek; расход токенов учитывается отдельно.
   app.post('/v1/admin/translate', {

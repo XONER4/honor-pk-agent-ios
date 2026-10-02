@@ -166,6 +166,11 @@ export class Hub {
     return { online, inBackground };
   }
 
+  /** Присутствие поддержки: «в сети», если хотя бы один админ подключён (в т.ч. в фоне). */
+  adminPresence() {
+    return { online: this.admin.state !== 'offline', lastSeen: this.admin.lastSeen };
+  }
+
   kickDevice(deviceId, reason, until = null) {
     const e = this.devices.get(deviceId);
     if (!e) return;
