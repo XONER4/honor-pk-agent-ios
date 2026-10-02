@@ -261,6 +261,10 @@ fun UserCardScreen(container: AdminContainer, navigator: Navigator, deviceId: St
                             Text(PresenceText.status(presence, Times.parse(lastSeen), now, zone, english), fontSize = 14.sp,
                                 color = if (presence == Presence.OFFLINE) colors.secondary else presenceColor(presence))
                         }
+                        if (summary?.deleted == true) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(tr("🗑 Удалил приложение", "🗑 Uninstalled the app"), color = colors.away, fontSize = 14.sp, textAlign = TextAlign.Center)
+                        }
                         if (blocked) {
                             Spacer(Modifier.height(10.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
