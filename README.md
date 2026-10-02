@@ -1,5 +1,10 @@
 # Honer AI 10.0 · iPhone
 
+> **Android: Honer AI 10.57.0 / Версия для Android**  
+> Android 7.0+: [installation and screenshots / установка и скриншоты](https://honer-ai.itch.io/honer-ai-android) · [signed APK release](https://github.com/XONER4/honor-pk-agent-ios/releases/tag/android-v10.57.0-105700) · [testing and feedback / обратная связь](https://github.com/XONER4/honor-pk-agent-ios/issues/1).  
+> The Android APK is currently free to download, proprietary, and uses online AI services. / Android-версия распространяется как бесплатный APK с проприетарной лицензией; для AI-функций нужен интернет.  
+> [Android source branch](https://github.com/XONER4/honor-pk-agent-ios/tree/android). The documentation below is for the iPhone version. / Ниже описана версия для iPhone.
+
 Нативное приложение SwiftUI для iPhone 13 / 13 mini / 13 Pro / 13 Pro Max и более новых iPhone, iOS 16.0+. Интерфейс опирается на предоставленные скриншоты: тёмный чат, боковая история, меню сообщений, настройки и панель вложений. Название приложения — **Honer AI**, знак — собственная буква X.
 
 ## Установка
