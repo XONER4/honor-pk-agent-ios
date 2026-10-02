@@ -1,0 +1,56 @@
+# Honer AI Android catalog metadata. No private keys or APK signing material.
+# Public Android source is available for inspection; the app remains proprietary.
+repository: https://github.com/XONER4/honor-pk-agent-ios/tree/android
+release_source: https://github.com/XONER4/honor-pk-agent-ios/releases/download/android-v10.57.0-105700/honer-ai-10.57.0.apk
+pubkey: npub18f9f658rqlvc6q9j0jmhe49nj3kn3tse7alrupyctleunarpl3aq2eyqvs
+name: Honer AI
+summary: Android assistant with Russian/English chat, web search with source links and voice input.
+license: LicenseRef-Proprietary
+website: https://honer-ai.itch.io/honer-ai-android
+tags:
+  - ai
+  - assistant
+  - productivity
+  - tools
+metadata_sources: []
+description: |
+  Honer AI by XONER is an Android assistant with Russian and English interfaces.
+  Android 7.0 or later is required. The current APK download is free.
+
+  Features include streaming AI chat, web search with links to sources,
+  photo and document attachments, microphone dictation, spoken replies through
+  available Android speech services, searchable conversation history,
+  pinned chats, archives, memory and custom instructions. Version 10.57.0
+  can read up to eight web sources in parallel.
+
+  Honer AI is proprietary software. Android source code is publicly available
+  for inspection in the linked Android branch; no open-source license is granted.
+  Public source availability is not a claim of reproducible APK builds.
+
+  AI answers and web search require internet access. Relevant prompts and
+  attachments are processed by cloud services. Optional phone actions require
+  user-enabled Android Accessibility and are not required for ordinary chat.
+  The app can check for APK updates. Optional minigames use virtual coins
+  without real-money wagering.
+
+  Русский: Honer AI — помощник для Android 7.0+ с потоковым чатом,
+  поиском в интернете со ссылками на источники, фотографиями и документами,
+  голосовым вводом, озвучиванием ответов и историей разговоров.
+  Текущая загрузка APK бесплатна; лицензия проприетарная.
+  Для ответов ИИ и поиска нужен интернет, запросы обрабатываются облачными
+  сервисами. Дополнительные действия с телефоном включаются пользователем.
+
+  Product and screenshots: https://honer-ai.itch.io/honer-ai-android
+  Feedback: https://github.com/XONER4/honor-pk-agent-ios/issues/1
+  Privacy: https://honer-relay.vladislavponomarev16.workers.dev/legal/privacy
+  Terms: https://honer-relay.vladislavponomarev16.workers.dev/legal/terms
+  Support: helper2026ai@mail.ru
+images:
+  - https://honer-relay.vladislavponomarev16.workers.dev/legal/shot/1
+  - https://honer-relay.vladislavponomarev16.workers.dev/legal/shot/2
+  - https://honer-relay.vladislavponomarev16.workers.dev/legal/shot/3
+  - https://honer-relay.vladislavponomarev16.workers.dev/legal/shot/4
+  - https://honer-relay.vladislavponomarev16.workers.dev/legal/shot/5
+  - https://honer-relay.vladislavponomarev16.workers.dev/legal/shot/6
+  - https://honer-relay.vladislavponomarev16.workers.dev/legal/shot/7
+  - https://honer-relay.vladislavponomarev16.workers.dev/legal/shot/8
