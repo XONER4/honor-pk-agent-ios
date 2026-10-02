@@ -106,6 +106,16 @@ export default async function aiProxyRoutes(app) {
       finish({ error: upstreamFailed });
       return;
     }
+    // Ошибка апстрима (4xx/5xx): тело маленькое — буферизуем, логируем причину (модель + текст ошибки DeepSeek,
+    // без ключа) для диагностики в логах, и отдаём клиенту тем же статусом/телом, что и раньше.
+    if (upstreamFailed) {
+      let text = '';
+      try { text = await upstream.text(); } catch { /* тело уже недоступно */ }
+      req.log.warn({ status: upstream.status, model: req.body.model, messages: req.body.messages?.length, body: text.slice(0, 1000) }, 'deepseek upstream error');
+      try { res.end(text); } catch { try { res.end(); } catch { /* клиент ушёл */ } }
+      finish({ error: true });
+      return;
+    }
     const sniffer = new UsageSniffer(stream);
     const tap = new Transform({
       transform(chunk, _enc, cb) {
