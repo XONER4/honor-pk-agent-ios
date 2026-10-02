@@ -161,6 +161,19 @@ data class Restriction(val active: Boolean, val until: String? = null, val reaso
 @Serializable
 data class OverridesResponse(val overrides: Overrides = Overrides())
 
+/** Статус поддержки (GET /v1/admin/support-stats): в сети + среднее время ответа. */
+@Serializable
+data class SupportStats(
+    val online: Boolean = false,
+    val lastOnlineAt: String? = null,
+    val avgResponseSeconds: Int? = null,
+    val samples: Int = 0,
+)
+
+/** Результат перевода (POST /v1/admin/translate). */
+@Serializable
+data class TranslateResult(val text: String = "", val translated: Boolean = false)
+
 /** Аккаунт администратора (GET /v1/admin/account, /v1/admin/admins). */
 @Serializable
 data class AdminAccount(

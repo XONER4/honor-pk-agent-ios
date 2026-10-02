@@ -7,6 +7,8 @@ import com.honerai.admin.data.AdminJson
 import com.honerai.admin.data.AdminLogin
 import com.honerai.admin.data.AdminNote
 import com.honerai.admin.data.ActivityItem
+import com.honerai.admin.data.SupportStats
+import com.honerai.admin.data.TranslateResult
 import com.honerai.admin.data.ProfileView
 import com.honerai.admin.data.AiSettings
 import com.honerai.admin.data.AiWindow
@@ -271,6 +273,14 @@ class ApiClient(
     /** Общая лента действий (админы + пользователи). */
     suspend fun activity(limit: Int = 80): List<ActivityItem> =
         get("/v1/admin/activity", ListSerializer(ActivityItem.serializer()), mapOf("limit" to limit.toString()))
+
+    /** Статус поддержки: в сети и среднее время ответа. */
+    suspend fun supportStats(): SupportStats = get("/v1/admin/support-stats", SupportStats.serializer())
+
+    /** Перевод текста пользователя на русский (для поддержки). */
+    suspend fun translate(text: String): TranslateResult =
+        AdminJson.decodeFromString(TranslateResult.serializer(),
+            send("POST", "/v1/admin/translate", buildJsonObject { put("text", text) }))
 
     /** Кто смотрел карточку этого пользователя. */
     suspend fun profileViews(deviceId: String, limit: Int = 50): List<ProfileView> =

@@ -195,6 +195,9 @@ fun HomeScreen(container: AdminContainer, navigator: Navigator) {
                     item(key = "overview", contentType = "overview") {
                         OverviewGrid(overview.overview, overview.error, onRetry = { repo.refreshOverview() }) { f -> filter = f }
                     }
+                    item(key = "support", contentType = "support") {
+                        SupportStatusRow(container)
+                    }
                     item(key = "reports", contentType = "reports") {
                         RecentReports(reports, now, onOpenAll = { navigator.push(Route.Reports) }, onOpenUser = { navigator.push(Route.User(it)) })
                     }
@@ -249,6 +252,32 @@ private fun AdminBadge() {
     val colors = HonerTheme.colors
     Text("ADMIN", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White,
         modifier = Modifier.clip(CircleShape).background(colors.adminRed).padding(horizontal = 7.dp, vertical = 2.dp))
+}
+
+/** Компактная строка статуса поддержки: в сети/не в сети и среднее время ответа (план п.20). */
+@Composable
+private fun SupportStatusRow(container: com.honerai.admin.AdminContainer) {
+    val colors = HonerTheme.colors
+    val english = com.honerai.admin.ui.theme.LocalEnglish.current
+    var stats by remember { mutableStateOf<com.honerai.admin.data.SupportStats?>(null) }
+    LaunchedEffect(Unit) { runCatching { container.api.supportStats() }.onSuccess { stats = it } }
+    val s = stats ?: return
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(if (s.online) colors.online else colors.secondary))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            if (s.online) tr("Поддержка в сети", "Support online") else tr("Поддержка не в сети", "Support offline"),
+            fontSize = 14.sp, color = colors.foreground, fontWeight = FontWeight.Medium,
+        )
+        s.avgResponseSeconds?.let { avg ->
+            Spacer(Modifier.weight(1f))
+            Text(tr("ср. ответ ", "avg reply ") + PresenceText.duration(avg.toLong(), english),
+                fontSize = 13.sp, color = colors.secondary)
+        }
+    }
 }
 
 @Composable
