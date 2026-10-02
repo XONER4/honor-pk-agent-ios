@@ -51,6 +51,7 @@ import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -191,6 +192,8 @@ fun MessageBubble(
                         }
                         if (message.text.isNotEmpty()) {
                             Text(message.text, fontSize = 16.sp, lineHeight = 21.sp, color = colors.foreground)
+                            // План админка п.1: входящие сообщения пользователя на другом языке переводим на русский.
+                            if (!mine && !ai) TranslationBlock(message.text, container)
                         }
                     }
                     Footer(message, MessageMerge.receipt(item), row, zone, mine)
@@ -209,6 +212,44 @@ fun MessageBubble(
             ) {
                 Icon(Icons.Rounded.ErrorOutline, null, tint = colors.danger, modifier = Modifier.size(14.dp))
                 Text(" " + tr("Не отправлено · Повторить", "Not sent · Retry"), fontSize = 12.sp, color = colors.danger)
+            }
+        }
+    }
+}
+
+/** Кэш переводов по тексту (перевод не меняется) — чтобы не переводить повторно при прокрутке. */
+private val translationCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+/**
+ * Авто-перевод входящего сообщения на русский (план админка п.1). Текст, в основном на кириллице,
+ * не переводится. Перевод кэшируется; под оригиналом показывается блок «🌐 Перевод».
+ */
+@Composable
+private fun TranslationBlock(text: String, container: AdminContainer) {
+    val colors = HonerTheme.colors
+    val looksRussian = remember(text) {
+        val cyr = text.count { it in 'а'..'я' || it in 'А'..'Я' || it == 'ё' || it == 'Ё' }
+        val letters = text.count { it.isLetter() }
+        letters == 0 || cyr.toDouble() / letters > 0.5
+    }
+    if (looksRussian) return
+    var result by remember(text) { mutableStateOf(translationCache[text]) }
+    LaunchedEffect(text) {
+        if (result == null) {
+            val r = runCatching { container.api.translate(text) }.getOrNull()
+            val out = if (r != null && r.translated) r.text else ""
+            translationCache[text] = out
+            result = out
+        }
+    }
+    val value = result
+    if (value == null) {
+        Text(tr("Перевод…", "Translating…"), fontSize = 12.sp, color = colors.secondary)
+    } else if (value.isNotBlank()) {
+        Box(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+            Column {
+                Text("🌐 " + tr("Перевод", "Translation"), fontSize = 11.sp, color = colors.secondary)
+                Text(value, fontSize = 15.sp, lineHeight = 20.sp, color = colors.foreground.copy(alpha = 0.92f))
             }
         }
     }
