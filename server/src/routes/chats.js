@@ -135,6 +135,19 @@ export function chatRoutes({ prefix, side }) {
         const chat = await chats.setAiEnabled(await loadChat(req), req.body.enabled);
         return chats.serializeChat(chat, 'admin');
       });
+
+      // «Взять» обращение в работу / освободить (план админка п.16).
+      // enabled=true → закрепить за собой; false → снять. Снять может любой админ (на случай, если кто-то ушёл).
+      app.post(`${prefix}/:chatId/assign`, {
+        preHandler,
+        schema: { params: chatParams, body: { type: 'object', properties: { assigned: { type: 'boolean', default: true } } } },
+      }, async (req) => {
+        const chat = await loadChat(req);
+        const updated = (req.body?.assigned === false)
+          ? await chats.releaseChat(chat)
+          : await chats.assignChat(chat, req.admin.id);
+        return chats.serializeChat(updated, 'admin');
+      });
     }
   };
 }

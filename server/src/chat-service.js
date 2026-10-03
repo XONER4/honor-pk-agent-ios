@@ -112,10 +112,16 @@ export function createChatService({ db, hub, push, media, logger }) {
     const lastMessage = last ? await serializeOne(chat, last) : null;
     let title = ADMIN_CHAT_TITLE;
     let peer;
+    let assignedAdminName = null;
     if (side === 'admin') {
       const d = device || (await db.one('SELECT display_name, device_name, device_model, last_seen_at FROM devices WHERE id = $1', [chat.device_id]));
       title = d?.display_name || d?.device_name || d?.device_model || 'Пользователь';
       peer = hub.devicePresence(chat.device_id, d?.last_seen_at);
+      // Кто взял обращение в работу (план админка п.16) — имя для подписи в списке/чате.
+      if (chat.assigned_admin_id) {
+        const assignee = await db.one('SELECT name, login, email FROM admins WHERE id = $1', [chat.assigned_admin_id]);
+        assignedAdminName = assignee?.name || assignee?.login || assignee?.email || null;
+      }
     } else {
       const a = await db.one('SELECT max(last_seen_at) AS last_seen FROM admins');
       peer = hub.adminPresence(a?.last_seen);
@@ -133,6 +139,9 @@ export function createChatService({ db, hub, push, media, logger }) {
       peerReadUpTo: (side === 'user' ? chat.admin_read_message_id : chat.user_read_message_id) || null,
       peerLastSeen: peer.lastSeen,
       peerPresence: peer.state,
+      assignedAdminId: chat.assigned_admin_id || null,
+      assignedAdminName,
+      assignedAt: chat.assigned_at ? iso(chat.assigned_at) : null,
     };
   }
 
@@ -335,6 +344,23 @@ export function createChatService({ db, hub, push, media, logger }) {
     return getChat(chat.id);
   }
 
+  /** «Взять» обращение в работу: закрепляется за админом adminId (план админка п.16). */
+  async function assignChat(chat, adminId) {
+    const at = new Date();
+    await db.query('UPDATE chats SET assigned_admin_id = $2, assigned_at = $3 WHERE id = $1', [chat.id, adminId, at]);
+    const updated = await getChat(chat.id);
+    hub.sendToAdmins({ t: 'chat.assigned', chatId: chat.id, assignedAdminId: adminId, assignedAt: iso(at) });
+    return updated;
+  }
+
+  /** Снять обращение (освободить для других админов). */
+  async function releaseChat(chat) {
+    await db.query('UPDATE chats SET assigned_admin_id = NULL, assigned_at = NULL WHERE id = $1', [chat.id]);
+    const updated = await getChat(chat.id);
+    hub.sendToAdmins({ t: 'chat.assigned', chatId: chat.id, assignedAdminId: null, assignedAt: null });
+    return updated;
+  }
+
   return {
     listeners,
     getChat,
@@ -353,6 +379,8 @@ export function createChatService({ db, hub, push, media, logger }) {
     clearChat,
     markRead,
     setAiEnabled,
+    assignChat,
+    releaseChat,
   };
 }
 

@@ -309,6 +309,11 @@ const STATEMENTS = [
 
   // Часовой пояс устройства (IANA, напр. Europe/Moscow) — приложение шлёт его начиная с новой версии.
   `ALTER TABLE devices ADD COLUMN IF NOT EXISTS timezone TEXT`,
+
+  // Назначение обращения в поддержке: какой админ «взял» чат в работу и когда (план админка п.16).
+  // Остальные видят, что чат занят (подсветка/таймер/read-only — на клиенте); снятие — явным действием.
+  `ALTER TABLE chats ADD COLUMN IF NOT EXISTS assigned_admin_id UUID`,
+  `ALTER TABLE chats ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ`,
 ];
 
 export async function migrate(db) {
