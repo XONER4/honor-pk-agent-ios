@@ -25,6 +25,9 @@ import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -189,14 +192,14 @@ private fun MainTabs(container: AdminContainer, navigator: Navigator, holder: Sa
     androidx.compose.material3.Scaffold(
         containerColor = colors.background,
         bottomBar = {
-            androidx.compose.material3.NavigationBar(containerColor = colors.surface, tonalElevation = 0.dp) {
+            NavigationBar(containerColor = colors.surface, tonalElevation = 0.dp) {
                 for ((i, t) in tabs.withIndex()) {
-                    androidx.compose.material3.NavigationBarItem(
+                    NavigationBarItem(
                         selected = pagerState.currentPage == i,
                         onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
                         icon = { androidx.compose.material3.Icon(t.icon, t.label, modifier = Modifier.width(24.dp)) },
                         label = { androidx.compose.material3.Text(t.label, fontSize = 11.sp, maxLines = 1) },
-                        colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                        colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = colors.accent, selectedTextColor = colors.accent,
                             indicatorColor = colors.accent.copy(alpha = 0.14f),
                             unselectedIconColor = colors.secondary, unselectedTextColor = colors.secondary,
