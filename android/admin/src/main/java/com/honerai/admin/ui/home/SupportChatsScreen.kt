@@ -25,7 +25,9 @@ import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,13 +39,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.honerai.admin.AdminContainer
 import com.honerai.admin.core.PresenceText
 import com.honerai.admin.core.Times
-import com.honerai.admin.data.DeviceSummary
+import com.honerai.admin.data.Chat
 import com.honerai.admin.data.Presence
-import com.honerai.admin.data.title
+import com.honerai.admin.data.Sender
 import com.honerai.admin.ui.Navigator
 import com.honerai.admin.ui.Route
+import com.honerai.admin.ui.chat.messagePreview
 import com.honerai.admin.ui.common.Avatar
 import com.honerai.admin.ui.common.EmptyState
+import com.honerai.admin.ui.common.LoadingBox
 import com.honerai.admin.ui.common.TopBar
 import com.honerai.admin.ui.common.rememberNow
 import com.honerai.admin.ui.theme.HonerTheme
@@ -51,7 +55,7 @@ import com.honerai.admin.ui.theme.LocalEnglish
 import com.honerai.admin.ui.theme.tr
 import java.time.ZoneId
 
-/** Вкладка «Поддержка»: переписки с пользователями (непрочитанные вверху), тап — открыть чат. */
+/** Вкладка «Поддержка»: переписки с пользователями (превью последнего сообщения, непрочитанные вверху). */
 @Composable
 fun SupportChatsScreen(container: AdminContainer, navigator: Navigator) {
     val colors = HonerTheme.colors
@@ -59,31 +63,41 @@ fun SupportChatsScreen(container: AdminContainer, navigator: Navigator) {
     val now = rememberNow()
     val zone = remember { ZoneId.systemDefault() }
     val users by container.repo.users.collectAsStateWithLifecycle()
+    var chats by remember { mutableStateOf<List<Chat>?>(null) }
 
-    val chats = remember(users.devices) {
-        users.devices.values
-            .filter { !it.deleted }
-            .sortedWith(
-                compareByDescending<DeviceSummary> { it.unreadForAdmin > 0 }
-                    .thenByDescending { it.unreadForAdmin }
-                    .thenByDescending { Times.parse(it.lastSeen)?.toEpochMilli() ?: 0L },
+    // Сигнал новых сообщений: суммарный unread из репозитория (обновляется по WebSocket) — перечитываем список.
+    val unreadSignal = users.devices.values.sumOf { it.unreadForAdmin }
+    androidx.compose.runtime.LaunchedEffect(unreadSignal) {
+        runCatching { container.api.chats() }.onSuccess { chats = it }
+    }
+
+    // Живые unread/присутствие берём из репозитория (реальное время), превью — из загруженного списка.
+    val merged = remember(chats, users.devices) {
+        (chats ?: emptyList()).map { c ->
+            val d = users.devices[c.deviceId]
+            if (d == null) c else c.copy(
+                unread = d.unreadForAdmin,
+                peerPresence = d.presence,
+                peerLastSeen = d.lastSeen ?: c.peerLastSeen,
+                peerTyping = d.typingIn == c.id || c.peerTyping,
             )
+        }.sortedWith(
+            compareByDescending<Chat> { it.unread > 0 }
+                .thenByDescending { Times.parse(it.lastMessage?.createdAt)?.toEpochMilli() ?: 0L },
+        )
     }
 
     Column(Modifier.fillMaxSize().background(colors.background)) {
         TopBar(tr("Поддержка", "Support"))
-        if (chats.isEmpty()) {
-            EmptyState(Icons.AutoMirrored.Rounded.Chat, tr("Переписок пока нет", "No conversations yet"))
-        } else {
-            LazyColumn(
+        when {
+            chats == null -> LoadingBox()
+            merged.isEmpty() -> EmptyState(Icons.AutoMirrored.Rounded.Chat, tr("Переписок пока нет", "No conversations yet"))
+            else -> LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
             ) {
-                items(chats, key = { it.deviceId }) { d ->
-                    ConversationRow(d, now, zone, english) {
-                        val chatId = d.adminChatId.takeIf { it.isNotEmpty() } ?: return@ConversationRow
-                        navigator.push(Route.Chat(chatId, d.deviceId))
-                    }
+                items(merged, key = { it.id }) { c ->
+                    ConversationRow(c, now, zone, english) { navigator.push(Route.Chat(c.id, c.deviceId)) }
                     Box(Modifier.fillMaxWidth().padding(start = 82.dp).height(0.6.dp).background(colors.divider))
                 }
             }
@@ -92,32 +106,51 @@ fun SupportChatsScreen(container: AdminContainer, navigator: Navigator) {
 }
 
 @Composable
-private fun ConversationRow(d: DeviceSummary, now: java.time.Instant, zone: ZoneId, english: Boolean, onClick: () -> Unit) {
+private fun ConversationRow(c: Chat, now: java.time.Instant, zone: ZoneId, english: Boolean, onClick: () -> Unit) {
     val colors = HonerTheme.colors
-    val name = d.title(english)
+    val blocked = false
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Avatar(name, d.deviceId, if (d.blocked) null else d.presence, size = 50.dp, blocked = d.blocked)
+        Avatar(c.title, c.deviceId, if (c.peerPresence == Presence.OFFLINE) null else c.peerPresence, size = 52.dp, blocked = blocked)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.foreground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val sub = if (d.typingIn != null) tr("печатает…", "typing…")
-            else PresenceText.status(d.presence, Times.parse(d.lastSeen), now, zone, english)
-            Text(sub, fontSize = 13.sp,
-                color = if (d.typingIn != null || d.presence != Presence.OFFLINE) colors.accent else colors.secondary,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        if (d.unreadForAdmin > 0) {
-            Spacer(Modifier.width(8.dp))
-            Box(
-                Modifier.size(24.dp).clip(CircleShape).background(colors.accent),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(if (d.unreadForAdmin > 99) "99+" else d.unreadForAdmin.toString(),
-                    fontSize = 11.sp, color = colors.background, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(c.title.ifBlank { tr("Пользователь", "User") }, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                    color = colors.foreground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                c.lastMessage?.createdAt?.let { Times.parse(it) }?.let { t ->
+                    Spacer(Modifier.width(8.dp))
+                    Text(PresenceText.ago(t, now, zone, english), fontSize = 12.sp, color = colors.secondary, maxLines = 1)
+                }
+            }
+            Spacer(Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val preview = previewText(c, english)
+                Text(preview, fontSize = 14.sp,
+                    color = if (c.peerTyping) colors.accent else colors.secondary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                if (c.unread > 0) {
+                    Spacer(Modifier.width(8.dp))
+                    Box(Modifier.size(22.dp).clip(CircleShape).background(colors.accent), contentAlignment = Alignment.Center) {
+                        Text(if (c.unread > 99) "99+" else c.unread.toString(),
+                            fontSize = 11.sp, color = colors.background, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
+    }
+}
+
+/** Превью последнего сообщения: «печатает…», либо «Вы/ИИ: текст», либо текст пользователя. */
+@Composable
+private fun previewText(c: Chat, english: Boolean): String {
+    if (c.peerTyping) return tr("печатает…", "typing…")
+    val m = c.lastMessage ?: return tr("Нет сообщений", "No messages")
+    val body = messagePreview(m, english)
+    return when (m.sender) {
+        Sender.ADMIN -> (if (english) "You: " else "Вы: ") + body
+        Sender.AI -> "Honer AI: " + body
+        else -> body
     }
 }
