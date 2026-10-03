@@ -121,6 +121,21 @@ class CloudApi(
 
     fun chats(): List<CloudChat> = call("GET", "/v1/chats", null, ListSerializer(CloudChat.serializer()))
 
+    // --- Вход через Яндекс + аккаунт/бэкап (п.12) ---
+    fun oauthStart(base: String): OAuthStart =
+        call("POST", "/v1/oauth/yandex/start", buildJsonObject { put("base", base) }.toString(), OAuthStart.serializer())
+
+    fun oauthResult(state: String): OAuthResult =
+        call("GET", "/v1/oauth/yandex/result?state=" + enc(state), null, OAuthResult.serializer())
+
+    fun account(): AccountInfo = call("GET", "/v1/account", null, AccountInfo.serializer())
+
+    fun backupPut(data: String) { exec("PUT", "/v1/account/backup", buildJsonObject { put("data", data) }.toString()) }
+
+    fun backupGet(): BackupData = call("GET", "/v1/account/backup", null, BackupData.serializer())
+
+    fun accountLogout() { exec("POST", "/v1/account/logout", "{}") }
+
     fun messages(chatId: String, before: String?, limit: Int = PAGE): List<CloudMessage> {
         val query = buildString {
             append("?limit=").append(limit)

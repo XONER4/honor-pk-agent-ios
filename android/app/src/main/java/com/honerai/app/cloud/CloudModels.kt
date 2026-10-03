@@ -125,6 +125,28 @@ data class RegisterResponse(
 @Serializable
 data class MeResponse(val ok: Boolean = true, val publicId: String? = null, val overrides: CloudOverrides? = null)
 
+// --- Вход через Яндекс + аккаунт/бэкап (сохранение данных после переустановки, п.12) ---
+
+@Serializable
+data class OAuthStart(val authUrl: String = "", val state: String = "")
+
+@Serializable
+data class OAuthResult(val done: Boolean = false, val restored: Boolean = false, val email: String? = null, val error: String? = null)
+
+@Serializable
+data class BackupMeta(val size: Int = 0, val updatedAt: String? = null)
+
+@Serializable
+data class AccountInfo(
+    val linked: Boolean = false,
+    val email: String? = null,
+    val name: String? = null,
+    val backup: BackupMeta? = null,
+)
+
+@Serializable
+data class BackupData(val data: String? = null, val updatedAt: String? = null)
+
 /**
  * Персональные ограничения от администратора (server/API.md → overrides). Сервер их не применяет —
  * это делает приложение; ключ отсутствует — ограничения нет.

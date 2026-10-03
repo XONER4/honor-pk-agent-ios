@@ -142,6 +142,10 @@ interface ChatStoreApi {
     /** Экспорт истории в JSON (тот же формат, что у iPhone). Возвращает файл во временной папке. */
     suspend fun exportData(): Result<java.io.File>
     suspend fun importData(uri: Uri): Result<Unit>
+    /** Бэкап истории+настроек в JSON для облака (без бинарных вложений). п.12. */
+    fun exportBackupJson(): String
+    /** Восстановление из облачного бэкапа: сливает чаты/настройки с текущими. */
+    fun importBackupJson(json: String)
     fun persistNow()
     fun recordSessionTime(seconds: Double)
     fun resetStatistics()

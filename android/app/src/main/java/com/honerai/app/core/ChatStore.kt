@@ -1977,6 +1977,14 @@ class ChatStore internal constructor(
         }
     }
 
+    /** Бэкап истории+настроек в JSON для облака (п.12). Без бинарных вложений — только текст/структура. */
+    override fun exportBackupJson(): String = HistoryArchiveIO.encode(archive)
+
+    /** Восстановление из облачного бэкапа: сливает чаты/настройки с текущими (дедуп по id). */
+    override fun importBackupJson(json: String) {
+        runCatching { applyImport(HistoryArchiveIO.decode(json)) }
+    }
+
     /** Немедленная запись (уход приложения в фон). */
     override fun persistNow() {
         if (isLoading) return
@@ -1986,6 +1994,10 @@ class ChatStore internal constructor(
             persistence.saveSynchronously(archive)
         } catch (e: Throwable) {
             _errorMessage.value = "Не удалось сохранить историю: ${e.message.orEmpty()}"
+        }
+        // Облачный бэкап при уходе в фон, если пользователь вошёл в аккаунт (п.12). Фоном, молча.
+        if (com.honerai.app.cloud.CloudManager.account.value?.linked == true) {
+            scope.launch { runCatching { com.honerai.app.cloud.CloudManager.uploadBackup(exportBackupJson()) } }
         }
     }
 

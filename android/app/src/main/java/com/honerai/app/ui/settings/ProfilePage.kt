@@ -23,7 +23,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Login
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Cake
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Image
@@ -237,6 +240,7 @@ internal fun ProfileSettingsPage(onBack: () -> Unit) {
                 }
             }
         }
+        item(key = "account") { AccountSection(container, settings.isEnglish) }
         item(key = "created") {
             SettingsGroup {
                 val created = settings.accountCreatedAt.atZone(ZoneId.systemDefault()).toLocalDate()
@@ -245,8 +249,8 @@ internal fun ProfileSettingsPage(onBack: () -> Unit) {
         }
         photoError?.let { error -> item(key = "error") { SettingsFootnote(error) } }
         item(key = "note") {
-            SettingsFootnote(t("Профиль и история чатов хранятся на этом телефоне. Вход в аккаунт не требуется.",
-                "Your profile and chat history are stored on this phone. No account sign-in is required."))
+            SettingsFootnote(t("Войдите через Яндекс, чтобы чаты и настройки сохранились и вернулись после переустановки. Без входа всё хранится только на этом телефоне.",
+                "Sign in with Yandex so your chats and settings are saved and restored after reinstalling. Without sign-in, everything is stored only on this phone."))
         }
     }
 
@@ -278,4 +282,77 @@ internal fun ProfileSettingsPage(onBack: () -> Unit) {
             DatePicker(state, colors = DatePickerDefaults.colors(containerColor = cardBackground, selectedDayContainerColor = colors.accent, todayDateBorderColor = colors.accent))
         }
     }
+}
+
+/** Аккаунт: вход через Яндекс и сохранение/восстановление данных (п.12). */
+@Composable
+private fun AccountSection(container: com.honerai.app.AppContainer, english: Boolean) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val account by com.honerai.app.cloud.CloudManager.account.collectAsState()
+    var status by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    fun tt(ru: String, en: String) = if (english) en else ru
+
+    androidx.compose.runtime.LaunchedEffect(Unit) { com.honerai.app.cloud.CloudManager.refreshAccount() }
+
+    fun login() {
+        if (busy) return
+        busy = true; status = tt("Открываю Яндекс…", "Opening Yandex…")
+        scope.launch {
+            val start = com.honerai.app.cloud.CloudManager.yandexStart()
+            if (start == null || start.authUrl.isBlank()) { status = tt("Не удалось начать вход", "Couldn't start sign-in"); busy = false; return@launch }
+            runCatching {
+                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(start.authUrl))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+            status = tt("Подтвердите вход в браузере…", "Confirm sign-in in the browser…")
+            repeat(90) {
+                kotlinx.coroutines.delay(2000)
+                val r = com.honerai.app.cloud.CloudManager.yandexResult(start.state)
+                if (r?.done == true) {
+                    if (r.error != null) { status = tt("Вход не удался, попробуйте снова", "Sign-in failed, try again"); busy = false; return@launch }
+                    com.honerai.app.cloud.CloudManager.refreshAccount()
+                    if (r.restored) {
+                        status = tt("Восстанавливаю данные…", "Restoring data…")
+                        com.honerai.app.cloud.CloudManager.downloadBackup()?.let { container.store.importBackupJson(it) }
+                    }
+                    runCatching { com.honerai.app.cloud.CloudManager.uploadBackup(container.store.exportBackupJson()) }
+                    com.honerai.app.cloud.CloudManager.refreshAccount()
+                    status = if (r.restored) tt("Готово — данные восстановлены", "Done — data restored") else tt("Вход выполнен, копия сохранена", "Signed in, backup saved")
+                    busy = false
+                    return@launch
+                }
+            }
+            status = tt("Время ожидания вышло. Попробуйте снова.", "Timed out. Try again."); busy = false
+        }
+    }
+
+    fun backupNow() {
+        if (busy) return
+        busy = true; status = tt("Сохраняю копию…", "Backing up…")
+        scope.launch {
+            val ok = com.honerai.app.cloud.CloudManager.uploadBackup(container.store.exportBackupJson())
+            com.honerai.app.cloud.CloudManager.refreshAccount()
+            status = if (ok) tt("Копия сохранена", "Backup saved") else tt("Не удалось сохранить", "Backup failed"); busy = false
+        }
+    }
+
+    fun signOut() {
+        scope.launch { com.honerai.app.cloud.CloudManager.logoutAccount(); status = tt("Вы вышли из аккаунта", "Signed out") }
+    }
+
+    SettingsGroup(tt("Аккаунт", "Account")) {
+        val acc = account
+        if (acc?.linked == true) {
+            SettingsRow(Icons.Filled.AccountCircle, tt("Вы вошли", "Signed in"), acc.email ?: acc.name.orEmpty(), chevron = false, tag = "account.email")
+            SettingsDivider()
+            SettingsRow(Icons.Outlined.Backup, tt("Сохранить копию сейчас", "Back up now"), enabled = !busy, tag = "account.backup", onClick = { backupNow() })
+            SettingsDivider()
+            SettingsRow(Icons.AutoMirrored.Outlined.Logout, tt("Выйти из аккаунта", "Sign out"), chevron = false, tag = "account.logout", onClick = { signOut() })
+        } else {
+            SettingsRow(Icons.AutoMirrored.Outlined.Login, tt("Войти через Яндекс", "Sign in with Yandex"), enabled = !busy, tag = "account.login", onClick = { login() })
+        }
+    }
+    status?.let { SettingsFootnote(it) }
 }

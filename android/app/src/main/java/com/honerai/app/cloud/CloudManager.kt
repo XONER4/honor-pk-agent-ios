@@ -88,6 +88,9 @@ object CloudManager {
     private val _aiTyping = MutableStateFlow(false)
     private val _peerPresence = MutableStateFlow("offline")
     private val _peerLastSeen = MutableStateFlow<Instant?>(null)
+    // Аккаунт (вход через Яндекс, сохранение данных) — п.12.
+    private val _account = MutableStateFlow<AccountInfo?>(null)
+    val account: StateFlow<AccountInfo?> = _account.asStateFlow()
     private val _peerReadUpTo = MutableStateFlow(0L)
     private val _lastReadMs = MutableStateFlow(0L)
     private val _hasMore = MutableStateFlow(true)
@@ -192,6 +195,8 @@ object CloudManager {
                     ?.let { CloudConfig.useDiscoveredRelay(it) }
                 resolveEndpoint()
             }
+            // Состояние аккаунта (вошёл ли, есть ли копия) — для авто-бэкапа и экрана профиля (п.12).
+            runCatching { refreshAccount() }
             // Готов ли ИИ на сервере: проверка при запуске и раз в 10 минут. Заодно перевыбираем адрес,
             // если текущий перестал отвечать.
             launch(Dispatchers.IO) {
@@ -360,6 +365,40 @@ object CloudManager {
             credentials.profileFingerprint = fingerprint
             applyServerProfile(me.publicId, me.overrides)
         }
+    }
+
+    // --- Аккаунт: вход через Яндекс + сохранение/восстановление данных (п.12) ---
+
+    /** Обновить состояние аккаунта (вошёл ли, email, есть ли копия). */
+    suspend fun refreshAccount() {
+        if (!enabled || credentials.token == null) return
+        runCatching { authed { it.account() } }.onSuccess { _account.value = it }
+    }
+
+    /** Начать вход через Яндекс: вернуть адрес авторизации + state для опроса. */
+    suspend fun yandexStart(): OAuthStart? {
+        if (!ensureRegistered(requireOnboarding = false)) return null
+        return runCatching { authed { it.oauthStart(CloudConfig.baseUrl) } }.getOrNull()
+    }
+
+    /** Опросить результат входа по state. */
+    suspend fun yandexResult(state: String): OAuthResult? =
+        runCatching { authed { it.oauthResult(state) } }.getOrNull()
+
+    /** Выгрузить резервную копию (JSON всей истории) под аккаунт. */
+    suspend fun uploadBackup(json: String): Boolean {
+        if (!enabled || credentials.token == null) return false
+        return runCatching { authed { it.backupPut(json) } }.isSuccess
+    }
+
+    /** Скачать резервную копию (для восстановления). null — копии нет. */
+    suspend fun downloadBackup(): String? =
+        runCatching { authed { it.backupGet().data } }.getOrNull()
+
+    /** Выйти из аккаунта (отвязать). Копия в облаке остаётся. */
+    suspend fun logoutAccount() {
+        runCatching { authed { it.accountLogout() } }
+        _account.value = AccountInfo(linked = false)
     }
 
     /** publicId и ограничения из ответа сервера (null — сервер их не прислал, оставляем прежние). */
