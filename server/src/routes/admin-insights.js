@@ -7,6 +7,7 @@ import { isValidTimezone } from '../ai-control.js';
 import { logAdminAction, toAdminAction, toDeviceEvent } from '../device-events.js';
 import { deviceOverrides } from './devices.js';
 import { uuid } from './schemas.js';
+import { ensure } from '../permissions.js';
 
 /** Снимок метрик для GET /v1/admin/metrics и WS-кадра {"t":"metrics"}. */
 export function createMetricsSnapshot({ db, hub, metrics, usage, aiControl, config }) {
@@ -228,6 +229,7 @@ export default async function adminInsightsRoutes(app) {
       },
     },
   }, async (req) => {
+    await ensure(db, req.admin, 'manageAi'); // право управлять ИИ (п.3)
     const { enabled, schedule, timezone } = req.body || {};
     if (timezone !== undefined && !isValidTimezone(timezone)) throw badRequest('Неизвестный часовой пояс');
     const patch = {};
@@ -329,6 +331,7 @@ export default async function adminInsightsRoutes(app) {
       },
     },
   }, async (req) => {
+    await ensure(db, req.admin, 'block'); // мут/запрет поддержки — тоже «блокировка» (п.3)
     const d = await requireDevice(req.params.deviceId);
     const next = { ...deviceOverrides(d) };
     for (const [k, v] of Object.entries(req.body || {})) {

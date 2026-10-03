@@ -10,6 +10,7 @@ import { hashPassword, LOGIN_PATTERN, normalizeLogin, verifyPassword } from '../
 import { toNotification } from './notifications.js';
 import { deviceOverrides } from './devices.js';
 import { uuid } from './schemas.js';
+import { ensure, normalizePermissions, permissionMap, PERMISSION_KEYS } from '../permissions.js';
 
 const PRESENCE_ORDER = { foreground: 0, background: 1, offline: 2 };
 const LOGIN_RE = new RegExp(LOGIN_PATTERN);
@@ -367,6 +368,7 @@ export default async function adminRoutes(app) {
       },
     },
   }, async (req) => {
+    await ensure(db, req.admin, 'block'); // право блокировать пользователей (п.3)
     const { blocked, reason } = req.body;
     const until = blocked && req.body.until ? new Date(req.body.until) : null;
     if (until && until.getTime() <= Date.now()) throw badRequest('Срок блокировки должен быть в будущем');
@@ -421,6 +423,7 @@ export default async function adminRoutes(app) {
       },
     },
   }, async (req) => {
+    await ensure(db, req.admin, 'broadcast'); // право на рассылки/уведомления (п.3)
     const { deviceId = null, title, body } = req.body;
     const targets = deviceId
       ? await db.many('SELECT id FROM devices WHERE id = $1', [deviceId])
@@ -450,6 +453,7 @@ export default async function adminRoutes(app) {
     adminId: a.id, email: a.email, name: a.name || a.login || 'Администратор', login: a.login || null,
     role: normalizeRole(a.role), hasPassword: !!a.password_hash,
     lastLoginAt: iso(a.last_login_at), createdAt: iso(a.created_at),
+    permissions: permissionMap(a), // права (п.3): у разработчика все true
   });
 
   app.get('/v1/admin/account', { preHandler: auth.requireAdmin }, async (req) =>
@@ -535,6 +539,33 @@ export default async function adminRoutes(app) {
     }
     await db.query('UPDATE admins SET role = $2 WHERE id = $1', [target.id, role]);
     await logAdminAction(db, { adminId: req.admin.id, action: 'set_role', detail: { target: target.id, role } }, req.log);
+    return adminView(await db.one('SELECT * FROM admins WHERE id = $1', [target.id]));
+  });
+
+  // Права администратора (план п.3) — выдаёт/снимает только разработчик. Значение — карта флагов.
+  app.patch('/v1/admin/admins/:adminId/permissions', {
+    preHandler: auth.requireAdmin,
+    schema: {
+      params: { type: 'object', required: ['adminId'], properties: { adminId: uuid } },
+      body: {
+        type: 'object',
+        required: ['permissions'],
+        properties: {
+          permissions: {
+            type: 'object',
+            additionalProperties: { type: 'boolean' },
+            properties: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, { type: 'boolean' }])),
+          },
+        },
+      },
+    },
+  }, async (req) => {
+    if (normalizeRole(req.admin.role) !== 'developer') throw unauthorized('Менять права может только разработчик');
+    const target = await db.one('SELECT * FROM admins WHERE id = $1', [req.params.adminId]);
+    if (!target) throw notFound('Администратор не найден');
+    const next = normalizePermissions(req.body.permissions);
+    await db.query('UPDATE admins SET permissions = $2 WHERE id = $1', [target.id, JSON.stringify(next)]);
+    await logAdminAction(db, { adminId: req.admin.id, action: 'set_permissions', detail: { target: target.id, permissions: next } }, req.log);
     return adminView(await db.one('SELECT * FROM admins WHERE id = $1', [target.id]));
   });
 

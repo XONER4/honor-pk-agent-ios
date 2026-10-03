@@ -4,6 +4,7 @@
 import { forbidden, notFound } from '../errors.js';
 import { attachmentRef, chatParams, messageParams, scopeQuery, uuid } from './schemas.js';
 import { deviceOverrides, restrictionState } from './devices.js';
+import { ensure } from '../permissions.js';
 
 export function chatRoutes({ prefix, side }) {
   return async function register(app) {
@@ -64,6 +65,7 @@ export function chatRoutes({ prefix, side }) {
       },
     }, async (req) => {
       const chat = await loadChat(req);
+      if (side === 'admin') await ensure(db, req.admin, 'reply'); // право отвечать в поддержку (п.3)
       // Запрет писать в поддержку (ограничение админа). Админская сторона не ограничивается.
       if (side === 'user') {
         const blk = restrictionState(deviceOverrides(req.device).blockSupport);
@@ -132,6 +134,7 @@ export function chatRoutes({ prefix, side }) {
         preHandler,
         schema: { params: chatParams, body: { type: 'object', required: ['enabled'], properties: { enabled: { type: 'boolean' } } } },
       }, async (req) => {
+        await ensure(db, req.admin, 'manageAi'); // право управлять ИИ в чате (п.3)
         const chat = await chats.setAiEnabled(await loadChat(req), req.body.enabled);
         return chats.serializeChat(chat, 'admin');
       });
@@ -142,6 +145,7 @@ export function chatRoutes({ prefix, side }) {
         preHandler,
         schema: { params: chatParams, body: { type: 'object', properties: { assigned: { type: 'boolean', default: true } } } },
       }, async (req) => {
+        await ensure(db, req.admin, 'assign'); // право брать обращения в работу (п.3)
         const chat = await loadChat(req);
         const updated = (req.body?.assigned === false)
           ? await chats.releaseChat(chat)

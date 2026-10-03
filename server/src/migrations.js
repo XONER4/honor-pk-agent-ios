@@ -320,6 +320,17 @@ const STATEMENTS = [
   // Остальные видят, что чат занят (подсветка/таймер/read-only — на клиенте); снятие — явным действием.
   `ALTER TABLE chats ADD COLUMN IF NOT EXISTS assigned_admin_id UUID`,
   `ALTER TABLE chats ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ`,
+
+  // Права администратора (план админка п.3): JSON-флаги. По умолчанию {} — у не-разработчика всё закрыто.
+  // Разработчик имеет все права всегда (в коде). Новые админы создаются с {} (закрыто).
+  `ALTER TABLE admins ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb`,
+  // ОДНОРАЗОВО: существующим не-разработчикам даём базовый набор (ответы+назначение), чтобы не потеряли
+  // доступ резко. Защита от повтора — маркер в server_settings (иначе рестарт затёр бы ручную отмену прав).
+  `UPDATE admins SET permissions = '{"reply":true,"assign":true}'::jsonb
+     WHERE role <> 'developer'
+       AND NOT EXISTS (SELECT 1 FROM server_settings WHERE key = 'perms_backfilled')`,
+  `INSERT INTO server_settings (key, value, updated_at) VALUES ('perms_backfilled', '1', now())
+     ON CONFLICT (key) DO NOTHING`,
 ];
 
 export async function migrate(db) {
