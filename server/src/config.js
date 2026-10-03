@@ -51,6 +51,9 @@ export function loadConfig(env = process.env) {
     adminKey: env.ADMIN_KEY || '',
     adminEmails: list(env.ADMIN_EMAILS).map((e) => e.toLowerCase()),
     googleClientIds: list(env.GOOGLE_CLIENT_IDS),
+    // Вход через Яндекс (сохранение данных после переустановки). ClientID не секретный — дефолт в коде.
+    // Используем implicit-флоу (response_type=token) → client_secret НЕ нужен.
+    yandexClientId: env.YANDEX_CLIENT_ID || 'c188e0f000964a21aa935336d502d23e',
     adminTokenTtlMs: int(env.ADMIN_TOKEN_TTL_MS, 180 * 24 * 3600 * 1000),
     loginRateMax: int(env.LOGIN_RATE_MAX, 10),
     loginRateWindowMs: int(env.LOGIN_RATE_WINDOW_MS, 15 * 60 * 1000),

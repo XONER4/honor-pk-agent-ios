@@ -343,6 +343,33 @@ const STATEMENTS = [
      messages INT,
      body TEXT
    )`,
+
+  // Вход через Яндекс / аккаунт пользователя (сохранение данных после переустановки, план прил. п.12).
+  // Привязка Яндекс-аккаунта к user: по yandex_id находим «свой» user и переносим на него устройство.
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS yandex_id TEXT`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS account_email TEXT`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS account_name TEXT`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS account_linked_at TIMESTAMPTZ`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS users_yandex_idx ON users (yandex_id) WHERE yandex_id IS NOT NULL`,
+  // Одноразовый state OAuth: связывает окно браузера с устройством, которое начало вход.
+  `CREATE TABLE IF NOT EXISTS oauth_states (
+     state TEXT PRIMARY KEY,
+     device_id UUID NOT NULL,
+     user_id UUID NOT NULL,
+     provider TEXT NOT NULL DEFAULT 'yandex',
+     created_at TIMESTAMPTZ NOT NULL,
+     done BOOLEAN NOT NULL DEFAULT FALSE,
+     restored BOOLEAN NOT NULL DEFAULT FALSE,
+     email TEXT,
+     error TEXT
+   )`,
+  // Резервная копия данных пользователя (чаты+настройки) под аккаунтом — для восстановления.
+  `CREATE TABLE IF NOT EXISTS backups (
+     user_id UUID PRIMARY KEY,
+     data TEXT NOT NULL,
+     size INT NOT NULL DEFAULT 0,
+     updated_at TIMESTAMPTZ NOT NULL
+   )`,
 ];
 
 export async function migrate(db) {

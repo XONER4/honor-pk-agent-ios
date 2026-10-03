@@ -23,6 +23,7 @@ import mediaRoutes from './routes/media.js';
 import notificationRoutes from './routes/notifications.js';
 import aiProxyRoutes from './routes/ai.js';
 import cloudRoutes from './routes/cloud.js';
+import oauthRoutes from './routes/oauth.js';
 import adminRoutes from './routes/admin.js';
 import legalRoutes from './routes/legal.js';
 import adminInsightsRoutes, { createMetricsSnapshot } from './routes/admin-insights.js';
@@ -196,6 +197,7 @@ export async function buildApp(config, overrides = {}) {
   await app.register(notificationRoutes);
   await app.register(aiProxyRoutes);
   await app.register(cloudRoutes);
+  await app.register(oauthRoutes);
   await app.register(adminRoutes);
   await app.register(adminInsightsRoutes);
   await app.register(legalRoutes);
