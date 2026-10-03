@@ -1210,8 +1210,6 @@ private fun FindButton(icon: ImageVector, label: String, tag: String, enabled: B
     ) { Icon(icon, null, tint = if (enabled) colors.foreground else colors.secondary.copy(alpha = 0.5f), modifier = Modifier.size(20.dp)) }
 }
 
-/** Приветствие пустого чата: знак, вопрос и версия приложения (видно, что установилась новая сборка). */
-@Composable
 /** Обои чата (#17): картинка-фон на всю область сообщений + лёгкая вуаль под цвет темы для читаемости. */
 @Composable
 private fun ChatWallpaper(path: String) {
@@ -1225,6 +1223,7 @@ private fun ChatWallpaper(path: String) {
     Box(Modifier.fillMaxSize().background(colors.background.copy(alpha = 0.55f)))
 }
 
+/** Приветствие пустого чата: знак, вопрос и версия приложения (видно, что установилась новая сборка). */
 @Composable
 private fun Welcome(english: Boolean, fontScale: Float, onTap: () -> Unit) {
     val colors = HonerTheme.colors
