@@ -2,7 +2,7 @@
 // история версий, заметки, журнал действий, персональные ограничения устройства.
 import { randomUUID } from 'node:crypto';
 import { badRequest, notFound } from '../errors.js';
-import { iso } from '../db.js';
+import { iso, json } from '../db.js';
 import { isValidTimezone } from '../ai-control.js';
 import { logAdminAction, toAdminAction, toDeviceEvent } from '../device-events.js';
 import { deviceOverrides } from './devices.js';
@@ -78,6 +78,76 @@ export default async function adminInsightsRoutes(app) {
       avgResponseSeconds,
       samples,
     };
+  });
+
+  // ---------- Общий чат команды (админы + разработчик), план админка п.9 ----------
+  const toStaffMessage = (myId) => (r) => ({
+    id: r.id,
+    seq: Number(r.seq),
+    adminId: r.admin_id,
+    adminName: r.admin_name || r.admin_login || 'Администратор',
+    adminRole: r.admin_role || 'admin',
+    text: r.text || '',
+    attachments: json(r.attachments, []),
+    createdAt: iso(r.created_at),
+    mine: r.admin_id === myId,
+  });
+
+  app.get('/v1/admin/staff/messages', {
+    preHandler: auth.requireAdmin,
+    schema: { querystring: { type: 'object', properties: {
+      before: { type: 'integer' }, limit: { type: 'integer', minimum: 1, maximum: 100 } } } },
+  }, async (req) => {
+    const limit = Number(req.query.limit) || 50;
+    const beforeSeq = req.query.before ? Number(req.query.before) : null;
+    const where = beforeSeq ? 'WHERE m.deleted = FALSE AND m.seq < $2' : 'WHERE m.deleted = FALSE';
+    const params = beforeSeq ? [limit, beforeSeq] : [limit];
+    const rows = await db.many(
+      `SELECT m.*, a.name AS admin_name, a.login AS admin_login, a.role AS admin_role
+         FROM staff_messages m LEFT JOIN admins a ON a.id = m.admin_id
+         ${where} ORDER BY m.seq DESC LIMIT $1`, params);
+    rows.reverse();
+    return rows.map(toStaffMessage(req.admin.id));
+  });
+
+  app.post('/v1/admin/staff/messages', {
+    preHandler: auth.requireAdmin,
+    schema: { body: { type: 'object', properties: {
+      text: { type: 'string', maxLength: 10_000, default: '' },
+      attachments: { type: 'array', maxItems: 10, default: [] } } } },
+  }, async (req) => {
+    const text = (req.body.text || '').trim();
+    const attachments = req.body.attachments || [];
+    if (!text && attachments.length === 0) throw badRequest('Пустое сообщение');
+    const id = randomUUID();
+    const r = await db.one(
+      `INSERT INTO staff_messages (id, admin_id, text, attachments, created_at)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [id, req.admin.id, text, JSON.stringify(attachments), new Date()]);
+    const a = await db.one('SELECT name, login, role FROM admins WHERE id = $1', [req.admin.id]);
+    const msg = toStaffMessage(req.admin.id)({ ...r, admin_name: a?.name, admin_login: a?.login, admin_role: a?.role });
+    hub.sendToAdmins({ t: 'staff', message: { ...msg, mine: false } });
+    return msg;
+  });
+
+  app.get('/v1/admin/staff/unread', { preHandler: auth.requireAdmin }, async (req) => {
+    const last = await db.one('SELECT max(seq) AS s FROM staff_messages WHERE deleted = FALSE');
+    const read = await db.one('SELECT read_seq FROM staff_reads WHERE admin_id = $1', [req.admin.id]);
+    const readSeq = Number(read?.read_seq) || 0;
+    const unread = await db.one(
+      'SELECT count(*)::int AS c FROM staff_messages WHERE deleted = FALSE AND seq > $1 AND admin_id <> $2',
+      [readSeq, req.admin.id]);
+    return { unread: Number(unread.c), lastSeq: Number(last?.s) || 0 };
+  });
+
+  app.post('/v1/admin/staff/read', { preHandler: auth.requireAdmin }, async (req) => {
+    const last = await db.one('SELECT max(seq) AS s FROM staff_messages');
+    const seq = Number(last?.s) || 0;
+    await db.query(
+      `INSERT INTO staff_reads (admin_id, read_seq, at) VALUES ($1, $2, $3)
+         ON CONFLICT (admin_id) DO UPDATE SET read_seq = GREATEST(staff_reads.read_seq, EXCLUDED.read_seq), at = EXCLUDED.at`,
+      [req.admin.id, seq, new Date()]);
+    return { ok: true, readSeq: seq };
   });
 
   // Перевод сообщения пользователя на русский для поддержки (план админка п.1). Текст, уже в основном
