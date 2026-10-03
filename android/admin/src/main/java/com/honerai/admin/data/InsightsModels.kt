@@ -203,7 +203,22 @@ data class AdminAccount(
     val lastLoginAt: String? = null,
     val createdAt: String? = null,
     val presence: String? = null,
+    // Права (п.3): reply/assign/block/broadcast/manageAi. У разработчика все true.
+    val permissions: Map<String, Boolean> = emptyMap(),
 )
+
+/** Известные права и их человекочитаемые названия. */
+object AdminPermissions {
+    val KEYS = listOf("reply", "assign", "block", "broadcast", "manageAi")
+    fun title(key: String, english: Boolean): String = when (key) {
+        "reply" -> if (english) "Reply in support" else "Отвечать в поддержке"
+        "assign" -> if (english) "Take tickets" else "Брать обращения"
+        "block" -> if (english) "Block / mute users" else "Блокировать / мут"
+        "broadcast" -> if (english) "Broadcasts" else "Рассылки"
+        "manageAi" -> if (english) "Manage AI" else "Управлять ИИ"
+        else -> key
+    }
+}
 
 /** Запись журнала входов в админку (GET /v1/admin/logins). */
 @Serializable

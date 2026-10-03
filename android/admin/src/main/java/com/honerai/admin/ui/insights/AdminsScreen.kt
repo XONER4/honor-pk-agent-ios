@@ -80,7 +80,9 @@ fun AdminsScreen(container: AdminContainer, navigator: Navigator) {
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     var roleDialog by remember { mutableStateOf<AdminAccount?>(null) }
+    var permsDialog by remember { mutableStateOf<AdminAccount?>(null) }
     val roleChangedMsg = tr("Роль изменена", "Role changed")
+    val permsSavedMsg = tr("Права обновлены", "Permissions updated")
 
     LaunchedEffect(reload) {
         loading = true; error = null
@@ -110,9 +112,11 @@ fun AdminsScreen(container: AdminContainer, navigator: Navigator) {
                 ) {
                     items(items, key = { it.adminId }) { a ->
                         val isSelf = a.email.isNotBlank() && a.email == session?.email
-                        AdminRow(a, now, zone, english, canEdit = isDeveloper && !isSelf) {
-                            roleDialog = a
-                        }
+                        AdminRow(
+                            a, now, zone, english, canEdit = isDeveloper && !isSelf,
+                            onEditRole = { roleDialog = a },
+                            onEditPerms = { permsDialog = a },
+                        )
                         Box(Modifier.fillMaxWidth().padding(start = 16.dp).height(0.6.dp).background(colors.divider))
                     }
                 }
@@ -144,14 +148,77 @@ fun AdminsScreen(container: AdminContainer, navigator: Navigator) {
             },
         )
     }
+
+    permsDialog?.let { a ->
+        PermissionsDialog(
+            admin = a, english = english,
+            onDismiss = { permsDialog = null },
+            onSave = { next ->
+                permsDialog = null
+                scope.launch {
+                    try {
+                        container.api.setAdminPermissions(a.adminId, next)
+                        toast.show(permsSavedMsg)
+                        reload++
+                    } catch (e: Exception) {
+                        toast.show(friendlyError(e, english))
+                    }
+                }
+            },
+        )
+    }
+}
+
+/** Диалог прав администратора: переключатели по каждому праву (план п.3). */
+@Composable
+private fun PermissionsDialog(admin: AdminAccount, english: Boolean, onDismiss: () -> Unit, onSave: (Map<String, Boolean>) -> Unit) {
+    val colors = HonerTheme.colors
+    val state = remember(admin.adminId) {
+        mutableStateListOf<Boolean>().apply { com.honerai.admin.data.AdminPermissions.KEYS.forEach { add(admin.permissions[it] == true) } }
+    }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(22.dp))
+                .background(colors.sidebar).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(tr("Права · ", "Rights · ") + (admin.name.ifBlank { admin.login ?: admin.email }),
+                fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = colors.foreground)
+            Text(tr("Что разрешено этому администратору.", "What this administrator may do."),
+                fontSize = 13.sp, color = colors.secondary, modifier = Modifier.padding(bottom = 8.dp))
+            com.honerai.admin.data.AdminPermissions.KEYS.forEachIndexed { i, key ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { state[i] = !state[i] }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(com.honerai.admin.data.AdminPermissions.title(key, english), fontSize = 15.sp,
+                        color = colors.foreground, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.Switch(checked = state[i], onCheckedChange = { state[i] = it })
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.End) {
+                Text(tr("Отмена", "Cancel"), fontSize = 15.sp, color = colors.secondary,
+                    modifier = Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).clickable(onClick = onDismiss).padding(horizontal = 14.dp, vertical = 8.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(tr("Сохранить", "Save"), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = colors.accent,
+                    modifier = Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).clickable {
+                        val map = com.honerai.admin.data.AdminPermissions.KEYS.mapIndexed { i, k -> k to state[i] }.toMap()
+                        onSave(map)
+                    }.padding(horizontal = 14.dp, vertical = 8.dp))
+            }
+        }
+    }
 }
 
 @Composable
-private fun AdminRow(a: AdminAccount, now: java.time.Instant, zone: ZoneId, english: Boolean, canEdit: Boolean, onEditRole: () -> Unit) {
+private fun AdminRow(
+    a: AdminAccount, now: java.time.Instant, zone: ZoneId, english: Boolean,
+    canEdit: Boolean, onEditRole: () -> Unit, onEditPerms: () -> Unit,
+) {
     val colors = HonerTheme.colors
     val online = a.presence != null && a.presence != "offline"
     Row(
-        Modifier.fillMaxWidth().let { if (canEdit) it.clickable(onClick = onEditRole) else it }.padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(9.dp).clip(CircleShape).background(if (online) colors.online else colors.secondary))
@@ -168,6 +235,12 @@ private fun AdminRow(a: AdminAccount, now: java.time.Instant, zone: ZoneId, engl
             ).joinToString(" · ")
             if (meta.isNotEmpty()) Text(meta, fontSize = 12.sp, color = colors.secondary)
         }
-        if (canEdit) Text(tr("роль", "role"), fontSize = 13.sp, color = colors.accent)
+        if (canEdit) Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Права настраиваем только у обычного админа (у разработчика и так всё).
+            if (a.role != Roles.DEVELOPER) Text(tr("права", "rights"), fontSize = 13.sp, color = colors.accent,
+                modifier = Modifier.clip(CircleShape).clickable(onClick = onEditPerms).padding(horizontal = 6.dp, vertical = 4.dp))
+            Text(tr("роль", "role"), fontSize = 13.sp, color = colors.accent,
+                modifier = Modifier.clip(CircleShape).clickable(onClick = onEditRole).padding(horizontal = 6.dp, vertical = 4.dp))
+        }
     }
 }

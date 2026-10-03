@@ -272,6 +272,15 @@ class ApiClient(
         AdminJson.decodeFromString(AdminAccount.serializer(),
             send("PATCH", "/v1/admin/admins/$adminId/role", buildJsonObject { put("role", role) }))
 
+    /** Выдать/снять права администратору (только разработчик). План п.3. */
+    suspend fun setAdminPermissions(adminId: String, permissions: Map<String, Boolean>): AdminAccount {
+        val body = buildJsonObject {
+            put("permissions", buildJsonObject { permissions.forEach { (k, v) -> put(k, v) } })
+        }
+        return AdminJson.decodeFromString(AdminAccount.serializer(),
+            send("PATCH", "/v1/admin/admins/$adminId/permissions", body))
+    }
+
     /** Общая лента действий (админы + пользователи). */
     suspend fun activity(limit: Int = 80): List<ActivityItem> =
         get("/v1/admin/activity", ListSerializer(ActivityItem.serializer()), mapOf("limit" to limit.toString()))
