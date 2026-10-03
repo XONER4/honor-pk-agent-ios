@@ -80,6 +80,10 @@ data class Chat(
     val peerReadUpTo: String? = null,
     val peerLastSeen: String? = null,
     val peerPresence: String = Presence.OFFLINE,
+    // Кто «взял» обращение в работу (п.16): id/имя админа и когда. null — свободно.
+    val assignedAdminId: String? = null,
+    val assignedAdminName: String? = null,
+    val assignedAt: String? = null,
 )
 
 @Serializable

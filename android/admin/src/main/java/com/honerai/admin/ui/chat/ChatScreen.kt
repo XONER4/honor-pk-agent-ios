@@ -133,6 +133,15 @@ fun ChatScreen(container: AdminContainer, navigator: Navigator, chatId: String, 
     val zone = remember { ZoneId.systemDefault() }
     val now = rememberNow()
 
+    // Свой adminId — чтобы отличать «моё» обращение от чужого (п.16). Запрашиваем один раз.
+    var myAdminId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { myAdminId = runCatching { container.api.account().adminId }.getOrNull() }
+    val assignedId = state.chat?.assignedAdminId
+    val assignedName = state.chat?.assignedAdminName
+    val assignedAt = state.chat?.assignedAt
+    val assignedToMe = assignedId != null && assignedId == myAdminId
+    val assignedToOther = assignedId != null && assignedId != myAdminId
+
     var text by rememberSaveable(chatId) { mutableStateOf("") }
     var replyTo by remember { mutableStateOf<Message?>(null) }
     var editing by remember { mutableStateOf<Message?>(null) }
@@ -331,6 +340,17 @@ fun ChatScreen(container: AdminContainer, navigator: Navigator, chatId: String, 
                 },
             )
             if (aiEnabled) GroupBanner()
+            // Назначение обращения (п.16): кто взял в работу, таймер, кнопка «Взять/Освободить/Перехватить».
+            if (state.loaded) AssignBanner(
+                assignedName = assignedName,
+                assignedAt = assignedAt,
+                assignedToMe = assignedToMe,
+                assignedToOther = assignedToOther,
+                now = now,
+                english = english,
+                onTake = { controller.assign(true) },
+                onRelease = { controller.assign(false) },
+            )
             val pinned = state.chat?.pinnedMessageId?.let { byId[it]?.message }
                 ?: state.items.lastOrNull { it.message.pinned && !it.message.deleted }?.message
             if (pinned != null) PinnedBar(pinned, english, onClick = { scrollToMessage(pinned.id) }, onUnpin = { controller.pin(pinned, false) })
@@ -382,7 +402,8 @@ fun ChatScreen(container: AdminContainer, navigator: Navigator, chatId: String, 
             }
 
             // --- Ввод ------------------------------------------------------------------------------------
-            ChatComposer(
+            if (assignedToOther) ReadOnlyAssignedBar(assignedName, english) { controller.assign(true) }
+            else ChatComposer(
                 container = container,
                 text = text,
                 onText = { text = it; if (editing == null) controller.onInput(it) },
@@ -461,6 +482,79 @@ private fun DayChip(label: String) {
     Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
         Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = colors.secondary,
             modifier = Modifier.clip(CircleShape).background(colors.surface).padding(horizontal = 12.dp, vertical = 4.dp))
+    }
+}
+
+/** Строка назначения обращения (п.16): состояние + действие. */
+@Composable
+private fun AssignBanner(
+    assignedName: String?,
+    assignedAt: String?,
+    assignedToMe: Boolean,
+    assignedToOther: Boolean,
+    now: java.time.Instant,
+    english: Boolean,
+    onTake: () -> Unit,
+    onRelease: () -> Unit,
+) {
+    val colors = HonerTheme.colors
+    val timer = remember(assignedAt, now) { elapsedSince(assignedAt, now, english) }
+    val (tint, label, action, onAction) = when {
+        assignedToMe -> Quad(colors.online,
+            (if (english) "You took this chat" else "Вы взяли обращение") + (if (timer.isNotEmpty()) " · $timer" else ""),
+            tr("Освободить", "Release"), onRelease)
+        assignedToOther -> Quad(colors.danger,
+            (if (english) "In work: " else "В работе: ") + (assignedName ?: (if (english) "another admin" else "другой админ")) + (if (timer.isNotEmpty()) " · $timer" else ""),
+            tr("Перехватить", "Take over"), onTake)
+        else -> Quad(colors.secondary, tr("Обращение свободно", "Chat is unassigned"),
+            tr("Взять в работу", "Take"), onTake)
+    }
+    Row(
+        Modifier.fillMaxWidth().background(tint.copy(alpha = 0.10f)).padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(tint))
+        Spacer(Modifier.width(8.dp))
+        Text(label, fontSize = 13.sp, color = colors.foreground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
+        Text(action, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = tint,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onAction).padding(horizontal = 8.dp, vertical = 4.dp))
+    }
+}
+
+/** Вместо композера, если обращение в работе у другого админа: только чтение + «Перехватить». */
+@Composable
+private fun ReadOnlyAssignedBar(assignedName: String?, english: Boolean, onTakeOver: () -> Unit) {
+    val colors = HonerTheme.colors
+    Row(
+        Modifier.fillMaxWidth().background(colors.surface).padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Person, null, tint = colors.secondary, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            (if (english) "Only reading — in work: " else "Только чтение — в работе: ") + (assignedName ?: (if (english) "another admin" else "другой админ")),
+            fontSize = 13.sp, color = colors.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(tr("Перехватить", "Take over"), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.accent,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onTakeOver).padding(horizontal = 8.dp, vertical = 6.dp))
+    }
+}
+
+private data class Quad(val tint: androidx.compose.ui.graphics.Color, val label: String, val action: String, val onAction: () -> Unit)
+
+/** «5 мин», «1 ч 20 м» с момента assignedAt. Пусто, если нет времени. */
+private fun elapsedSince(iso: String?, now: java.time.Instant, english: Boolean): String {
+    val start = Times.parse(iso) ?: return ""
+    val mins = java.time.Duration.between(start, now).toMinutes().coerceAtLeast(0)
+    return when {
+        mins < 1L -> if (english) "just now" else "только что"
+        mins < 60L -> if (english) "$mins min" else "$mins мин"
+        else -> {
+            val h = mins / 60; val m = mins % 60
+            if (english) "${h}h ${m}m" else "${h}ч ${m}м"
+        }
     }
 }
 

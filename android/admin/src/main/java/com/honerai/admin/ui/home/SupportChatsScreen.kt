@@ -57,6 +57,7 @@ import com.honerai.admin.ui.common.rememberNow
 import com.honerai.admin.ui.theme.HonerTheme
 import com.honerai.admin.ui.theme.LocalEnglish
 import com.honerai.admin.ui.theme.tr
+import kotlinx.coroutines.launch
 import java.time.ZoneId
 
 /** Вкладка «Поддержка»: переписки с пользователями (превью последнего сообщения, непрочитанные вверху). */
@@ -68,6 +69,8 @@ fun SupportChatsScreen(container: AdminContainer, navigator: Navigator) {
     val zone = remember { ZoneId.systemDefault() }
     val users by container.repo.users.collectAsStateWithLifecycle()
     val pinned by container.settings.pinned.collectAsStateWithLifecycle()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     var chats by remember { mutableStateOf<List<Chat>?>(null) }
     var staffUnread by remember { mutableStateOf(0) }
 
@@ -110,7 +113,8 @@ fun SupportChatsScreen(container: AdminContainer, navigator: Navigator) {
             chats == null -> LoadingBox()
             merged.isEmpty() -> EmptyState(Icons.AutoMirrored.Rounded.Chat, tr("Переписок пока нет", "No conversations yet"))
             else -> LazyColumn(
-                Modifier.fillMaxSize(),
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
             ) {
                 items(merged, key = { it.id }) { c ->
@@ -118,7 +122,12 @@ fun SupportChatsScreen(container: AdminContainer, navigator: Navigator) {
                         c, now, zone, english,
                         pinned = pinned.contains(c.deviceId),
                         onClick = { navigator.push(Route.Chat(c.id, c.deviceId)) },
-                        onTogglePin = { container.settings.togglePinned(c.deviceId) },
+                        onTogglePin = {
+                            val wasPinned = pinned.contains(c.deviceId)
+                            container.settings.togglePinned(c.deviceId)
+                            // При закреплении чат уезжает наверх — прокручиваем к нему, чтобы он не «исчез».
+                            if (!wasPinned) scope.launch { listState.animateScrollToItem(0) }
+                        },
                     )
                     Box(Modifier.fillMaxWidth().padding(start = 82.dp).height(0.6.dp).background(colors.divider))
                 }

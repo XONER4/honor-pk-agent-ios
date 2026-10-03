@@ -313,6 +313,20 @@ class ChatController(
         }
     }
 
+    /** «Взять» обращение в работу (assigned=true) или освободить. Обновляет chat из ответа сервера. План п.16. */
+    fun assign(assigned: Boolean) {
+        scope.launch {
+            try {
+                val chat = api.assignChat(chatId, assigned)
+                if (chat != null) _state.update { it.copy(chat = chat) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _toasts.tryEmit(friendlyError(e, english))
+            }
+        }
+    }
+
     private fun action(rollback: () -> Unit, block: suspend () -> Unit) {
         scope.launch {
             try {

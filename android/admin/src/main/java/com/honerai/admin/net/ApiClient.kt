@@ -379,6 +379,12 @@ class ApiClient(
         return decodeOrNull(Chat.serializer(), text)
     }
 
+    /** «Взять» обращение в работу (assigned=true) или освободить (false). План админка п.16. */
+    suspend fun assignChat(chatId: String, assigned: Boolean): Chat? {
+        val text = send("POST", "/v1/admin/chats/$chatId/assign", buildJsonObject { put("assigned", assigned) })
+        return decodeOrNull(Chat.serializer(), text)
+    }
+
     // --- Файлы ----------------------------------------------------------------------------------------------
 
     /** POST /v1/media (multipart «file»). [open] открывает поток заново при повторе запроса. */
