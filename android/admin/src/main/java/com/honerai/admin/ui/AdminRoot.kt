@@ -190,7 +190,7 @@ private fun MainTabs(container: AdminContainer, navigator: Navigator, holder: Sa
         containerColor = colors.background,
         bottomBar = {
             androidx.compose.material3.NavigationBar(containerColor = colors.surface, tonalElevation = 0.dp) {
-                tabs.forEachIndexed { i, t ->
+                for ((i, t) in tabs.withIndex()) {
                     androidx.compose.material3.NavigationBarItem(
                         selected = pagerState.currentPage == i,
                         onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
