@@ -307,6 +307,12 @@ const STATEMENTS = [
        AND id = (SELECT id FROM admins WHERE password_hash IS NOT NULL ORDER BY created_at ASC LIMIT 1)
        AND NOT EXISTS (SELECT 1 FROM admins WHERE role = 'developer')`,
 
+  // Владелец мог войти через Google (без пароля) — тогда миграция выше его не повышает.
+  // Если разработчика до сих пор НЕТ, делаем им самый старый аккаунт (владельца). Срабатывает один раз.
+  `UPDATE admins SET role = 'developer'
+     WHERE id = (SELECT id FROM admins ORDER BY created_at ASC LIMIT 1)
+       AND NOT EXISTS (SELECT 1 FROM admins WHERE role = 'developer')`,
+
   // Часовой пояс устройства (IANA, напр. Europe/Moscow) — приложение шлёт его начиная с новой версии.
   `ALTER TABLE devices ADD COLUMN IF NOT EXISTS timezone TEXT`,
 
