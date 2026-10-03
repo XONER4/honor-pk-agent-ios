@@ -165,6 +165,7 @@ data class OverridesResponse(val overrides: Overrides = Overrides())
 @Serializable
 data class SupportStats(
     val online: Boolean = false,
+    val mode: String = "auto", // auto | online | offline (п.20)
     val lastOnlineAt: String? = null,
     val avgResponseSeconds: Int? = null,
     val samples: Int = 0,

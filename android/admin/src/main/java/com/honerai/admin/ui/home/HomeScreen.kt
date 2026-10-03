@@ -98,6 +98,7 @@ import com.honerai.admin.ui.theme.LocalEnglish
 import com.honerai.admin.ui.theme.tr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
@@ -255,28 +256,60 @@ private fun AdminBadge() {
         modifier = Modifier.clip(CircleShape).background(colors.adminRed).padding(horizontal = 7.dp, vertical = 2.dp))
 }
 
-/** Компактная строка статуса поддержки: в сети/не в сети и среднее время ответа (план п.20). */
+/** Компактная строка статуса поддержки: в сети/не в сети и среднее время ответа (план п.20).
+ *  Нажатие — выбор режима: авто (по присутствию), всегда в сети, не в сети. */
 @Composable
 private fun SupportStatusRow(container: com.honerai.admin.AdminContainer) {
     val colors = HonerTheme.colors
     val english = com.honerai.admin.ui.theme.LocalEnglish.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var stats by remember { mutableStateOf<com.honerai.admin.data.SupportStats?>(null) }
-    LaunchedEffect(Unit) { runCatching { container.api.supportStats() }.onSuccess { stats = it } }
+    var menu by remember { mutableStateOf(false) }
+    var reload by remember { mutableStateOf(0) }
+    LaunchedEffect(reload) { runCatching { container.api.supportStats() }.onSuccess { stats = it } }
     val s = stats ?: return
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(if (s.online) colors.online else colors.secondary))
-        Spacer(Modifier.width(8.dp))
-        Text(
-            if (s.online) tr("Поддержка в сети", "Support online") else tr("Поддержка не в сети", "Support offline"),
-            fontSize = 14.sp, color = colors.foreground, fontWeight = FontWeight.Medium,
-        )
-        s.avgResponseSeconds?.let { avg ->
-            Spacer(Modifier.weight(1f))
-            Text(tr("ср. ответ ", "avg reply ") + PresenceText.duration(avg.toLong(), english),
-                fontSize = 13.sp, color = colors.secondary)
+    val modeLabel = when (s.mode) {
+        "online" -> tr("вручную: в сети", "manual: online")
+        "offline" -> tr("вручную: не в сети", "manual: offline")
+        else -> tr("авто", "auto")
+    }
+    fun setMode(mode: String) {
+        menu = false
+        scope.launch { runCatching { container.api.setSupportStatus(mode) }; reload++ }
+    }
+    Box {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { menu = true }
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(8.dp).clip(CircleShape).background(if (s.online) colors.online else colors.secondary))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (s.online) tr("Поддержка в сети", "Support online") else tr("Поддержка не в сети", "Support offline"),
+                fontSize = 14.sp, color = colors.foreground, fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text("· $modeLabel", fontSize = 12.sp, color = colors.secondary)
+            s.avgResponseSeconds?.let { avg ->
+                Spacer(Modifier.weight(1f))
+                Text(tr("ср. ответ ", "avg reply ") + PresenceText.duration(avg.toLong(), english),
+                    fontSize = 13.sp, color = colors.secondary)
+            }
+        }
+        androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false },
+            containerColor = colors.sidebar) {
+            val opts = listOf(
+                "auto" to tr("Авто (по присутствию)", "Auto (by presence)"),
+                "online" to tr("Всегда в сети", "Always online"),
+                "offline" to tr("Не в сети", "Offline"),
+            )
+            for ((mode, label) in opts) {
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(label, color = if (s.mode == mode) colors.accent else colors.foreground) },
+                    onClick = { setMode(mode) },
+                )
+            }
         }
     }
 }

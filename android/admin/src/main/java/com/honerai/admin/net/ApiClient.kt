@@ -288,6 +288,9 @@ class ApiClient(
     /** Статус поддержки: в сети и среднее время ответа. */
     suspend fun supportStats(): SupportStats = get("/v1/admin/support-stats", SupportStats.serializer())
 
+    /** Установить режим статуса поддержки: auto | online | offline (п.20). */
+    suspend fun setSupportStatus(mode: String) { send("PATCH", "/v1/admin/support-status", buildJsonObject { put("mode", mode) }) }
+
     /** Общий чат команды: список сообщений (старые — через before=seq). */
     suspend fun staffMessages(before: Long? = null, limit: Int = 50): List<StaffMessage> =
         get("/v1/admin/staff/messages", ListSerializer(StaffMessage.serializer()),

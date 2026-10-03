@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BugReport
@@ -52,6 +53,9 @@ fun MoreScreen(container: AdminContainer, navigator: Navigator) {
     val colors = HonerTheme.colors
     val session by container.session.session.collectAsStateWithLifecycle()
     val isDeveloper = session?.isDeveloper == true
+    val perms by container.myPermissions.collectAsStateWithLifecycle()
+    // Разработчик может всё; остальным показываем пункт, только если право выдано. План п.3.
+    fun can(key: String) = isDeveloper || perms[key] == true
 
     Column(Modifier.fillMaxSize().background(colors.background)) {
         TopBar(tr("Ещё", "More"))
@@ -63,10 +67,14 @@ fun MoreScreen(container: AdminContainer, navigator: Navigator) {
             SectionCard {
                 Column {
                     MoreRow(Icons.Rounded.BugReport, tr("Ошибки и падения", "Errors and crashes")) { navigator.push(Route.Reports) }
-                    MoreDivider()
-                    MoreRow(Icons.Rounded.Campaign, tr("Рассылка уведомлений", "Broadcast")) { navigator.push(Route.Broadcast(null)) }
-                    MoreDivider()
-                    MoreRow(Icons.Rounded.AutoAwesome, tr("Настройки ИИ", "AI settings")) { navigator.push(Route.Ai) }
+                    if (can("broadcast")) {
+                        MoreDivider()
+                        MoreRow(Icons.Rounded.Campaign, tr("Рассылка уведомлений", "Broadcast")) { navigator.push(Route.Broadcast(null)) }
+                    }
+                    if (can("manageAi")) {
+                        MoreDivider()
+                        MoreRow(Icons.Rounded.AutoAwesome, tr("Настройки ИИ", "AI settings")) { navigator.push(Route.Ai) }
+                    }
                 }
             }
             SectionCard {
@@ -79,7 +87,11 @@ fun MoreScreen(container: AdminContainer, navigator: Navigator) {
                 }
             }
             SectionCard {
-                MoreRow(Icons.Rounded.Settings, tr("Настройки", "Settings")) { navigator.push(Route.Settings) }
+                Column {
+                    MoreRow(Icons.AutoMirrored.Rounded.MenuBook, tr("Инструкция и лицензия", "Guide & license")) { navigator.push(Route.Guide) }
+                    MoreDivider()
+                    MoreRow(Icons.Rounded.Settings, tr("Настройки", "Settings")) { navigator.push(Route.Settings) }
+                }
             }
         }
     }

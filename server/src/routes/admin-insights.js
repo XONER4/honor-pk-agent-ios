@@ -51,8 +51,17 @@ export default async function adminInsightsRoutes(app) {
   const { db, auth, hub, aiControl, metricsSnapshot, config } = app.ctx;
 
   // Статус поддержки: в сети ли (любой админ онлайн) и среднее время ответа админов (план админка п.20).
+  // Режим статуса поддержки (план п.20): 'auto' — по присутствию админов, 'online'/'offline' — вручную.
+  const supportMode = async () => {
+    const row = await db.one(`SELECT value FROM server_settings WHERE key = 'support_status'`);
+    const v = row?.value;
+    return v === 'online' || v === 'offline' ? v : 'auto';
+  };
+
   app.get('/v1/admin/support-stats', { preHandler: auth.requireAdmin }, async () => {
     const presence = hub.adminPresence();
+    const mode = await supportMode();
+    const online = mode === 'online' ? true : mode === 'offline' ? false : presence.online;
     let avgResponseSeconds = null;
     let samples = 0;
     try {
@@ -74,11 +83,26 @@ export default async function adminInsightsRoutes(app) {
       if (secs.length) avgResponseSeconds = Math.round(secs.reduce((a, b) => a + b, 0) / secs.length);
     } catch { /* window-функции недоступны в memory-режиме — вернём только присутствие */ }
     return {
-      online: presence.online,
+      online,
+      mode,
       lastOnlineAt: presence.lastSeen ? iso(presence.lastSeen) : null,
       avgResponseSeconds,
       samples,
     };
+  });
+
+  // Установить режим статуса поддержки (план п.20): auto | online | offline.
+  app.patch('/v1/admin/support-status', {
+    preHandler: auth.requireAdmin,
+    schema: { body: { type: 'object', required: ['mode'], properties: { mode: { type: 'string', enum: ['auto', 'online', 'offline'] } } } },
+  }, async (req) => {
+    const mode = req.body.mode;
+    await db.query(
+      `INSERT INTO server_settings (key, value, updated_at) VALUES ('support_status', $1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = $2`,
+      [mode, new Date()]);
+    await logAdminAction(db, { adminId: req.admin.id, action: 'support_status', detail: { mode } }, req.log);
+    return { mode };
   });
 
   // ---------- Общий чат команды (админы + разработчик), план админка п.9 ----------

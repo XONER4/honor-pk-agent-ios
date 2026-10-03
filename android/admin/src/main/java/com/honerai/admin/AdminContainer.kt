@@ -39,6 +39,10 @@ class AdminContainer private constructor(context: Context) {
     val settings = AdminSettings(app)
     val session = SessionStore(app)
 
+    // Мои права (из /account). У разработчика в UI проверяем через session.isDeveloper. План п.3.
+    private val _myPermissions = kotlinx.coroutines.flow.MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val myPermissions: kotlinx.coroutines.flow.StateFlow<Map<String, Boolean>> = _myPermissions
+
     /** Один HTTP-клиент: API, картинки (Coil), скачивание. Токен добавляется к запросам на наш сервер. */
     val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -139,8 +143,12 @@ class AdminContainer private constructor(context: Context) {
             session.session.map { it?.token }.distinctUntilChanged().collect { token ->
                 if (token != null) {
                     repo.refreshAll("")
-                    // Подтягиваем актуальную роль (вдруг повысили до developer) — без перелогина.
-                    runCatching { session.updateRole(api.account().role) }
+                    // Подтягиваем актуальную роль и права (вдруг повысили до developer) — без перелогина.
+                    runCatching {
+                        val acc = api.account()
+                        session.updateRole(acc.role)
+                        _myPermissions.value = acc.permissions
+                    }
                     if (inForeground) realtime.start()
                 } else {
                     realtime.stop()
