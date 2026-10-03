@@ -174,6 +174,23 @@ data class SupportStats(
 @Serializable
 data class TranslateResult(val text: String = "", val translated: Boolean = false)
 
+/** Сообщение общего чата команды (GET/POST /v1/admin/staff/messages). */
+@Serializable
+data class StaffMessage(
+    val id: String = "",
+    val seq: Long = 0,
+    val adminId: String = "",
+    val adminName: String = "",
+    val adminRole: String = "admin",
+    val text: String = "",
+    val createdAt: String = "",
+    val mine: Boolean = false,
+)
+
+/** Непрочитанные в чате команды. */
+@Serializable
+data class StaffUnread(val unread: Int = 0, val lastSeq: Long = 0)
+
 /** Аккаунт администратора (GET /v1/admin/account, /v1/admin/admins). */
 @Serializable
 data class AdminAccount(

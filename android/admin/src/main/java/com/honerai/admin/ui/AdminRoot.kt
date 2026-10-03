@@ -74,6 +74,7 @@ sealed interface Route {
     data object Logins : Route { override val key = "logins" }
     data object Activity : Route { override val key = "activity" }
     data object Admins : Route { override val key = "admins" }
+    data object StaffChat : Route { override val key = "staff" }
 }
 
 /** Простой стек экранов; «Назад» снимает верхний. */
@@ -240,6 +241,7 @@ private fun RouteContent(route: Route, container: AdminContainer, navigator: Nav
             Route.Logins -> com.honerai.admin.ui.insights.LoginsScreen(container, navigator)
             Route.Activity -> com.honerai.admin.ui.insights.ActivityScreen(container, navigator)
             Route.Admins -> com.honerai.admin.ui.insights.AdminsScreen(container, navigator)
+            Route.StaffChat -> com.honerai.admin.ui.home.StaffChatScreen(container, navigator)
         }
     }
 }

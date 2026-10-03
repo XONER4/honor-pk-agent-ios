@@ -7,6 +7,8 @@ import com.honerai.admin.data.AdminJson
 import com.honerai.admin.data.AdminLogin
 import com.honerai.admin.data.AdminNote
 import com.honerai.admin.data.ActivityItem
+import com.honerai.admin.data.StaffMessage
+import com.honerai.admin.data.StaffUnread
 import com.honerai.admin.data.SupportStats
 import com.honerai.admin.data.TranslateResult
 import com.honerai.admin.data.ProfileView
@@ -276,6 +278,22 @@ class ApiClient(
 
     /** Статус поддержки: в сети и среднее время ответа. */
     suspend fun supportStats(): SupportStats = get("/v1/admin/support-stats", SupportStats.serializer())
+
+    /** Общий чат команды: список сообщений (старые — через before=seq). */
+    suspend fun staffMessages(before: Long? = null, limit: Int = 50): List<StaffMessage> =
+        get("/v1/admin/staff/messages", ListSerializer(StaffMessage.serializer()),
+            mapOf("before" to before?.toString(), "limit" to limit.toString()))
+
+    /** Отправить сообщение в чат команды. */
+    suspend fun sendStaff(text: String): StaffMessage =
+        AdminJson.decodeFromString(StaffMessage.serializer(),
+            send("POST", "/v1/admin/staff/messages", buildJsonObject { put("text", text) }))
+
+    /** Непрочитанные в чате команды. */
+    suspend fun staffUnread(): StaffUnread = get("/v1/admin/staff/unread", StaffUnread.serializer())
+
+    /** Отметить чат команды прочитанным. */
+    suspend fun staffRead() { send("POST", "/v1/admin/staff/read", buildJsonObject {}) }
 
     /** Перевод текста пользователя на русский (для поддержки). */
     suspend fun translate(text: String): TranslateResult =

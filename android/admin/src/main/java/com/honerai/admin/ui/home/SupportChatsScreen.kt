@@ -64,11 +64,19 @@ fun SupportChatsScreen(container: AdminContainer, navigator: Navigator) {
     val zone = remember { ZoneId.systemDefault() }
     val users by container.repo.users.collectAsStateWithLifecycle()
     var chats by remember { mutableStateOf<List<Chat>?>(null) }
+    var staffUnread by remember { mutableStateOf(0) }
 
     // Сигнал новых сообщений: суммарный unread из репозитория (обновляется по WebSocket) — перечитываем список.
     val unreadSignal = users.devices.values.sumOf { it.unreadForAdmin }
     androidx.compose.runtime.LaunchedEffect(unreadSignal) {
         runCatching { container.api.chats() }.onSuccess { chats = it }
+    }
+    // Непрочитанные в чате команды — опрашиваем периодически.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            runCatching { container.api.staffUnread() }.onSuccess { staffUnread = it.unread }
+            kotlinx.coroutines.delay(5000)
+        }
     }
 
     // Живые unread/присутствие берём из репозитория (реальное время), превью — из загруженного списка.
@@ -89,6 +97,8 @@ fun SupportChatsScreen(container: AdminContainer, navigator: Navigator) {
 
     Column(Modifier.fillMaxSize().background(colors.background)) {
         TopBar(tr("Поддержка", "Support"))
+        StaffPinnedRow(staffUnread) { navigator.push(Route.StaffChat) }
+        Box(Modifier.fillMaxWidth().height(6.dp).background(colors.background))
         when {
             chats == null -> LoadingBox()
             merged.isEmpty() -> EmptyState(Icons.AutoMirrored.Rounded.Chat, tr("Переписок пока нет", "No conversations yet"))
@@ -100,6 +110,30 @@ fun SupportChatsScreen(container: AdminContainer, navigator: Navigator) {
                     ConversationRow(c, now, zone, english) { navigator.push(Route.Chat(c.id, c.deviceId)) }
                     Box(Modifier.fillMaxWidth().padding(start = 82.dp).height(0.6.dp).background(colors.divider))
                 }
+            }
+        }
+    }
+}
+
+/** Закреплённая строка «Чат команды» вверху списка. */
+@Composable
+private fun StaffPinnedRow(unread: Int, onClick: () -> Unit) {
+    val colors = HonerTheme.colors
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(52.dp).clip(CircleShape).background(colors.accent.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
+            Text("👥", fontSize = 24.sp)
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(tr("Чат команды", "Team chat"), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.foreground)
+            Text(tr("Админы и разработчик · закреплён", "Admins and developer · pinned"), fontSize = 13.sp, color = colors.secondary)
+        }
+        if (unread > 0) {
+            Box(Modifier.size(22.dp).clip(CircleShape).background(colors.accent), contentAlignment = Alignment.Center) {
+                Text(if (unread > 99) "99+" else unread.toString(), fontSize = 11.sp, color = colors.background, fontWeight = FontWeight.Bold)
             }
         }
     }
