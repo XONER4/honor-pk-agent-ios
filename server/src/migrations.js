@@ -331,6 +331,18 @@ const STATEMENTS = [
        AND NOT EXISTS (SELECT 1 FROM server_settings WHERE key = 'perms_backfilled')`,
   `INSERT INTO server_settings (key, value, updated_at) VALUES ('perms_backfilled', '1', now())
      ON CONFLICT (key) DO NOTHING`,
+
+  // Диагностика ошибок ИИ (AI-400/5xx): сохраняем причину от DeepSeek, чтобы видеть её в админке,
+  // а не только в логах Railway. Кольцо последних записей (старые чистятся при вставке).
+  `CREATE TABLE IF NOT EXISTS ai_errors (
+     seq BIGSERIAL PRIMARY KEY,
+     at TIMESTAMPTZ NOT NULL,
+     status INT NOT NULL,
+     model TEXT,
+     device_id UUID,
+     messages INT,
+     body TEXT
+   )`,
 ];
 
 export async function migrate(db) {

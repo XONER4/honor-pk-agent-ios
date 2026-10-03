@@ -291,6 +291,10 @@ class ApiClient(
     /** Установить режим статуса поддержки: auto | online | offline (п.20). */
     suspend fun setSupportStatus(mode: String) { send("PATCH", "/v1/admin/support-status", buildJsonObject { put("mode", mode) }) }
 
+    /** Последние ошибки ИИ (AI-400/5xx) с причиной от DeepSeek — для диагностики. */
+    suspend fun aiErrors(): List<com.honerai.admin.data.AiError> =
+        get("/v1/admin/ai-errors", ListSerializer(com.honerai.admin.data.AiError.serializer()))
+
     /** Общий чат команды: список сообщений (старые — через before=seq). */
     suspend fun staffMessages(before: Long? = null, limit: Int = 50): List<StaffMessage> =
         get("/v1/admin/staff/messages", ListSerializer(StaffMessage.serializer()),

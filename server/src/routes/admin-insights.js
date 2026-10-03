@@ -58,6 +58,15 @@ export default async function adminInsightsRoutes(app) {
     return v === 'online' || v === 'offline' ? v : 'auto';
   };
 
+  // Последние ошибки ИИ (AI-400/5xx) с причиной от DeepSeek — для диагностики прямо в админке.
+  app.get('/v1/admin/ai-errors', { preHandler: auth.requireAdmin }, async () => {
+    const rows = await db.many('SELECT * FROM ai_errors ORDER BY seq DESC LIMIT 50').catch(() => []);
+    return rows.map((r) => ({
+      at: iso(r.at), status: r.status, model: r.model || null,
+      deviceId: r.device_id || null, messages: r.messages ?? null, body: r.body || '',
+    }));
+  });
+
   app.get('/v1/admin/support-stats', { preHandler: auth.requireAdmin }, async () => {
     const presence = hub.adminPresence();
     const mode = await supportMode();

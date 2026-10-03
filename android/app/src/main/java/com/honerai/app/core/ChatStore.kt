@@ -1535,6 +1535,8 @@ class ChatStore internal constructor(
      * Только если пользователь ещё не переименовал чат вручную. Фоном, ошибки молча игнорируются.
      */
     private fun maybeAutoTitle(chatId: String) {
+        // В тестах клиент внедряют со сценарными ответами — лишний запрос названия их ломает.
+        if (injectedClient != null) return
         val chat = chats.firstOrNull { it.id == chatId } ?: return
         if (chat.kind != ConversationKind.NORMAL || chatId in autoTitled) return
         val users = chat.messages.filter { it.role == MessageRole.USER }

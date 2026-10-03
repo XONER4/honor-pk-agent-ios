@@ -19,7 +19,7 @@ export const aiMutedError = (reason = null, until = null) => {
 };
 
 export default async function aiProxyRoutes(app) {
-  const { auth, config, limits, metrics, usage, aiControl } = app.ctx;
+  const { auth, config, limits, metrics, usage, aiControl, db } = app.ctx;
   const allowed = new Set(config.aiAllowedModels);
 
   app.post('/v1/ai/chat/completions', {
@@ -118,6 +118,15 @@ export default async function aiProxyRoutes(app) {
       let text = '';
       try { text = await upstream.text(); } catch { /* тело уже недоступно */ }
       req.log.warn({ status: upstream.status, model: req.body.model, messages: req.body.messages?.length, body: text.slice(0, 1000) }, 'deepseek upstream error');
+      // Сохраняем причину в БД (видно в админке), чтобы чинить прицельно без доступа к логам. Fire-and-forget.
+      if (db) {
+        const deviceId = req.principal?.kind === 'device' ? req.device.id : null;
+        db.query(
+          'INSERT INTO ai_errors (at, status, model, device_id, messages, body) VALUES ($1,$2,$3,$4,$5,$6)',
+          [new Date(), upstream.status, req.body.model || null, deviceId, req.body.messages?.length || null, text.slice(0, 2000)],
+        ).then(() => db.query('DELETE FROM ai_errors WHERE seq <= (SELECT max(seq) FROM ai_errors) - 100'))
+          .catch(() => { /* диагностика не должна ломать ответ */ });
+      }
       try { res.end(text); } catch { try { res.end(); } catch { /* клиент ушёл */ } }
       finish({ error: true });
       return;

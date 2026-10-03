@@ -171,6 +171,17 @@ data class SupportStats(
     val samples: Int = 0,
 )
 
+/** Ошибка ИИ (GET /v1/admin/ai-errors): причина от DeepSeek для диагностики AI-400. */
+@Serializable
+data class AiError(
+    val at: String = "",
+    val status: Int = 0,
+    val model: String? = null,
+    val deviceId: String? = null,
+    val messages: Int? = null,
+    val body: String = "",
+)
+
 /** Результат перевода (POST /v1/admin/translate). */
 @Serializable
 data class TranslateResult(val text: String = "", val translated: Boolean = false)

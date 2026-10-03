@@ -82,6 +82,8 @@ fun MoreScreen(container: AdminContainer, navigator: Navigator) {
                     MoreRow(Icons.Rounded.Login, tr("Журнал входов", "Login history")) { navigator.push(Route.Logins) }
                     if (isDeveloper) {
                         MoreDivider()
+                        MoreRow(Icons.Rounded.AutoAwesome, tr("Ошибки ИИ", "AI errors")) { navigator.push(Route.AiErrors) }
+                        MoreDivider()
                         MoreRow(Icons.Rounded.AdminPanelSettings, tr("Администраторы", "Administrators")) { navigator.push(Route.Admins) }
                     }
                 }
