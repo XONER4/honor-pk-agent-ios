@@ -22,6 +22,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -167,11 +173,61 @@ private fun AdminMain(activity: MainActivity, container: AdminContainer) {
     }
 }
 
+/** Нижняя навигация в стиле Telegram: 4 вкладки + свайп между ними. Drill-down открывается поверх. */
+@Composable
+private fun MainTabs(container: AdminContainer, navigator: Navigator, holder: SaveableStateHolder) {
+    val colors = HonerTheme.colors
+    data class Tab(val icon: androidx.compose.ui.graphics.vector.ImageVector, val label: String)
+    val tabs = listOf(
+        Tab(Icons.Rounded.Home, tr("Главная", "Home")),
+        Tab(Icons.AutoMirrored.Rounded.Chat, tr("Поддержка", "Support")),
+        Tab(Icons.Rounded.History, tr("Лента", "Activity")),
+        Tab(Icons.Rounded.MoreHoriz, tr("Ещё", "More")),
+    )
+    val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { tabs.size })
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    androidx.compose.material3.Scaffold(
+        containerColor = colors.background,
+        bottomBar = {
+            androidx.compose.material3.NavigationBar(containerColor = colors.surface, tonalElevation = 0.dp) {
+                tabs.forEachIndexed { i, t ->
+                    androidx.compose.material3.NavigationBarItem(
+                        selected = pagerState.currentPage == i,
+                        onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
+                        icon = { androidx.compose.material3.Icon(t.icon, t.label, modifier = Modifier.width(24.dp)) },
+                        label = { androidx.compose.material3.Text(t.label, fontSize = 11.sp, maxLines = 1) },
+                        colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                            selectedIconColor = colors.accent, selectedTextColor = colors.accent,
+                            indicatorColor = colors.accent.copy(alpha = 0.14f),
+                            unselectedIconColor = colors.secondary, unselectedTextColor = colors.secondary,
+                        ),
+                    )
+                }
+            }
+        },
+    ) { padding ->
+        androidx.compose.foundation.pager.HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize().padding(padding),
+            key = { it },
+        ) { page ->
+            holder.SaveableStateProvider("tab:$page") {
+                when (page) {
+                    0 -> HomeScreen(container, navigator)
+                    1 -> com.honerai.admin.ui.home.SupportChatsScreen(container, navigator)
+                    2 -> com.honerai.admin.ui.insights.ActivityScreen(container, navigator, showBack = false)
+                    else -> com.honerai.admin.ui.home.MoreScreen(container, navigator)
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun RouteContent(route: Route, container: AdminContainer, navigator: Navigator, holder: SaveableStateHolder) {
     holder.SaveableStateProvider(route.key) {
         when (route) {
-            Route.Home -> HomeScreen(container, navigator)
+            Route.Home -> MainTabs(container, navigator, holder)
             is Route.User -> UserCardScreen(container, navigator, route.deviceId)
             is Route.Chat -> ChatScreen(container, navigator, route.chatId, route.deviceId)
             is Route.Broadcast -> BroadcastScreen(container, navigator, route.deviceId)

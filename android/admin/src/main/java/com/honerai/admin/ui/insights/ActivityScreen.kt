@@ -61,7 +61,7 @@ import java.time.ZoneId
 
 /** Общая лента: входы администраторов, их действия с пользователями и события приложений. */
 @Composable
-fun ActivityScreen(container: AdminContainer, navigator: Navigator) {
+fun ActivityScreen(container: AdminContainer, navigator: Navigator, showBack: Boolean = true) {
     val colors = HonerTheme.colors
     val english = LocalEnglish.current
     val now = rememberNow()
@@ -86,7 +86,7 @@ fun ActivityScreen(container: AdminContainer, navigator: Navigator) {
     }
 
     Column(Modifier.fillMaxSize().background(colors.background)) {
-        TopBar(tr("Лента действий", "Activity feed"), onBack = { navigator.pop() },
+        TopBar(tr("Лента действий", "Activity feed"), onBack = if (showBack) ({ navigator.pop() }) else null,
             actions = { IconCircle(Icons.Rounded.Refresh, tr("Обновить", "Refresh"), { reload++ }) })
         when {
             loading && items.isEmpty() -> LoadingBox()
