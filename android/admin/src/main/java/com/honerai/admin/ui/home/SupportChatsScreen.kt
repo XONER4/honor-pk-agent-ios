@@ -1,7 +1,9 @@
 package com.honerai.admin.ui.home
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +24,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -63,6 +67,7 @@ fun SupportChatsScreen(container: AdminContainer, navigator: Navigator) {
     val now = rememberNow()
     val zone = remember { ZoneId.systemDefault() }
     val users by container.repo.users.collectAsStateWithLifecycle()
+    val pinned by container.settings.pinned.collectAsStateWithLifecycle()
     var chats by remember { mutableStateOf<List<Chat>?>(null) }
     var staffUnread by remember { mutableStateOf(0) }
 
@@ -80,7 +85,8 @@ fun SupportChatsScreen(container: AdminContainer, navigator: Navigator) {
     }
 
     // Живые unread/присутствие берём из репозитория (реальное время), превью — из загруженного списка.
-    val merged = remember(chats, users.devices) {
+    // Закреплённые (избранные) переписки — всегда вверху, затем непрочитанные, затем по времени.
+    val merged = remember(chats, users.devices, pinned) {
         (chats ?: emptyList()).map { c ->
             val d = users.devices[c.deviceId]
             if (d == null) c else c.copy(
@@ -90,7 +96,8 @@ fun SupportChatsScreen(container: AdminContainer, navigator: Navigator) {
                 peerTyping = d.typingIn == c.id || c.peerTyping,
             )
         }.sortedWith(
-            compareByDescending<Chat> { it.unread > 0 }
+            compareByDescending<Chat> { pinned.contains(it.deviceId) }
+                .thenByDescending { it.unread > 0 }
                 .thenByDescending { Times.parse(it.lastMessage?.createdAt)?.toEpochMilli() ?: 0L },
         )
     }
@@ -107,7 +114,12 @@ fun SupportChatsScreen(container: AdminContainer, navigator: Navigator) {
                 contentPadding = PaddingValues(bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
             ) {
                 items(merged, key = { it.id }) { c ->
-                    ConversationRow(c, now, zone, english) { navigator.push(Route.Chat(c.id, c.deviceId)) }
+                    ConversationRow(
+                        c, now, zone, english,
+                        pinned = pinned.contains(c.deviceId),
+                        onClick = { navigator.push(Route.Chat(c.id, c.deviceId)) },
+                        onTogglePin = { container.settings.togglePinned(c.deviceId) },
+                    )
                     Box(Modifier.fillMaxWidth().padding(start = 82.dp).height(0.6.dp).background(colors.divider))
                 }
             }
@@ -139,12 +151,23 @@ private fun StaffPinnedRow(unread: Int, onClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ConversationRow(c: Chat, now: java.time.Instant, zone: ZoneId, english: Boolean, onClick: () -> Unit) {
+private fun ConversationRow(
+    c: Chat,
+    now: java.time.Instant,
+    zone: ZoneId,
+    english: Boolean,
+    pinned: Boolean,
+    onClick: () -> Unit,
+    onTogglePin: () -> Unit,
+) {
     val colors = HonerTheme.colors
     val blocked = false
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth()
+            .combinedClickable(onClick = onClick, onLongClick = onTogglePin)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Avatar(c.title, c.deviceId, if (c.peerPresence == Presence.OFFLINE) null else c.peerPresence, size = 52.dp, blocked = blocked)
@@ -153,6 +176,10 @@ private fun ConversationRow(c: Chat, now: java.time.Instant, zone: ZoneId, engli
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(c.title.ifBlank { tr("Пользователь", "User") }, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                     color = colors.foreground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (pinned) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Rounded.PushPin, tr("Закреплён", "Pinned"), tint = colors.accent, modifier = Modifier.size(14.dp))
+                }
                 c.lastMessage?.createdAt?.let { Times.parse(it) }?.let { t ->
                     Spacer(Modifier.width(8.dp))
                     Text(PresenceText.ago(t, now, zone, english), fontSize = 12.sp, color = colors.secondary, maxLines = 1)
