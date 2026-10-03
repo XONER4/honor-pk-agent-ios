@@ -1757,6 +1757,7 @@ class ChatStore internal constructor(
                 "Стикеры и эмодзи в ответах: ${onOff(s.stickersEnabled.value)}",
                 "Память между чатами: ${onOff(s.crossChatMemoryEnabled.value)}",
                 "Тема оформления: $theme",
+                "Обои в чате: ${if (s.wallpaperPath.value.isNotEmpty()) "установлены пользователем" else "нет"}",
                 "Язык интерфейса: ${if (s.language.value == "en") "английский" else "русский"}",
                 "Размер шрифта: ${Math.round(s.fontScale.value * 100)}%",
                 "Скорость чтения вслух: ${String.format(java.util.Locale.US, "%.2f", s.voiceRate.value)}",

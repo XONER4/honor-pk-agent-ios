@@ -87,10 +87,16 @@ internal fun RemoteImage(
 ) {
     val colors = HonerTheme.colors
     val context = LocalContext.current
-    val request = remember(url) {
+    // Счётчик перезагрузок: при ошибке (релей/сеть/403) нажатие создаёт НОВЫЙ запрос и Coil
+    // грузит заново — раньше состояние Error держалось до перезапуска приложения (баг «картинка
+    // не грузится до перезапуска»).
+    var reloadKey by remember(url) { mutableStateOf(0) }
+    val request = remember(url, reloadKey) {
         // Размер задан явно: без него Coil ждёт первой отрисовки, а пока идёт загрузка,
         // картинка не рисуется. 1600 пикселей хватает и для полноэкранного просмотра.
-        ImageRequest.Builder(context).data(url).size(1600).crossfade(true).build()
+        ImageRequest.Builder(context).data(url).size(1600).crossfade(true)
+            .setParameter("reload", reloadKey) // меняет ключ кэша → принудительная перезагрузка
+            .build()
     }
     // Общий загрузчик с браузерными заголовками — иначе часть сайтов отдаёт 403.
     val painter = rememberAsyncImagePainter(request, imageLoader = com.honerai.app.ui.common.HonerImages.loader(context))
@@ -120,13 +126,16 @@ internal fun RemoteImage(
                     .clickable(enabled = allowsFullScreen) { fullScreen = true },
             )
             is AsyncImagePainter.State.Error -> Row(
-                Modifier.padding(vertical = 10.dp),
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { reloadKey++ } // нажатие — повторить загрузку без перезапуска приложения
+                    .padding(vertical = 10.dp, horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
             ) {
                 Icon(Icons.Outlined.BrokenImage, null, tint = colors.secondary, modifier = Modifier.size(18.dp))
                 Text(
-                    tr(english, "Не удалось загрузить изображение", "Couldn't load the image"),
+                    tr(english, "Не удалось загрузить · нажмите, чтобы повторить", "Couldn't load · tap to retry"),
                     fontSize = (fontSize * 0.85f).sp, color = colors.secondary,
                 )
             }

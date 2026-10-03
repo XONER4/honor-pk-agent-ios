@@ -39,6 +39,8 @@ class AppSettings(context: Context) {
     private val _crossChatMemoryEnabled = bool("honor.crossChatMemoryEnabled", true)
     private val _stickersEnabled = bool("honor.stickersEnabled", true)
     private val _profilePhotoPath = string("honor.profilePhotoPath", "")
+    // Обои чата (#17): путь к изображению-фону или "" — без обоев.
+    private val _wallpaperPath = string("honor.wallpaperPath", "")
     private val _birthday = string("honer.birthday", "")
     private val _autoUpdate = bool("honer.autoUpdate", true)
     private val _reduceMotion = bool("honer.reduceMotion", false)
@@ -63,6 +65,8 @@ class AppSettings(context: Context) {
     val crossChatMemoryEnabled: StateFlow<Boolean> = _crossChatMemoryEnabled.asStateFlow()
     val stickersEnabled: StateFlow<Boolean> = _stickersEnabled.asStateFlow()
     val profilePhotoPath: StateFlow<String> = _profilePhotoPath.asStateFlow()
+    /** Обои чата (#17): путь к картинке-фону или "" — без обоев. ИИ знает, что они стоят. */
+    val wallpaperPath: StateFlow<String> = _wallpaperPath.asStateFlow()
     val birthday: StateFlow<String> = _birthday.asStateFlow()
     /** Автообновление приложения в фоне. */
     val autoUpdate: StateFlow<Boolean> = _autoUpdate.asStateFlow()
@@ -107,6 +111,7 @@ class AppSettings(context: Context) {
     fun setCrossChatMemoryEnabled(value: Boolean) = putBool("honor.crossChatMemoryEnabled", value, _crossChatMemoryEnabled)
     fun setStickersEnabled(value: Boolean) = putBool("honor.stickersEnabled", value, _stickersEnabled)
     fun setProfilePhotoPath(value: String) = put("honor.profilePhotoPath", value, _profilePhotoPath)
+    fun setWallpaperPath(value: String) = put("honor.wallpaperPath", value, _wallpaperPath)
     fun setBirthday(value: String) = put("honer.birthday", value, _birthday)
     fun setAutoUpdate(value: Boolean) = putBool("honer.autoUpdate", value, _autoUpdate)
     fun setReduceMotion(value: Boolean) = putBool("honer.reduceMotion", value, _reduceMotion)

@@ -151,6 +151,8 @@ private fun SettingsRootPage(listState: androidx.compose.foundation.lazy.LazyLis
                     appearance, { settings.setAppearance(it) }, tag = "settings.appearance",
                 )
                 SettingsDivider()
+                WallpaperRows(settings) // #17 обои чата
+                SettingsDivider()
                 SettingsRow(Icons.Outlined.FormatSize, t("Размер шрифта", "Font size"), tag = "settings.font") { push(SettingsPage.FONT) }
                 SettingsDivider()
                 SettingsRow(Icons.Outlined.Security, t("Разрешения", "Permissions"), tag = "settings.permissions") { push(SettingsPage.PERMISSIONS) }

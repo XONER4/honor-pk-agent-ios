@@ -189,6 +189,7 @@ fun ChatRoot(activity: MainActivity) {
     fun t(ru: String, en: String) = if (settings.isEnglish) en else ru
     val colors = HonerTheme.colors
     val fontScale = LocalChatFontScale.current
+    val wallpaper by settings.wallpaperPath.collectAsState() // #17 обои чата
     val scope = rememberCoroutineScope()
     val haptics = rememberHaptics()
     val toast = rememberToastState()
@@ -565,6 +566,7 @@ fun ChatRoot(activity: MainActivity) {
                 modifier = modifier,
                 english = english,
                 fontScale = fontScale,
+                wallpaper = wallpaper,
                 messages = messages,
                 chatTitle = chat?.title.orEmpty(),
                 hasChat = selectedId != null,
@@ -906,6 +908,7 @@ private fun MainScreen(
     modifier: Modifier,
     english: Boolean,
     fontScale: Float,
+    wallpaper: String = "",
     messages: List<ChatMessage>,
     chatTitle: String,
     hasChat: Boolean,
@@ -1038,6 +1041,7 @@ private fun MainScreen(
             FindBar(findQuery, matches, findIndex, english, findFocus, onFindQuery, onFindPrevious, onFindNext, onFindClose)
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
+            if (wallpaper.isNotEmpty()) ChatWallpaper(wallpaper)
             if (messages.isEmpty()) {
                 Welcome(english, fontScale, onWelcomeTap)
             } else {
@@ -1207,6 +1211,20 @@ private fun FindButton(icon: ImageVector, label: String, tag: String, enabled: B
 }
 
 /** Приветствие пустого чата: знак, вопрос и версия приложения (видно, что установилась новая сборка). */
+@Composable
+/** Обои чата (#17): картинка-фон на всю область сообщений + лёгкая вуаль под цвет темы для читаемости. */
+@Composable
+private fun ChatWallpaper(path: String) {
+    val colors = HonerTheme.colors
+    coil.compose.AsyncImage(
+        model = java.io.File(path),
+        contentDescription = null,
+        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+        modifier = Modifier.fillMaxSize(),
+    )
+    Box(Modifier.fillMaxSize().background(colors.background.copy(alpha = 0.55f)))
+}
+
 @Composable
 private fun Welcome(english: Boolean, fontScale: Float, onTap: () -> Unit) {
     val colors = HonerTheme.colors
