@@ -1523,7 +1523,38 @@ class ChatStore internal constructor(
         saveSnapshot()
         val text = settled?.content.orEmpty()
         if (text.isNotEmpty()) notifyAnswerReady(chatId, text, settled)
+        if (text.isNotEmpty()) maybeAutoTitle(chatId)
         endBackgroundWork()
+    }
+
+    // Чаты, для которых уже сгенерировали название — не повторяем. План прил. п.1.
+    private val autoTitled = mutableSetOf<String>()
+
+    /**
+     * Авто-название чата после первого ответа ИИ (#1): короткий заголовок вместо «сырого» первого сообщения.
+     * Только если пользователь ещё не переименовал чат вручную. Фоном, ошибки молча игнорируются.
+     */
+    private fun maybeAutoTitle(chatId: String) {
+        val chat = chats.firstOrNull { it.id == chatId } ?: return
+        if (chat.kind != ConversationKind.NORMAL || chatId in autoTitled) return
+        val users = chat.messages.filter { it.role == MessageRole.USER }
+        val firstUser = users.firstOrNull()?.content.orEmpty()
+        if (users.size != 1 || firstUser.isBlank()) return
+        val crude = firstUser.replace("\n", " ").take(48)
+        if (chat.title != crude) return // переименовано вручную — не трогаем
+        val answer = chat.messages.firstOrNull { it.role == MessageRole.ASSISTANT && it.content.isNotEmpty() }?.content ?: return
+        autoTitled.add(chatId)
+        val instruction = "Придумай короткое название для диалога: 2–5 слов, на языке вопроса, без кавычек и без точки в конце. Выдай только название."
+        val prompt = ChatMessage(role = MessageRole.USER, content = "Вопрос: ${firstUser.take(500)}\n\nОтвет: ${answer.take(500)}")
+        scope.launch {
+            val client = injectedClient ?: makeClient()
+            val title = runCatching { client.complete(listOf(prompt), false, instruction, "") }
+                .getOrNull()?.trim()?.replace("\"", "")?.trim('.', ' ', '\n')?.take(60).orEmpty()
+            if (title.length in 2..60) {
+                val cur = chats.firstOrNull { it.id == chatId }
+                if (cur != null && cur.title == crude) mutateChat(chatId) { it.copy(title = title) }
+            }
+        }
     }
 
     private fun notifyAnswerReady(chatId: String, text: String, message: ChatMessage?) {
