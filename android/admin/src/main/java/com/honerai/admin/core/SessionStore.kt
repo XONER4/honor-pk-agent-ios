@@ -63,6 +63,13 @@ class SessionStore(context: Context) {
         _session.value = session
     }
 
+    /** Обновить роль из ответа сервера (на случай повышения до developer миграцией) без перелогина. */
+    fun updateRole(role: String) {
+        val current = _session.value ?: return
+        if (current.role == role || role.isBlank()) return
+        save(current.copy(role = role))
+    }
+
     fun logout(reason: String? = null) {
         secure?.edit()?.clear()?.apply()
         memoryToken = null

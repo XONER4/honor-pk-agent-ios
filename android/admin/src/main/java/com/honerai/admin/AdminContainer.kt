@@ -139,6 +139,8 @@ class AdminContainer private constructor(context: Context) {
             session.session.map { it?.token }.distinctUntilChanged().collect { token ->
                 if (token != null) {
                     repo.refreshAll("")
+                    // Подтягиваем актуальную роль (вдруг повысили до developer) — без перелогина.
+                    runCatching { session.updateRole(api.account().role) }
                     if (inForeground) realtime.start()
                 } else {
                     realtime.stop()

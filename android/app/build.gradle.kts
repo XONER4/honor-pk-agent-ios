@@ -30,8 +30,10 @@ fun maskSecret(value: String): Pair<String, String> {
     return encoder.encodeToString(masked) to encoder.encodeToString(mask)
 }
 
-val appVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 104900
-val appVersionName = (project.findProperty("versionName") as String?) ?: "10.49.0"
+// База новой версии ВЫШЕ живой 10.57.0 (code 105700): иначе сборка «ниже» установленной —
+// не ставится поверх и авто-обновление у реальных юзеров не срабатывает.
+val appVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 105800
+val appVersionName = (project.findProperty("versionName") as String?) ?: "10.58.0"
 
 android {
     namespace = "com.honerai.app"
